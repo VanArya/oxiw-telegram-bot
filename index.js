@@ -18,6 +18,13 @@ const GOOGLE_KEY_FILE =
 
 
 /* =========================
+   وضعیت کاربران
+========================= */
+
+const userStates = new Map();
+
+
+/* =========================
    Google Sheets
 ========================= */
 
@@ -76,10 +83,8 @@ async function getMovies() {
       const movie = {};
 
       headers.forEach((header, index) => {
-
         movie[header] =
           row[index] || "";
-
       });
 
       return movie;
@@ -106,24 +111,18 @@ async function sendTelegramMessage(
   };
 
   if (keyboard) {
-
     payload.reply_markup = {
       inline_keyboard: keyboard
     };
-
   }
 
   const response =
     await fetch(url, {
-
       method: "POST",
-
       headers: {
         "Content-Type": "application/json"
       },
-
       body: JSON.stringify(payload)
-
     });
 
   const result =
@@ -139,158 +138,463 @@ async function sendTelegramMessage(
 
 
 /* =========================
-   Telegram Update
+   منوی اصلی
 ========================= */
 
-async function processTelegramUpdate(
-  update
+function getMainKeyboard() {
+
+  return [
+
+    [
+      {
+        text: "🔍 جستجوی فیلم",
+        callback_data: "search_movie"
+      },
+      {
+        text: "📺 جستجوی سریال",
+        callback_data: "search_series"
+      }
+    ],
+
+    [
+      {
+        text: "🎲 پیشنهاد تصادفی",
+        callback_data: "random_movie"
+      },
+      {
+        text: "⭐ پیشنهاد کلوپ سفید",
+        callback_data: "club_recommend"
+      }
+    ]
+
+  ];
+}
+
+
+/* =========================
+   نمایش جزئیات فیلم
+========================= */
+
+async function showMovie(
+  chatId,
+  movie
 ) {
 
-  if (!update.message) {
-    return;
+  let message =
+    `🎬 ${movie["اسم فیلم"] || "بدون نام"}\n\n`;
+
+  if (movie["سال"]) {
+    message +=
+      `📅 سال: ${movie["سال"]}\n`;
   }
 
+  if (movie["ژانر"]) {
+    message +=
+      `🎭 ژانر: ${movie["ژانر"]}\n`;
+  }
+
+  if (movie["امتیاز"]) {
+    message +=
+      `⭐ امتیاز: ${movie["امتیاز"]}\n`;
+  }
+
+  if (movie["زبان"]) {
+    message +=
+      `🌐 زبان: ${movie["زبان"]}\n`;
+  }
+
+  if (movie["بازیگران"]) {
+    message +=
+      `\n👥 بازیگران:\n${movie["بازیگران"]}\n`;
+  }
+
+  if (movie["خلاصه داستان"]) {
+    message +=
+      `\n📝 خلاصه داستان:\n${movie["خلاصه داستان"]}\n`;
+  }
+
+
+  const keyboard = [];
+
+
+  if (movie["لینک تریلر"]) {
+
+    keyboard.push([
+      {
+        text: "▶️ تریلر",
+        url: movie["لینک تریلر"]
+      }
+    ]);
+
+  }
+
+
+  keyboard.push([
+    {
+      text: "🔙 بازگشت به نتایج",
+      callback_data: "back_results"
+    }
+  ]);
+
+
+  await sendTelegramMessage(
+    chatId,
+    message,
+    keyboard
+  );
+}
+
+
+/* =========================
+   جستجوی فیلم
+========================= */
+
+async function searchMovies(
+  chatId,
+  searchText
+) {
+
+  const movies =
+    await getMovies();
+
+  const search =
+    searchText
+      .trim()
+      .toLowerCase();
+
+
+  const results =
+    movies
+      .filter(movie => {
+
+        const title =
+          String(
+            movie["اسم فیلم"] || ""
+          )
+          .toLowerCase();
+
+        return title.includes(search);
+
+      })
+      .slice(0, 10);
+
+
+  if (!results.length) {
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ فیلمی با این نام پیدا نشد.\n\n" +
+      "نام دیگری وارد کنید."
+    );
+
+    return;
+
+  }
+
+
+  const keyboard =
+    results.map(
+      (movie, index) => {
+
+        const title =
+          movie["اسم فیلم"] ||
+          "بدون نام";
+
+        const year =
+          movie["سال"]
+            ? ` — ${movie["سال"]}`
+            : "";
+
+        return [
+          {
+            text:
+              `${index + 1}. ${title}${year}`,
+
+            callback_data:
+              `movie_${index}`
+          }
+        ];
+
+      }
+    );
+
+
+  userStates.set(
+    chatId,
+    {
+      mode: "movie_results",
+      results: results
+    }
+  );
+
+
+  await sendTelegramMessage(
+    chatId,
+    "🎬 نتایج جستجو:\n\n" +
+    "فیلم موردنظر را انتخاب کنید:",
+    keyboard
+  );
+
+}
+
+
+/* =========================
+   پردازش پیام
+========================= */
+
+async function processMessage(
+  message
+) {
+
   const chatId =
-    update.message.chat.id;
+    message.chat.id;
 
   const text =
     String(
-      update.message.text || ""
+      message.text || ""
     ).trim();
 
 
-  /* /start */
-
   if (text === "/start") {
 
-    const keyboard = [
-
-      [
-        {
-          text: "🔍 جستجوی فیلم",
-          callback_data: "search_movie"
-        },
-
-        {
-          text: "📺 جستجوی سریال",
-          callback_data: "search_series"
-        }
-      ],
-
-      [
-        {
-          text: "🎲 پیشنهاد تصادفی",
-          callback_data: "random_movie"
-        },
-
-        {
-          text: "⭐ پیشنهاد کلوپ سفید",
-          callback_data: "club_recommend"
-        }
-      ]
-
-    ];
+    userStates.delete(chatId);
 
     await sendTelegramMessage(
-
       chatId,
 
       "سلام 👋\n\n" +
       "به کلوپ سفید خوش آمدید 🎬\n\n" +
       "چه کاری می‌خواهید انجام دهید؟",
 
-      keyboard
-
+      getMainKeyboard()
     );
 
     return;
   }
 
 
-  /* جستجوی آزمایشی */
-
-  try {
-
-    const movies =
-      await getMovies();
-
-    const search =
-      text.toLowerCase();
-
-    const results =
-      movies
-        .filter(movie =>
-          String(
-            movie["اسم فیلم"] || ""
-          )
-          .toLowerCase()
-          .includes(search)
-        )
-        .slice(0, 10);
+  const state =
+    userStates.get(chatId);
 
 
-    if (!results.length) {
+  if (
+    state &&
+    state.mode === "search_movie"
+  ) {
+
+    await searchMovies(
+      chatId,
+      text
+    );
+
+    return;
+  }
+
+
+  await sendTelegramMessage(
+    chatId,
+
+    "برای شروع، از منوی زیر یک گزینه را انتخاب کنید:",
+
+    getMainKeyboard()
+  );
+
+}
+
+
+/* =========================
+   پردازش دکمه‌ها
+========================= */
+
+async function processCallback(
+  callback
+) {
+
+  const chatId =
+    callback.message.chat.id;
+
+  const data =
+    callback.data;
+
+
+  /* جستجوی فیلم */
+
+  if (data === "search_movie") {
+
+    userStates.set(
+      chatId,
+      {
+        mode: "search_movie"
+      }
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "🔍 نام فیلم موردنظرتان را وارد کنید:"
+    );
+
+    return;
+  }
+
+
+  /* جستجوی سریال */
+
+  if (data === "search_series") {
+
+    await sendTelegramMessage(
+      chatId,
+      "📺 جستجوی سریال در مرحله بعد اضافه می‌شود."
+    );
+
+    return;
+  }
+
+
+  /* پیشنهاد تصادفی */
+
+  if (data === "random_movie") {
+
+    await sendTelegramMessage(
+      chatId,
+      "🎲 پیشنهاد تصادفی در مرحله بعد اضافه می‌شود."
+    );
+
+    return;
+  }
+
+
+  /* پیشنهاد کلوپ */
+
+  if (data === "club_recommend") {
+
+    await sendTelegramMessage(
+      chatId,
+      "⭐ پیشنهادهای کلوپ سفید در مرحله بعد اضافه می‌شود."
+    );
+
+    return;
+  }
+
+
+  /* انتخاب فیلم */
+
+  if (
+    data.startsWith("movie_")
+  ) {
+
+    const index =
+      Number(
+        data.replace("movie_", "")
+      );
+
+    const state =
+      userStates.get(chatId);
+
+
+    if (
+      !state ||
+      !state.results ||
+      !state.results[index]
+    ) {
 
       await sendTelegramMessage(
         chatId,
-        "❌ فیلم موردنظر پیدا نشد."
+        "⚠️ این نتیجه دیگر در دسترس نیست.\n\n" +
+        "لطفاً دوباره جستجو کنید."
       );
 
       return;
     }
 
 
-    let message =
-      "🎬 نتایج جستجو:\n\n";
+    const movie =
+      state.results[index];
 
 
-    results.forEach(
-      (movie, index) => {
-
-        message +=
-          `${index + 1}. ` +
-          `${movie["اسم فیلم"] || ""}`;
-
-        if (movie["سال"]) {
-          message +=
-            ` (${movie["سال"]})`;
-        }
-
-        if (movie["امتیاز"]) {
-          message +=
-            ` ⭐ ${movie["امتیاز"]}`;
-        }
-
-        message += "\n";
-
+    userStates.set(
+      chatId,
+      {
+        ...state,
+        selectedMovie: movie
       }
     );
 
 
+    await showMovie(
+      chatId,
+      movie
+    );
+
+    return;
+  }
+
+
+  /* بازگشت */
+
+  if (data === "back_results") {
+
+    const state =
+      userStates.get(chatId);
+
+
+    if (
+      !state ||
+      !state.results
+    ) {
+
+      await sendTelegramMessage(
+        chatId,
+        "نتایج قبلی دیگر در دسترس نیست.\n\n" +
+        "لطفاً دوباره جستجو کنید."
+      );
+
+      return;
+    }
+
+
+    const keyboard =
+      state.results.map(
+        (movie, index) => {
+
+          const title =
+            movie["اسم فیلم"] ||
+            "بدون نام";
+
+          const year =
+            movie["سال"]
+              ? ` — ${movie["سال"]}`
+              : "";
+
+          return [
+            {
+              text:
+                `${index + 1}. ${title}${year}`,
+
+              callback_data:
+                `movie_${index}`
+            }
+          ];
+
+        }
+      );
+
+
     await sendTelegramMessage(
       chatId,
-      message
+
+      "🎬 نتایج جستجو:",
+
+      keyboard
     );
 
-  } catch (error) {
-
-    console.error(
-      "Google Sheets error:",
-      error
-    );
-
-    await sendTelegramMessage(
-      chatId,
-      "⚠️ هنگام دریافت اطلاعات فیلم‌ها مشکلی پیش آمد."
-    );
-
+    return;
   }
 
 }
 
 
 /* =========================
-   Routes
+   Webhook
 ========================= */
 
 app.get("/", (req, res) => {
@@ -302,40 +606,56 @@ app.get("/", (req, res) => {
 });
 
 
-app.post("/telegram", async (req, res) => {
+app.post(
+  "/telegram",
+  async (req, res) => {
 
-  console.log(
-    "Telegram update:",
-    JSON.stringify(req.body)
-  );
-
-
-  // پاسخ فوری به Telegram
-  res
-    .status(200)
-    .send("OK");
-
-
-  try {
-
-    await processTelegramUpdate(
-      req.body
+    console.log(
+      "Telegram update:",
+      JSON.stringify(req.body)
     );
 
-  } catch (error) {
 
-    console.error(
-      "Bot error:",
-      error
-    );
+    // پاسخ فوری به Telegram
+    res
+      .status(200)
+      .send("OK");
+
+
+    try {
+
+      if (req.body.callback_query) {
+
+        await processCallback(
+          req.body.callback_query
+        );
+
+      }
+
+
+      if (req.body.message) {
+
+        await processMessage(
+          req.body.message
+        );
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        "Bot error:",
+        error
+      );
+
+    }
 
   }
-
-});
+);
 
 
 /* =========================
-   Start Server
+   Start
 ========================= */
 
 app.listen(
