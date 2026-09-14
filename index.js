@@ -136,7 +136,44 @@ async function sendTelegramMessage(
   return result;
 }
 
+async function sendTelegramPhoto(
+  chatId,
+  photoUrl,
+  caption,
+  keyboard = null
+) {
+  const url =
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
 
+  const payload = {
+    chat_id: chatId,
+    photo: photoUrl,
+    caption: caption
+  };
+
+  if (keyboard) {
+    payload.reply_markup = {
+      inline_keyboard: keyboard
+    };
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json();
+
+  console.log(
+    "Telegram photo response:",
+    result
+  );
+
+  return result;
+}
 /* =========================
    منوی اصلی
 ========================= */
@@ -175,7 +212,7 @@ function getMainKeyboard() {
    نمایش جزئیات فیلم
 ========================= */
 
-async function showMovie(
+async function Movie(
   chatId,
   movie
 ) {
@@ -520,7 +557,7 @@ async function processCallback(
     );
 
 
-    await showMovie(
+    await Movie(
       chatId,
       movie
     );
