@@ -212,11 +212,10 @@ function getMainKeyboard() {
    نمایش جزئیات فیلم
 ========================= */
 
-async function Movie(
+async function showMovie(
   chatId,
   movie
 ) {
-
   let message =
     `🎬 ${movie["اسم فیلم"] || "بدون نام"}\n\n`;
 
@@ -274,11 +273,44 @@ async function Movie(
   ]);
 
 
-  await sendTelegramMessage(
-    chatId,
-    message,
-    keyboard
-  );
+  const posterUrl =
+  String(
+    movie["پوستر فیلم"] || ""
+  ).trim();
+
+if (posterUrl) {
+  try {
+    const photoResult =
+      await sendTelegramPhoto(
+        chatId,
+        posterUrl,
+        message,
+        keyboard
+      );
+
+    if (photoResult && photoResult.ok) {
+      return;
+    }
+
+    console.error(
+      "Poster send failed:",
+      photoResult
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Poster error:",
+      error
+    );
+  }
+}
+
+await sendTelegramMessage(
+  chatId,
+  message,
+  keyboard
+);
 }
 
 
@@ -557,7 +589,7 @@ async function processCallback(
     );
 
 
-    await Movie(
+    await showMovie(
       chatId,
       movie
     );
