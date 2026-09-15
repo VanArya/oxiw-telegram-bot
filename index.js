@@ -34,8 +34,8 @@ async function getGoogleSheets() {
     new google.auth.GoogleAuth({
       keyFile: GOOGLE_KEY_FILE,
       scopes: [
-        "https://www.googleapis.com/auth/spreadsheets.readonly"
-      ]
+  "https://www.googleapis.com/auth/spreadsheets"
+]
     });
 
   const client =
