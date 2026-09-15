@@ -111,9 +111,11 @@ async function sendTelegramMessage(
   };
 
   if (keyboard) {
+
     payload.reply_markup = {
       inline_keyboard: keyboard
     };
+
   }
 
   const response =
@@ -136,12 +138,14 @@ async function sendTelegramMessage(
   return result;
 }
 
+
 async function sendTelegramPhoto(
   chatId,
   photoUrl,
   caption,
   keyboard = null
 ) {
+
   const url =
     `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
 
@@ -152,28 +156,43 @@ async function sendTelegramPhoto(
   };
 
   if (keyboard) {
+
     payload.reply_markup = {
       inline_keyboard: keyboard
     };
+
   }
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
+  const response =
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
 
-  const result = await response.json();
+  const result =
+    await response.json();
 
   console.log(
     "Telegram photo response:",
     result
   );
 
+  if (!result.ok) {
+
+    throw new Error(
+      result.description ||
+      "Telegram sendPhoto failed"
+    );
+
+  }
+
   return result;
 }
+
+
 /* =========================
    منوی اصلی
 ========================= */
@@ -184,7 +203,7 @@ function getMainKeyboard() {
 
     [
       {
-        text: "🔍 جستجوی فیلم",
+        text: "🎬 جستجوی فیلم",
         callback_data: "search_movie"
       },
       {
@@ -202,8 +221,30 @@ function getMainKeyboard() {
         text: "⭐ پیشنهاد کلوپ سفید",
         callback_data: "club_recommend"
       }
+    ],
+
+    [
+      {
+        text: "🆕 جدیدها",
+        callback_data: "new_movies"
+      },
+      {
+        text: "ℹ️ راهنما",
+        callback_data: "help"
+      }
     ]
 
+  ];
+}
+
+
+function getHomeButton() {
+
+  return [
+    {
+      text: "🏠 منوی اصلی",
+      callback_data: "main_menu"
+    }
   ];
 }
 
@@ -216,37 +257,50 @@ async function showMovie(
   chatId,
   movie
 ) {
+
   let message =
     `🎬 ${movie["اسم فیلم"] || "بدون نام"}\n\n`;
 
   if (movie["سال"]) {
+
     message +=
       `📅 سال: ${movie["سال"]}\n`;
+
   }
 
   if (movie["ژانر"]) {
+
     message +=
       `🎭 ژانر: ${movie["ژانر"]}\n`;
+
   }
 
   if (movie["امتیاز"]) {
+
     message +=
       `⭐ امتیاز: ${movie["امتیاز"]}\n`;
+
   }
 
   if (movie["زبان"]) {
+
     message +=
       `🌐 زبان: ${movie["زبان"]}\n`;
+
   }
 
   if (movie["بازیگران"]) {
+
     message +=
       `\n👥 بازیگران:\n${movie["بازیگران"]}\n`;
+
   }
 
   if (movie["خلاصه داستان"]) {
+
     message +=
       `\n📝 خلاصه داستان:\n${movie["خلاصه داستان"]}\n`;
+
   }
 
 
@@ -273,44 +327,58 @@ async function showMovie(
   ]);
 
 
-  const posterUrl =
-  String(
-    movie["پوستر فیلم"] || ""
-  ).trim();
+  keyboard.push([
+    {
+      text: "🏠 منوی اصلی",
+      callback_data: "main_menu"
+    }
+  ]);
 
-if (posterUrl) {
-  try {
-    const photoResult =
-      await sendTelegramPhoto(
-        chatId,
-        posterUrl,
-        message,
-        keyboard
+
+  const posterUrl =
+    String(
+      movie["پوستر فیلم"] || ""
+    ).trim();
+
+
+  if (posterUrl) {
+
+    try {
+
+      const photoResult =
+        await sendTelegramPhoto(
+          chatId,
+          posterUrl,
+          message,
+          keyboard
+        );
+
+      if (
+        photoResult &&
+        photoResult.ok
+      ) {
+
+        return;
+
+      }
+
+    } catch (error) {
+
+      console.error(
+        "Poster error:",
+        error
       );
 
-    if (photoResult && photoResult.ok) {
-      return;
     }
 
-    console.error(
-      "Poster send failed:",
-      photoResult
-    );
-
-  } catch (error) {
-
-    console.error(
-      "Poster error:",
-      error
-    );
   }
-}
 
-await sendTelegramMessage(
-  chatId,
-  message,
-  keyboard
-);
+
+  await sendTelegramMessage(
+    chatId,
+    message,
+    keyboard
+  );
 }
 
 
@@ -340,7 +408,7 @@ async function searchMovies(
           String(
             movie["اسم فیلم"] || ""
           )
-          .toLowerCase();
+            .toLowerCase();
 
         return title.includes(search);
 
@@ -352,12 +420,16 @@ async function searchMovies(
 
     await sendTelegramMessage(
       chatId,
+
       "❌ فیلمی با این نام پیدا نشد.\n\n" +
-      "نام دیگری وارد کنید."
+      "نام دیگری وارد کنید.",
+
+      [
+        getHomeButton()
+      ]
     );
 
     return;
-
   }
 
 
@@ -388,6 +460,11 @@ async function searchMovies(
     );
 
 
+  keyboard.push(
+    getHomeButton()
+  );
+
+
   userStates.set(
     chatId,
     {
@@ -399,11 +476,12 @@ async function searchMovies(
 
   await sendTelegramMessage(
     chatId,
+
     "🎬 نتایج جستجو:\n\n" +
     "فیلم موردنظر را انتخاب کنید:",
+
     keyboard
   );
-
 }
 
 
@@ -429,13 +507,15 @@ async function processMessage(
     userStates.delete(chatId);
 
     await sendTelegramMessage(
+
       chatId,
 
-      "سلام 👋\n\n" +
-      "به کلوپ سفید خوش آمدید 🎬\n\n" +
+      "🎬 کلوپ سفید | OXIW\n\n" +
+      "به کلوپ سفید خوش آمدید.\n\n" +
       "چه کاری می‌خواهید انجام دهید؟",
 
       getMainKeyboard()
+
     );
 
     return;
@@ -461,13 +541,14 @@ async function processMessage(
 
 
   await sendTelegramMessage(
+
     chatId,
 
     "برای شروع، از منوی زیر یک گزینه را انتخاب کنید:",
 
     getMainKeyboard()
-  );
 
+  );
 }
 
 
@@ -486,66 +567,216 @@ async function processCallback(
     callback.data;
 
 
-  /* جستجوی فیلم */
+  /* تأیید کلیک دکمه */
+
+  try {
+
+    await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
+
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify({
+          callback_query_id:
+            callback.id
+        })
+
+      }
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Callback acknowledgement error:",
+      error
+    );
+
+  }
+
+
+  /* =========================
+     منوی اصلی
+  ========================= */
+
+  if (data === "main_menu") {
+
+    userStates.delete(chatId);
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "🎬 کلوپ سفید | OXIW\n\n" +
+      "به کلوپ سفید خوش آمدید.\n\n" +
+      "چه کاری می‌خواهید انجام دهید؟",
+
+      getMainKeyboard()
+
+    );
+
+    return;
+  }
+
+
+  /* =========================
+     جستجوی فیلم
+  ========================= */
 
   if (data === "search_movie") {
 
     userStates.set(
+
       chatId,
+
       {
         mode: "search_movie"
       }
+
     );
 
+
     await sendTelegramMessage(
+
       chatId,
-      "🔍 نام فیلم موردنظرتان را وارد کنید:"
+
+      "🔍 نام فیلم موردنظرتان را وارد کنید:",
+
+      [
+        getHomeButton()
+      ]
+
     );
 
     return;
   }
 
 
-  /* جستجوی سریال */
+  /* =========================
+     جستجوی سریال
+  ========================= */
 
   if (data === "search_series") {
 
     await sendTelegramMessage(
+
       chatId,
-      "📺 جستجوی سریال در مرحله بعد اضافه می‌شود."
+
+      "📺 جستجوی سریال در مرحله بعد اضافه می‌شود.",
+
+      [
+        getHomeButton()
+      ]
+
     );
 
     return;
   }
 
 
-  /* پیشنهاد تصادفی */
+  /* =========================
+     جدیدها
+  ========================= */
+
+  if (data === "new_movies") {
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "🆕 بخش جدیدها به‌زودی اضافه می‌شود.",
+
+      [
+        getHomeButton()
+      ]
+
+    );
+
+    return;
+  }
+
+
+  /* =========================
+     راهنما
+  ========================= */
+
+  if (data === "help") {
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "ℹ️ راهنمای کلوپ سفید\n\n" +
+
+      "🎬 برای پیدا کردن فیلم، " +
+      "جستجوی فیلم را انتخاب کنید.\n\n" +
+
+      "📺 بخش سریال در مرحله بعد فعال می‌شود.\n\n" +
+
+      "🎲 پیشنهاد تصادفی و ⭐ پیشنهاد کلوپ سفید " +
+      "نیز در مراحل بعد فعال می‌شوند.",
+
+      [
+        getHomeButton()
+      ]
+
+    );
+
+    return;
+  }
+
+
+  /* =========================
+     پیشنهاد تصادفی
+  ========================= */
 
   if (data === "random_movie") {
 
     await sendTelegramMessage(
+
       chatId,
-      "🎲 پیشنهاد تصادفی در مرحله بعد اضافه می‌شود."
+
+      "🎲 پیشنهاد تصادفی در مرحله بعد اضافه می‌شود.",
+
+      [
+        getHomeButton()
+      ]
+
     );
 
     return;
   }
 
 
-  /* پیشنهاد کلوپ */
+  /* =========================
+     پیشنهاد کلوپ
+  ========================= */
 
   if (data === "club_recommend") {
 
     await sendTelegramMessage(
+
       chatId,
-      "⭐ پیشنهادهای کلوپ سفید در مرحله بعد اضافه می‌شود."
+
+      "⭐ پیشنهادهای کلوپ سفید در مرحله بعد اضافه می‌شود.",
+
+      [
+        getHomeButton()
+      ]
+
     );
 
     return;
   }
 
 
-  /* انتخاب فیلم */
+  /* =========================
+     انتخاب فیلم
+  ========================= */
 
   if (
     data.startsWith("movie_")
@@ -555,6 +786,7 @@ async function processCallback(
       Number(
         data.replace("movie_", "")
       );
+
 
     const state =
       userStates.get(chatId);
@@ -567,9 +799,16 @@ async function processCallback(
     ) {
 
       await sendTelegramMessage(
+
         chatId,
+
         "⚠️ این نتیجه دیگر در دسترس نیست.\n\n" +
-        "لطفاً دوباره جستجو کنید."
+        "لطفاً دوباره جستجو کنید.",
+
+        [
+          getHomeButton()
+        ]
+
       );
 
       return;
@@ -581,11 +820,14 @@ async function processCallback(
 
 
     userStates.set(
+
       chatId,
+
       {
         ...state,
         selectedMovie: movie
       }
+
     );
 
 
@@ -594,11 +836,14 @@ async function processCallback(
       movie
     );
 
+
     return;
   }
 
 
-  /* بازگشت */
+  /* =========================
+     بازگشت به نتایج
+  ========================= */
 
   if (data === "back_results") {
 
@@ -612,9 +857,16 @@ async function processCallback(
     ) {
 
       await sendTelegramMessage(
+
         chatId,
+
         "نتایج قبلی دیگر در دسترس نیست.\n\n" +
-        "لطفاً دوباره جستجو کنید."
+        "لطفاً دوباره جستجو کنید.",
+
+        [
+          getHomeButton()
+        ]
+
       );
 
       return;
@@ -629,10 +881,12 @@ async function processCallback(
             movie["اسم فیلم"] ||
             "بدون نام";
 
+
           const year =
             movie["سال"]
               ? ` — ${movie["سال"]}`
               : "";
+
 
           return [
             {
@@ -648,12 +902,20 @@ async function processCallback(
       );
 
 
+    keyboard.push(
+      getHomeButton()
+    );
+
+
     await sendTelegramMessage(
+
       chatId,
 
-      "🎬 نتایج جستجو:",
+      "🎬 نتایج جستجو:\n\n" +
+      "فیلم موردنظر را انتخاب کنید:",
 
       keyboard
+
     );
 
     return;
@@ -666,13 +928,18 @@ async function processCallback(
    Webhook
 ========================= */
 
-app.get("/", (req, res) => {
+app.get(
+  "/",
+  (req, res) => {
 
-  res
-    .status(200)
-    .send("OXIW Telegram Bot OK");
+    res
+      .status(200)
+      .send(
+        "OXIW Telegram Bot OK"
+      );
 
-});
+  }
+);
 
 
 app.post(
@@ -685,7 +952,8 @@ app.post(
     );
 
 
-    // پاسخ فوری به Telegram
+    /* پاسخ فوری به Telegram */
+
     res
       .status(200)
       .send("OK");
@@ -693,7 +961,9 @@ app.post(
 
     try {
 
-      if (req.body.callback_query) {
+      if (
+        req.body.callback_query
+      ) {
 
         await processCallback(
           req.body.callback_query
@@ -702,7 +972,9 @@ app.post(
       }
 
 
-      if (req.body.message) {
+      if (
+        req.body.message
+      ) {
 
         await processMessage(
           req.body.message
@@ -729,6 +1001,7 @@ app.post(
 
 app.listen(
   PORT,
+
   () => {
 
     console.log(
