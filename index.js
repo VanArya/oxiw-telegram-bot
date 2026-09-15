@@ -229,6 +229,55 @@ async function registerTelegramMovieView(message, movie) {
   );
 }
 
+async function registerTelegramSeriesView(message, series) {
+  const sheets = await getGoogleSheets();
+
+  const user = message.from || {};
+
+  const visitorId = user.id
+    ? String(user.id)
+    : "UNKNOWN";
+
+  const username = user.username
+    ? "@" + user.username
+    : "";
+
+  const name =
+    [user.first_name, user.last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "مهمان";
+
+  const seriesName =
+    series["اسم فیلم"] ||
+    series["اسم  فیلم"] ||
+    "بدون نام";
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "بازدید فیلم ها",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[
+        new Date(),
+        seriesName,
+        visitorId,
+        username,
+        name
+      ]]
+    }
+  });
+
+  console.log(
+    "Telegram series view registered:",
+    seriesName,
+    visitorId,
+    username,
+    name
+  );
+}
+
 /* =========================
    Telegram
 ========================= */
@@ -535,6 +584,27 @@ async function showSeries(
   series
 ) {
 
+  try {
+    const state =
+      userStates.get(chatId);
+
+    await registerTelegramSeriesView(
+      {
+        from:
+          state?.telegramUser || {}
+      },
+      series
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Telegram series view log error:",
+      error
+    );
+
+  }
+  
     let message =
     `📺 ${series["اسم فیلم"] || "بدون نام"}\n\n`;
 
