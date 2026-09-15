@@ -109,9 +109,12 @@ async function getSeries() {
     return [];
   }
 
+  // نرمال‌سازی نام ستون‌ها
   const headers =
     values[0].map(header =>
-      String(header).trim()
+      String(header)
+        .trim()
+        .replace(/\s+/g, " ")
     );
 
   return values
@@ -133,6 +136,7 @@ async function getSeries() {
       return series;
     });
 }
+
 
 /* =========================
    Telegram
