@@ -391,6 +391,22 @@ async function showMovie(
   movie
 ) {
 
+  try {
+    const state = userStates.get(chatId);
+
+    await registerTelegramMovieView(
+      {
+        from: state?.telegramUser || {}
+      },
+      movie
+    );
+  } catch (error) {
+    console.error(
+      "Telegram movie view log error:",
+      error
+    );
+  }
+  
   let message =
     `🎬 ${movie["اسم فیلم"] || "بدون نام"}\n\n`;
 
