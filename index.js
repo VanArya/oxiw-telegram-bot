@@ -915,6 +915,15 @@ async function processMessage(
 
     userStates.delete(chatId);
 
+    try {
+  await registerTelegramVisit(message);
+} catch (error) {
+  console.error(
+    "Telegram visit log error:",
+    error
+  );
+}
+    
     await sendTelegramMessage(
 
       chatId,
