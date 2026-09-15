@@ -1022,22 +1022,34 @@ if (data === "search_series") {
      پیشنهاد تصادفی
   ========================= */
 
-  if (data === "random_movie") {
+ if (data === "random_movie") {
 
-    await sendTelegramMessage(
+  await sendTelegramMessage(
+    chatId,
 
-      chatId,
+    "🎲 پیشنهاد تصادفی\n\n" +
+    "چه نوع محتوایی می‌خواهید؟",
 
-      "🎲 پیشنهاد تصادفی در مرحله بعد اضافه می‌شود.",
-
+    [
       [
-        getHomeButton()
-      ]
+        {
+          text: "🎬 سینمایی خارجی",
+          callback_data: "random_cinema"
+        }
+      ],
+      [
+        {
+          text: "📺 سریال خارجی",
+          callback_data: "random_series"
+        }
+      ],
+      getHomeButton()
+    ]
 
-    );
+  );
 
-    return;
-  }
+  return;
+}
 
 
   /* =========================
