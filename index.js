@@ -1054,20 +1054,32 @@ if (data === "search_series") {
 
   if (data === "club_recommend") {
 
-    await sendTelegramMessage(
+  await sendTelegramMessage(
+    chatId,
 
-      chatId,
+    "⭐ پیشنهاد کلوپ سفید\n\n" +
+    "چه نوع محتوایی می‌خواهید؟",
 
-      "⭐ پیشنهادهای کلوپ سفید در مرحله بعد اضافه می‌شود.",
-
+    [
       [
-        getHomeButton()
-      ]
+        {
+          text: "🎬 سینمایی خارجی",
+          callback_data: "recommend_cinema"
+        }
+      ],
+      [
+        {
+          text: "📺 سریال خارجی",
+          callback_data: "recommend_series"
+        }
+      ],
+      getHomeButton()
+    ]
 
-    );
+  );
 
-    return;
-  }
+  return;
+}
 
 /* =========================
    انتخاب سریال
