@@ -647,6 +647,11 @@ async function searchSeries(
   const series =
     await getSeries();
 
+console.log(
+  "SERIES SAMPLE:",
+  JSON.stringify(series.slice(0, 3))
+);
+  
   const search =
     searchText
       .trim()
