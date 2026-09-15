@@ -91,6 +91,48 @@ async function getMovies() {
     });
 }
 
+async function getSeries() {
+
+  const sheets =
+    await getGoogleSheets();
+
+  const response =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "سریال"
+    });
+
+  const values =
+    response.data.values || [];
+
+  if (values.length < 2) {
+    return [];
+  }
+
+  const headers =
+    values[0].map(header =>
+      String(header).trim()
+    );
+
+  return values
+    .slice(1)
+    .filter(row =>
+      row.some(value =>
+        String(value || "").trim() !== ""
+      )
+    )
+    .map(row => {
+
+      const series = {};
+
+      headers.forEach((header, index) => {
+        series[header] =
+          row[index] || "";
+      });
+
+      return series;
+    });
+}
 
 /* =========================
    Telegram
@@ -381,6 +423,119 @@ async function showMovie(
   );
 }
 
+async function showSeries(
+  chatId,
+  series
+) {
+
+  let message =
+    `📺 ${series["اسم فیلم"] || "بدون نام"}\n\n`;
+
+  if (series["سال"]) {
+    message +=
+      `📅 سال: ${series["سال"]}\n`;
+  }
+
+  if (series["ژانر"]) {
+    message +=
+      `🎭 ژانر: ${series["ژانر"]}\n`;
+  }
+
+  if (series["امتیاز"]) {
+    message +=
+      `⭐ امتیاز: ${series["امتیاز"]}\n`;
+  }
+
+  if (series["زبان"]) {
+    message +=
+      `🌐 زبان: ${series["زبان"]}\n`;
+  }
+
+  if (series["بازیگران"]) {
+    message +=
+      `\n👥 بازیگران:\n${series["بازیگران"]}\n`;
+  }
+
+  if (series["خلاصه داستان"]) {
+    message +=
+      `\n📝 خلاصه داستان:\n${series["خلاصه داستان"]}\n`;
+  }
+
+
+  const keyboard = [];
+
+
+  if (series["لینک تریلر"]) {
+
+    keyboard.push([
+      {
+        text: "▶️ تریلر",
+        url: series["لینک تریلر"]
+      }
+    ]);
+
+  }
+
+
+  keyboard.push([
+    {
+      text: "🔙 بازگشت به نتایج",
+      callback_data: "back_series_results"
+    }
+  ]);
+
+
+  keyboard.push([
+    {
+      text: "🏠 منوی اصلی",
+      callback_data: "main_menu"
+    }
+  ]);
+
+
+  const posterUrl =
+    String(
+      series["پوستر فیلم"] || ""
+    ).trim();
+
+
+  if (posterUrl) {
+
+    try {
+
+      const photoResult =
+        await sendTelegramPhoto(
+          chatId,
+          posterUrl,
+          message,
+          keyboard
+        );
+
+      if (
+        photoResult &&
+        photoResult.ok
+      ) {
+        return;
+      }
+
+    } catch (error) {
+
+      console.error(
+        "Series poster error:",
+        error
+      );
+
+    }
+
+  }
+
+
+  await sendTelegramMessage(
+    chatId,
+    message,
+    keyboard
+  );
+}
 
 /* =========================
    جستجوی فیلم
@@ -484,6 +639,108 @@ async function searchMovies(
   );
 }
 
+async function searchSeries(
+  chatId,
+  searchText
+) {
+
+  const series =
+    await getSeries();
+
+  const search =
+    searchText
+      .trim()
+      .toLowerCase();
+
+  const results =
+    series
+      .filter(item => {
+
+        const title =
+          String(
+            item["اسم فیلم"] || ""
+          ).toLowerCase();
+
+        return title.includes(search);
+
+      })
+      .slice(0, 10);
+
+
+  if (!results.length) {
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "❌ سریالی با این نام پیدا نشد.\n\n" +
+      "نام دیگری وارد کنید.",
+
+      [
+        getHomeButton()
+      ]
+
+    );
+
+    return;
+  }
+
+
+  const keyboard =
+    results.map(
+      (item, index) => {
+
+        const title =
+          item["اسم فیلم"] ||
+          "بدون نام";
+
+        const year =
+          item["سال"]
+            ? ` — ${item["سال"]}`
+            : "";
+
+        return [
+          {
+            text:
+              `${index + 1}. ${title}${year}`,
+
+            callback_data:
+              `series_${index}`
+          }
+        ];
+
+      }
+    );
+
+
+  keyboard.push(
+    getHomeButton()
+  );
+
+
+  userStates.set(
+
+    chatId,
+
+    {
+      mode: "series_results",
+      results: results
+    }
+
+  );
+
+
+  await sendTelegramMessage(
+
+    chatId,
+
+    "📺 نتایج جستجوی سریال:\n\n" +
+    "سریال موردنظر را انتخاب کنید:",
+
+    keyboard
+
+  );
+}
 
 /* =========================
    پردازش پیام
@@ -539,6 +796,18 @@ async function processMessage(
     return;
   }
 
+  if (
+  state &&
+  state.mode === "search_series"
+) {
+
+  await searchSeries(
+    chatId,
+    text
+  );
+
+  return;
+}
 
   await sendTelegramMessage(
 
@@ -660,22 +929,32 @@ async function processCallback(
      جستجوی سریال
   ========================= */
 
-  if (data === "search_series") {
+if (data === "search_series") {
 
-    await sendTelegramMessage(
+  userStates.set(
 
-      chatId,
+    chatId,
 
-      "📺 جستجوی سریال در مرحله بعد اضافه می‌شود.",
+    {
+      mode: "search_series"
+    }
 
-      [
-        getHomeButton()
-      ]
+  );
 
-    );
+  await sendTelegramMessage(
 
-    return;
-  }
+    chatId,
+
+    "📺 نام سریال موردنظرتان را وارد کنید:",
+
+    [
+      getHomeButton()
+    ]
+
+  );
+
+  return;
+}
 
 
   /* =========================
@@ -773,7 +1052,72 @@ async function processCallback(
     return;
   }
 
+/* =========================
+   انتخاب سریال
+========================= */
 
+if (
+  data.startsWith("series_")
+) {
+
+  const index =
+    Number(
+      data.replace("series_", "")
+    );
+
+
+  const state =
+    userStates.get(chatId);
+
+
+  if (
+    !state ||
+    !state.results ||
+    !state.results[index]
+  ) {
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "⚠️ این نتیجه دیگر در دسترس نیست.\n\n" +
+      "لطفاً دوباره جستجو کنید.",
+
+      [
+        getHomeButton()
+      ]
+
+    );
+
+    return;
+  }
+
+
+  const series =
+    state.results[index];
+
+
+  userStates.set(
+
+    chatId,
+
+    {
+      ...state,
+      selectedSeries: series
+    }
+
+  );
+
+
+  await showSeries(
+    chatId,
+    series
+  );
+
+
+  return;
+}
+  
   /* =========================
      انتخاب فیلم
   ========================= */
@@ -921,6 +1265,88 @@ async function processCallback(
     return;
   }
 
+/* =========================
+   بازگشت به نتایج سریال
+========================= */
+
+if (
+  data === "back_series_results"
+) {
+
+  const state =
+    userStates.get(chatId);
+
+
+  if (
+    !state ||
+    !state.results
+  ) {
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "نتایج قبلی دیگر در دسترس نیست.\n\n" +
+      "لطفاً دوباره جستجو کنید.",
+
+      [
+        getHomeButton()
+      ]
+
+    );
+
+    return;
+  }
+
+
+  const keyboard =
+    state.results.map(
+      (series, index) => {
+
+        const title =
+          series["اسم فیلم"] ||
+          "بدون نام";
+
+
+        const year =
+          series["سال"]
+            ? ` — ${series["سال"]}`
+            : "";
+
+
+        return [
+          {
+            text:
+              `${index + 1}. ${title}${year}`,
+
+            callback_data:
+              `series_${index}`
+          }
+        ];
+
+      }
+    );
+
+
+  keyboard.push(
+    getHomeButton()
+  );
+
+
+  await sendTelegramMessage(
+
+    chatId,
+
+    "📺 نتایج جستجوی سریال:\n\n" +
+    "سریال موردنظر را انتخاب کنید:",
+
+    keyboard
+
+  );
+
+  return;
+}
+  
 }
 
 
