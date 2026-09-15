@@ -584,10 +584,7 @@ async function showMovie(chatId, movie, isRecommendation = false) {
   );
 }
 
-async function showSeries(
-  chatId,
-  series
-) {
+async function showSeries(chatId, series, isRecommendation = false) {
 
   try {
     const state =
