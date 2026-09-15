@@ -480,9 +480,6 @@ async function showSeries(
       `\n📝 خلاصه داستان:\n${series["خلاصه داستان"]}\n`;
   }
 
-
-  const keyboard = [];
-
   const keyboard = [];
 
 
