@@ -180,6 +180,55 @@ async function registerTelegramVisit(message) {
   );
 }
 
+async function registerTelegramMovieView(message, movie) {
+  const sheets = await getGoogleSheets();
+
+  const user = message.from || {};
+
+  const visitorId = user.id
+    ? String(user.id)
+    : "UNKNOWN";
+
+  const username = user.username
+    ? "@" + user.username
+    : "";
+
+  const name =
+    [user.first_name, user.last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "مهمان";
+
+  const movieName =
+    movie["اسم فیلم"] ||
+    movie["اسم  فیلم"] ||
+    "بدون نام";
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "بازدید فیلم ها",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[
+        new Date(),
+        movieName,
+        visitorId,
+        username,
+        name
+      ]]
+    }
+  });
+
+  console.log(
+    "Telegram movie view registered:",
+    movieName,
+    visitorId,
+    username,
+    name
+  );
+}
+
 /* =========================
    Telegram
 ========================= */
@@ -943,7 +992,20 @@ async function processMessage(
   const state =
     userStates.get(chatId);
 
+if (message.from) {
+  const currentState =
+    userStates.get(chatId) || {};
 
+  currentState.telegramUser =
+    message.from;
+
+  userStates.set(
+    chatId,
+    currentState
+  );
+}
+
+  
   if (
     state &&
     state.mode === "search_movie"
