@@ -260,10 +260,6 @@ function getMainKeyboard() {
 
     [
       {
-        text: "🎲 پیشنهاد تصادفی",
-        callback_data: "random_movie"
-      },
-      {
         text: "⭐ پیشنهاد کلوپ سفید",
         callback_data: "club_recommend"
       }
