@@ -435,10 +435,7 @@ function getHomeButton() {
    نمایش جزئیات فیلم
 ========================= */
 
-async function showMovie(
-  chatId,
-  movie
-) {
+async function showMovie(chatId, movie, isRecommendation = false) {
 
   try {
     const state = userStates.get(chatId);
@@ -516,6 +513,14 @@ async function showMovie(
 
   }
 
+  if (isRecommendation) {
+  keyboard.push([
+    {
+      text: "🔄 پیشنهاد بعدی",
+      callback_data: "recommend_next_cinema"
+    }
+  ]);
+}
 
   keyboard.push([
     {
@@ -973,20 +978,58 @@ async function recommendCinema(
     return;
   }
 
+  const state =
+    userStates.get(chatId) || {};
+
+  const shownRecommendations =
+    state.shownRecommendations || [];
+
+  const available =
+    recommended.filter(movie => {
+
+      const code =
+        String(
+          movie["کد سیستم"] || ""
+        ).trim();
+
+      return !shownRecommendations.includes(code);
+    });
+
+  const candidates =
+    available.length
+      ? available
+      : recommended;
+
   const randomIndex =
     Math.floor(
-      Math.random() * recommended.length
+      Math.random() * candidates.length
     );
 
   const movie =
-    recommended[randomIndex];
+    candidates[randomIndex];
+
+  const movieCode =
+    String(
+      movie["کد سیستم"] || ""
+    ).trim();
+
+  userStates.set(
+    chatId,
+    {
+      ...state,
+      shownRecommendations: [
+        ...shownRecommendations,
+        movieCode
+      ]
+    }
+  );
 
   await showMovie(
-    chatId,
-    movie
-  );
+  chatId,
+  movie,
+  true
+);
 }
-
 
 async function recommendSeries(
   chatId
@@ -1486,6 +1529,19 @@ if (
     series
   );
 
+
+  return;
+}
+
+/* =========================
+   پیشنهاد بعدی سینمایی
+========================= */
+
+if (data === "recommend_next_cinema") {
+
+  await recommendCinema(
+    chatId
+  );
 
   return;
 }
