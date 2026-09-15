@@ -1044,11 +1044,11 @@ async function recommendSeries(
   chatId
 ) {
 
-  const series =
-    await getSeries();
+  const allSeries =
+  await getSeries();
 
-  const recommended =
-    series.filter(item =>
+const recommended =
+  allSeries.filter(item =>
       String(
         item["پیشنهادی"] || ""
       ).trim() === "پیشنهادی"
