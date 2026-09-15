@@ -428,39 +428,60 @@ async function showSeries(
   series
 ) {
 
-  let message =
+    let message =
     `📺 ${series["اسم فیلم"] || "بدون نام"}\n\n`;
 
-  if (series["سال"]) {
+  if (
+    series["سال شروع"] ||
+    series["سال پایان"]
+  ) {
+
     message +=
-      `📅 سال: ${series["سال"]}\n`;
+      `📅 سال پخش: ` +
+      `${series["سال شروع"] || "نامشخص"}` +
+      ` تا ` +
+      `${series["سال پایان"] || "نامشخص"}\n`;
+  }
+
+  if (series["تعداد فصل و قسمت"]) {
+
+    message +=
+      `📺 تعداد فصل و قسمت: ` +
+      `${series["تعداد فصل و قسمت"]}\n`;
   }
 
   if (series["ژانر"]) {
+
     message +=
       `🎭 ژانر: ${series["ژانر"]}\n`;
   }
 
   if (series["امتیاز"]) {
+
     message +=
       `⭐ امتیاز: ${series["امتیاز"]}\n`;
   }
 
   if (series["زبان"]) {
+
     message +=
       `🌐 زبان: ${series["زبان"]}\n`;
   }
 
   if (series["بازیگران"]) {
+
     message +=
       `\n👥 بازیگران:\n${series["بازیگران"]}\n`;
   }
 
   if (series["خلاصه داستان"]) {
+
     message +=
       `\n📝 خلاصه داستان:\n${series["خلاصه داستان"]}\n`;
   }
 
+
+  const keyboard = [];
 
   const keyboard = [];
 
