@@ -137,6 +137,48 @@ async function getSeries() {
     });
 }
 
+async function registerTelegramVisit(message) {
+  const sheets = await getGoogleSheets();
+
+  const user = message.from || {};
+
+  const telegramId = user.id
+    ? String(user.id)
+    : "";
+
+  const username = user.username
+    ? "@" + user.username
+    : "";
+
+  const name =
+    [user.first_name, user.last_name]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "بازدیدها",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[
+        new Date(),
+        "تلگرام",
+        telegramId,
+        username,
+        name
+      ]]
+    }
+  });
+
+  console.log(
+    "Telegram visit registered:",
+    telegramId,
+    username,
+    name
+  );
+}
 
 /* =========================
    Telegram
