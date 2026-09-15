@@ -1074,7 +1074,19 @@ async function processCallback(
   const data =
     callback.data;
 
+  if (callback.from) {
+    const currentState =
+      userStates.get(chatId) || {};
 
+    currentState.telegramUser =
+      callback.from;
+
+    userStates.set(
+      chatId,
+      currentState
+    );
+  }
+  
   /* تأیید کلیک دکمه */
 
   try {
