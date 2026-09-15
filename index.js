@@ -676,7 +676,16 @@ async function showSeries(
 
   }
 
+if (isRecommendation) {
+  keyboard.push([
+    {
+      text: "🔄 پیشنهاد بعدی",
+      callback_data: "recommend_next_series"
+    }
+  ]);
+}
 
+  
   keyboard.push([
     {
       text: "🔙 بازگشت به نتایج",
@@ -1058,17 +1067,56 @@ async function recommendSeries(
     return;
   }
 
+  const state =
+    userStates.get(chatId) || {};
+
+  const shownRecommendations =
+    state.shownSeriesRecommendations || [];
+
+  const available =
+    recommended.filter(item => {
+
+      const code =
+        String(
+          item["کد سیستم"] || ""
+        ).trim();
+
+      return !shownRecommendations.includes(code);
+    });
+
+  const candidates =
+    available.length
+      ? available
+      : recommended;
+
   const randomIndex =
     Math.floor(
-      Math.random() * recommended.length
+      Math.random() * candidates.length
     );
 
-  const selectedSeries =
-    recommended[randomIndex];
+  const series =
+    candidates[randomIndex];
+
+  const seriesCode =
+    String(
+      series["کد سیستم"] || ""
+    ).trim();
+
+  userStates.set(
+    chatId,
+    {
+      ...state,
+      shownSeriesRecommendations: [
+        ...shownRecommendations,
+        seriesCode
+      ]
+    }
+  );
 
   await showSeries(
     chatId,
-    selectedSeries
+    series,
+    true
   );
 }
 
@@ -1466,6 +1514,19 @@ if (data === "search_series") {
 
     return;
   }
+
+/* =========================
+   پیشنهاد بعدی سریال
+========================= */
+
+if (data === "recommend_next_series") {
+
+  await recommendSeries(
+    chatId
+  );
+
+  return;
+}
   
 /* =========================
    انتخاب سریال
