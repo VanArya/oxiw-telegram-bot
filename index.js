@@ -748,6 +748,93 @@ console.log(
 }
 
 /* =========================
+   پیشنهاد کلوپ سفید
+========================= */
+
+async function recommendCinema(
+  chatId
+) {
+
+  const movies =
+    await getMovies();
+
+  const recommended =
+    movies.filter(movie =>
+      String(
+        movie["پیشنهادی"] || ""
+      ).trim() === "پیشنهادی"
+    );
+
+  if (!recommended.length) {
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ در حال حاضر فیلم پیشنهادی‌ای وجود ندارد.",
+      [
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+
+  const randomIndex =
+    Math.floor(
+      Math.random() * recommended.length
+    );
+
+  const movie =
+    recommended[randomIndex];
+
+  await showMovie(
+    chatId,
+    movie
+  );
+}
+
+
+async function recommendSeries(
+  chatId
+) {
+
+  const series =
+    await getSeries();
+
+  const recommended =
+    series.filter(item =>
+      String(
+        item["پیشنهادی"] || ""
+      ).trim() === "پیشنهادی"
+    );
+
+  if (!recommended.length) {
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ در حال حاضر سریال پیشنهادی‌ای وجود ندارد.",
+      [
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+
+  const randomIndex =
+    Math.floor(
+      Math.random() * recommended.length
+    );
+
+  const selectedSeries =
+    recommended[randomIndex];
+
+  await showSeries(
+    chatId,
+    selectedSeries
+  );
+}
+
+/* =========================
    پردازش پیام
 ========================= */
 
@@ -1081,6 +1168,33 @@ if (data === "search_series") {
   return;
 }
 
+  /* =========================
+     پیشنهاد سینمایی کلوپ سفید
+  ========================= */
+
+  if (data === "recommend_cinema") {
+
+    await recommendCinema(
+      chatId
+    );
+
+    return;
+  }
+
+
+  /* =========================
+     پیشنهاد سریال کلوپ سفید
+  ========================= */
+
+  if (data === "recommend_series") {
+
+    await recommendSeries(
+      chatId
+    );
+
+    return;
+  }
+  
 /* =========================
    انتخاب سریال
 ========================= */
