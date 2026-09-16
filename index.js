@@ -137,6 +137,114 @@ async function getSeries() {
     });
 }
 
+/* =========================
+   کیف پول توکن
+========================= */
+
+async function getOrCreateWallet(
+  chatId,
+  telegramUser
+) {
+
+  const sheets =
+    await getGoogleSheets();
+
+  const telegramId =
+    String(
+      telegramUser?.id || chatId
+    );
+
+  const name =
+    [
+      telegramUser?.first_name,
+      telegramUser?.last_name
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+  const response =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "کیف پول"
+    });
+
+  const values =
+    response.data.values || [];
+
+  /*
+    اگر کیف پول وجود داشته باشد
+    موجودی آن را برمی‌گردانیم.
+  */
+
+  for (let i = 1; i < values.length; i++) {
+
+    const row =
+      values[i];
+
+    const rowTelegramId =
+      String(row[0] || "").trim();
+
+    if (rowTelegramId === telegramId) {
+
+      return {
+        telegramId: telegramId,
+        name: row[1] || name,
+        balance: Number(row[2] || 0),
+        exists: true
+      };
+    }
+  }
+
+  /*
+    اگر کیف پول وجود نداشته باشد،
+    یک کیف پول جدید با موجودی صفر می‌سازیم.
+  */
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "کیف پول",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[
+        telegramId,
+        name,
+        0,
+        new Date()
+      ]]
+    }
+  });
+
+  console.log(
+    "New wallet created:",
+    telegramId,
+    name
+  );
+
+  return {
+    telegramId: telegramId,
+    name: name,
+    balance: 0,
+    exists: false
+  };
+}
+
+
+async function getWalletBalance(
+  chatId,
+  telegramUser
+) {
+
+  const wallet =
+    await getOrCreateWallet(
+      chatId,
+      telegramUser
+    );
+
+  return wallet.balance;
+}
+
 async function registerTelegramVisit(message) {
   const sheets = await getGoogleSheets();
 
@@ -405,6 +513,13 @@ function getMainKeyboard() {
       }
     ],
 
+[
+  {
+    text: "💰 کیف پول",
+    callback_data: "wallet"
+  }
+],
+    
     [
       {
         text: "🆕 جدیدها",
