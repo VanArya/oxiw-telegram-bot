@@ -619,9 +619,9 @@ async function sendTelegramPhoto(
    منوی اصلی
 ========================= */
 
-function getMainKeyboard() {
+function getMainKeyboard(chatId) {
 
-  return [
+  const keyboard = [
 
     [
       {
@@ -641,13 +641,13 @@ function getMainKeyboard() {
       }
     ],
 
-[
-  {
-    text: "💰 کیف پول",
-    callback_data: "wallet"
-  }
-],
-    
+    [
+      {
+        text: "💰 کیف پول",
+        callback_data: "wallet"
+      }
+    ],
+
     [
       {
         text: "🆕 جدیدها",
@@ -660,8 +660,20 @@ function getMainKeyboard() {
     ]
 
   ];
-}
 
+  if (isAdmin(chatId)) {
+
+    keyboard.push([
+      {
+        text: "👨‍💼 مدیریت",
+        callback_data: "admin_panel"
+      }
+    ]);
+
+  }
+
+  return keyboard;
+}
 
 function getHomeButton() {
 
@@ -1398,7 +1410,7 @@ async function processMessage(
       "به کلوپ سفید خوش آمدید.\n\n" +
       "چه کاری می‌خواهید انجام دهید؟",
 
-      getMainKeyboard()
+      getMainKeyboard(chatId)
 
     );
 
@@ -1534,7 +1546,7 @@ if (message.from) {
 
     "برای شروع، از منوی زیر یک گزینه را انتخاب کنید:",
 
-    getMainKeyboard()
+    getMainKeyboard(chatId)
 
   );
 }
@@ -1615,7 +1627,7 @@ async function processCallback(
       "به کلوپ سفید خوش آمدید.\n\n" +
       "چه کاری می‌خواهید انجام دهید؟",
 
-      getMainKeyboard()
+      getMainKeyboard(chatId)
 
     );
 
