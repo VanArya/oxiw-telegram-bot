@@ -1551,6 +1551,187 @@ if (message.from) {
   );
 }
 
+/* =========================
+   نمایش درخواست‌های پرداخت
+========================= */
+
+async function showAdminPayments(chatId) {
+
+  if (!isAdmin(chatId)) {
+    await sendTelegramMessage(
+      chatId,
+      "⛔️ شما دسترسی مدیریت ندارید.",
+      [
+        getHomeButton()
+      ]
+    );
+    return;
+  }
+
+  try {
+
+    const sheets =
+      await getGoogleSheets();
+
+    const response =
+      await sheets.spreadsheets.values.get({
+        spreadsheetId:
+          SPREADSHEET_ID,
+        range:
+          "درخواست پرداخت"
+      });
+
+    const values =
+      response.data.values || [];
+
+    const pendingRequests = [];
+
+    for (
+      let i = 1;
+      i < values.length;
+      i++
+    ) {
+
+      const row =
+        values[i];
+
+      const status =
+        String(row[6] || "").trim();
+
+      if (
+        status === "در انتظار بررسی"
+      ) {
+
+        pendingRequests.push({
+          rowNumber: i + 1,
+          time: row[0] || "",
+          telegramId: row[1] || "",
+          name: row[2] || "بدون نام",
+          packageName: row[3] || "",
+          amount: Number(row[4] || 0),
+          tokenAmount: Number(row[5] || 0),
+          status: status,
+          trackingCode: row[7] || "",
+          receiptFileId: row[8] || ""
+        });
+
+      }
+
+    }
+
+    if (pendingRequests.length === 0) {
+
+      await sendTelegramMessage(
+        chatId,
+        "💳 درخواست‌های پرداخت\n\n" +
+        "✅ در حال حاضر هیچ درخواست پرداختی در انتظار بررسی نیست.",
+        [
+          [
+            {
+              text: "🔙 پنل مدیریت",
+              callback_data: "admin_panel"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    await sendTelegramMessage(
+      chatId,
+      "💳 درخواست‌های پرداخت\n\n" +
+      `📋 تعداد درخواست‌های در انتظار بررسی: ${pendingRequests.length}`,
+      [
+        [
+          {
+            text: "🔄 بروزرسانی",
+            callback_data: "admin_payments"
+          }
+        ],
+        [
+          {
+            text: "🔙 پنل مدیریت",
+            callback_data: "admin_panel"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+    for (const request of pendingRequests) {
+
+      const text =
+        "💳 درخواست پرداخت\n\n" +
+        `👤 نام: ${request.name}\n` +
+        `🆔 شماره تلگرام: ${request.telegramId}\n` +
+        `🎟 بسته: ${request.packageName}\n` +
+        `🔢 تعداد توکن: ${request.tokenAmount}\n` +
+        `💰 مبلغ: ${request.amount.toLocaleString("en-US")} تومان\n` +
+        `🕐 زمان درخواست: ${request.time}\n` +
+        `📌 ردیف شیت: ${request.rowNumber}`;
+
+      if (request.receiptFileId) {
+
+        await sendTelegramPhoto(
+          chatId,
+          request.receiptFileId,
+          text,
+          [
+            [
+              {
+                text: "⏳ در انتظار بررسی",
+                callback_data: `admin_payment_${request.rowNumber}`
+              }
+            ]
+          ]
+        );
+
+      } else {
+
+        await sendTelegramMessage(
+          chatId,
+          text +
+          "\n\n⚠️ برای این درخواست رسید ثبت نشده است.",
+          [
+            [
+              {
+                text: "⏳ در انتظار بررسی",
+                callback_data: `admin_payment_${request.rowNumber}`
+              }
+            ]
+          ]
+        );
+
+      }
+
+    }
+
+  } catch (error) {
+
+    console.error(
+      "Admin payments error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ در دریافت درخواست‌های پرداخت مشکلی پیش آمد.",
+      [
+        [
+          {
+            text: "🔙 پنل مدیریت",
+            callback_data: "admin_panel"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  }
+
+}
 
 /* =========================
    پردازش دکمه‌ها
@@ -1665,6 +1846,17 @@ async function processCallback(
         getHomeButton()
       ]
     );
+
+    return;
+  }
+
+  /* =========================
+     درخواست‌های پرداخت مدیریت
+  ========================= */
+
+  if (data === "admin_payments") {
+
+    await showAdminPayments(chatId);
 
     return;
   }
