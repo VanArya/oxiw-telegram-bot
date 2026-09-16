@@ -387,6 +387,128 @@ async function registerTelegramSeriesView(message, series) {
 }
 
 /* =========================
+   ثبت رسید پرداخت
+========================= */
+
+async function registerPaymentReceipt(
+  message,
+  fileId
+) {
+
+  const sheets =
+    await getGoogleSheets();
+
+  const telegramUser =
+    message.from || {};
+
+  const telegramId =
+    telegramUser.id
+      ? String(telegramUser.id)
+      : String(message.chat.id);
+
+  const response =
+    await sheets.spreadsheets.values.get({
+      spreadsheetId:
+        SPREADSHEET_ID,
+      range:
+        "درخواست پرداخت"
+    });
+
+  const values =
+    response.data.values || [];
+
+  /*
+    پیدا کردن آخرین درخواست پرداخت
+    همین کاربر که هنوز منتظر رسید است.
+  */
+
+  let targetRow = -1;
+
+  for (
+    let i = values.length - 1;
+    i >= 1;
+    i--
+  ) {
+
+    const row =
+      values[i];
+
+    const rowTelegramId =
+      String(row[1] || "").trim();
+
+    const status =
+      String(row[6] || "").trim();
+
+    if (
+      rowTelegramId === telegramId &&
+      status === "در انتظار رسید"
+    ) {
+
+      targetRow =
+        i + 1;
+
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+
+    return {
+      success: false,
+      reason: "NO_PENDING_REQUEST"
+    };
+  }
+
+  /*
+    ستون‌ها:
+    1 زمان درخواست
+    2 شماره تلگرام
+    3 نام کاربر
+    4 بسته
+    5 مبلغ
+    6 توکن
+    7 وضعیت
+    8 کد پیگیری
+    9 رسید file_id
+    10 زمان بررسی
+    11 توضیح مدیر
+  */
+
+  await sheets.spreadsheets.values.update({
+
+    spreadsheetId:
+      SPREADSHEET_ID,
+
+    range:
+      `درخواست پرداخت!G${targetRow}:I${targetRow}`,
+
+    valueInputOption:
+      "USER_ENTERED",
+
+    requestBody: {
+      values: [[
+        "در انتظار بررسی",
+        "",
+        fileId
+      ]]
+    }
+
+  });
+
+  console.log(
+    "Payment receipt registered:",
+    telegramId,
+    "row:",
+    targetRow
+  );
+
+  return {
+    success: true,
+    row: targetRow
+  };
+}
+
+/* =========================
    Telegram
 ========================= */
 
@@ -1277,6 +1399,85 @@ async function processMessage(
     return;
   }
 
+  /* =========================
+   دریافت رسید پرداخت
+========================= */
+
+if (
+  message.photo &&
+  message.photo.length
+) {
+
+  const photo =
+    message.photo[
+      message.photo.length - 1
+    ];
+
+  const fileId =
+    photo.file_id;
+
+  try {
+
+    const result =
+      await registerPaymentReceipt(
+        message,
+        fileId
+      );
+
+    if (!result.success) {
+
+      await sendTelegramMessage(
+        chatId,
+
+        "⚠️ درخواست پرداختی که منتظر رسید باشد پیدا نشد.",
+
+        [
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    await sendTelegramMessage(
+      chatId,
+
+      "✅ رسید شما دریافت شد.\n\n" +
+      "درخواست پرداخت شما در انتظار بررسی مدیر قرار گرفت.\n\n" +
+      "پس از تأیید پرداخت، توکن‌ها به کیف پول شما اضافه خواهند شد.",
+
+      [
+        [
+          {
+            text: "💰 کیف پول",
+            callback_data: "wallet"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Payment receipt error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+
+      "❌ در ثبت رسید مشکلی پیش آمد.\n\n" +
+      "لطفاً دوباره تلاش کنید.",
+
+      [
+        getHomeButton()
+      ]
+    );
+  }
+
+  return;
+}
 
   const state =
     userStates.get(chatId);
