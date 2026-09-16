@@ -13,6 +13,12 @@ const TELEGRAM_BOT_TOKEN =
 const SPREADSHEET_ID =
   "17hDL6GiIKpEn3t6-qS99e2FTXnErrI9F-eDG5uOwthc";
 
+const ADMIN_TELEGRAM_ID = "170870143";
+
+function isAdmin(chatId) {
+  return String(chatId) === ADMIN_TELEGRAM_ID;
+}
+
 const GOOGLE_KEY_FILE =
   "/etc/secrets/google-service-account.json";
 
