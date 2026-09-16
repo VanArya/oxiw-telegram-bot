@@ -1635,6 +1635,41 @@ async function processCallback(
   }
 
   /* =========================
+     پنل مدیریت
+  ========================= */
+
+  if (data === "admin_panel") {
+
+    if (!isAdmin(chatId)) {
+      await sendTelegramMessage(
+        chatId,
+        "⛔️ شما دسترسی مدیریت ندارید.",
+        [
+          getHomeButton()
+        ]
+      );
+      return;
+    }
+
+    await sendTelegramMessage(
+      chatId,
+      "👨‍💼 پنل مدیریت\n\n" +
+      "از بخش‌های زیر انتخاب کنید:",
+      [
+        [
+          {
+            text: "💳 درخواست‌های پرداخت",
+            callback_data: "admin_payments"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+  
+  /* =========================
    کیف پول
 ========================= */
 
