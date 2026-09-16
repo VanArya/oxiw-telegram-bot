@@ -1731,7 +1731,7 @@ if (data === "buy_tokens") {
   return;
 }
 
-  /* =========================
+/* =========================
    ثبت درخواست خرید توکن
 ========================= */
 
@@ -1766,7 +1766,7 @@ if (data.startsWith("token_package_")) {
 
   const pricePerToken = 8000;
 
-  const amount =
+  const baseAmount =
     tokenAmount * pricePerToken;
 
   const telegramUser =
@@ -1794,6 +1794,102 @@ if (data.startsWith("token_package_")) {
     const sheets =
       await getGoogleSheets();
 
+    /*
+      دریافت درخواست‌های پرداخت قبلی
+      برای جلوگیری از تکراری شدن مبلغ
+    */
+
+    const response =
+      await sheets.spreadsheets.values.get({
+        spreadsheetId:
+          SPREADSHEET_ID,
+        range:
+          "درخواست پرداخت"
+      });
+
+    const values =
+      response.data.values || [];
+
+    const usedAmounts =
+      new Set();
+
+    /*
+      ستون مبلغ = ستون 5
+      فقط درخواست‌های پرداختی که هنوز
+      تعیین تکلیف نشده‌اند بررسی می‌شوند.
+    */
+
+    for (
+      let i = 1;
+      i < values.length;
+      i++
+    ) {
+
+      const row =
+        values[i];
+
+      const status =
+        String(row[6] || "").trim();
+
+      const existingAmount =
+        Number(row[4] || 0);
+
+      if (
+        existingAmount &&
+        (
+          status === "در انتظار رسید" ||
+          status === "در انتظار بررسی"
+        )
+      ) {
+
+        usedAmounts.add(
+          existingAmount
+        );
+      }
+    }
+
+    /*
+      ساخت مبلغ یونیک
+      عدد اضافه بین 101 تا 999 تومان
+    */
+
+    let uniqueCode;
+    let amount;
+    let attempts = 0;
+
+    do {
+
+      uniqueCode =
+        Math.floor(
+          Math.random() * 899
+        ) + 101;
+
+      amount =
+        baseAmount +
+        uniqueCode;
+
+      attempts++;
+
+    } while (
+      usedAmounts.has(amount) &&
+      attempts < 100
+    );
+
+    /*
+      اگر به هر دلیل مبلغ یونیک پیدا نشد
+    */
+
+    if (usedAmounts.has(amount)) {
+
+      throw new Error(
+        "Unable to generate unique payment amount."
+      );
+    }
+
+    /*
+      ثبت درخواست پرداخت
+    */
+
     await sheets.spreadsheets.values.append({
 
       spreadsheetId:
@@ -1813,15 +1909,25 @@ if (data.startsWith("token_package_")) {
         values: [[
 
           new Date(),
+
           telegramId,
+
           name,
+
           packageName,
+
           amount,
+
           tokenAmount,
+
           "در انتظار رسید",
+
           "",
+
           "",
+
           "",
+
           ""
 
         ]]
@@ -1829,6 +1935,10 @@ if (data.startsWith("token_package_")) {
       }
 
     });
+
+    /*
+      ارسال مبلغ اختصاصی به کاربر
+    */
 
     await sendTelegramMessage(
 
@@ -1838,7 +1948,9 @@ if (data.startsWith("token_package_")) {
 
       `🎟 بسته: ${packageName}\n` +
 
-      `💰 مبلغ: ${amount.toLocaleString("en-US")} تومان\n\n` +
+      `💰 مبلغ قابل پرداخت: ${amount.toLocaleString("en-US")} تومان\n\n` +
+
+      "⚠️ لطفاً دقیقاً همین مبلغ را واریز کنید.\n\n" +
 
       "لطفاً مبلغ را به کارت زیر واریز کنید و " +
       "سپس تصویر رسید پرداخت را ارسال کنید.\n\n" +
@@ -1847,19 +1959,23 @@ if (data.startsWith("token_package_")) {
       "شماره کارت شما",
 
       [
+
         [
           {
             text: "📎 ارسال رسید",
             callback_data: "send_payment_receipt"
           }
         ],
+
         [
           {
             text: "💰 کیف پول",
             callback_data: "wallet"
           }
         ],
+
         getHomeButton()
+
       ]
 
     );
@@ -1872,6 +1988,7 @@ if (data.startsWith("token_package_")) {
     );
 
     await sendTelegramMessage(
+
       chatId,
 
       "❌ در ثبت درخواست پرداخت مشکلی پیش آمد.\n\n" +
@@ -1880,6 +1997,7 @@ if (data.startsWith("token_package_")) {
       [
         getHomeButton()
       ]
+
     );
 
   }
