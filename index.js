@@ -1474,6 +1474,62 @@ if (data === "wallet") {
   return;
 }
 
+/* =========================
+   انتخاب بسته توکن
+========================= */
+
+if (data === "buy_tokens") {
+
+  await sendTelegramMessage(
+    chatId,
+
+    "💳 افزایش موجودی\n\n" +
+    "بسته موردنظر خود را انتخاب کنید:",
+
+[
+  [
+    {
+      text: "🎟 5 توکن — 40,000 تومان",
+      callback_data: "token_package_5"
+    },
+    {
+      text: "🎟 10 توکن — 80,000 تومان",
+      callback_data: "token_package_10"
+    }
+  ],
+  [
+    {
+      text: "🎟 15 توکن — 120,000 تومان",
+      callback_data: "token_package_15"
+    },
+    {
+      text: "🎟 20 توکن — 160,000 تومان",
+      callback_data: "token_package_20"
+    }
+  ],
+  [
+    {
+      text: "🎟 50 توکن — 400,000 تومان",
+      callback_data: "token_package_50"
+    },
+    {
+      text: "🎟 100 توکن — 800,000 تومان",
+      callback_data: "token_package_100"
+    }
+  ],
+  [
+    {
+      text: "🔙 بازگشت به کیف پول",
+      callback_data: "wallet"
+    }
+  ],
+  getHomeButton()
+]
+  );
+
+  return;
+}
+  
   /* =========================
      جستجوی فیلم
   ========================= */
