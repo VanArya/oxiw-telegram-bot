@@ -29,6 +29,7 @@ const GOOGLE_KEY_FILE =
 
 const userStates = new Map();
 
+const paymentApprovalLocks = new Set();
 
 /* =========================
    Google Sheets
@@ -1917,6 +1918,440 @@ async function showAdminPaymentDetail(chatId, rowNumber) {
 }
 
 /* =========================
+   تأیید پرداخت
+========================= */
+
+async function approvePayment(chatId, rowNumber) {
+
+  if (!isAdmin(chatId)) {
+
+    await sendTelegramMessage(
+      chatId,
+      "⛔️ شما دسترسی مدیریت ندارید.",
+      [
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+
+  const lockKey = String(rowNumber);
+
+  if (paymentApprovalLocks.has(lockKey)) {
+
+    await sendTelegramMessage(
+      chatId,
+      "⏳ این درخواست در حال پردازش است.",
+      [
+        [
+          {
+            text: "🔙 درخواست‌های پرداخت",
+            callback_data: "admin_payments"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+
+  paymentApprovalLocks.add(lockKey);
+
+  try {
+
+    const sheets =
+      await getGoogleSheets();
+
+    /*
+      دریافت مجدد درخواست پرداخت
+      برای جلوگیری از تأیید درخواست
+      با وضعیت قدیمی
+    */
+
+    const requestResponse =
+      await sheets.spreadsheets.values.get({
+        spreadsheetId:
+          SPREADSHEET_ID,
+        range:
+          `درخواست پرداخت!A${rowNumber}:K${rowNumber}`
+      });
+
+    const rows =
+      requestResponse.data.values || [];
+
+    if (!rows.length) {
+
+      await sendTelegramMessage(
+        chatId,
+        "❌ درخواست پرداخت پیدا نشد.",
+        [
+          [
+            {
+              text: "🔙 درخواست‌های پرداخت",
+              callback_data: "admin_payments"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    const row = rows[0];
+
+    const status =
+      String(row[6] || "").trim();
+
+    /*
+      فقط درخواست‌هایی که واقعاً
+      در انتظار بررسی هستند قابل تأییدند.
+    */
+
+    if (status !== "در انتظار بررسی") {
+
+      await sendTelegramMessage(
+        chatId,
+
+        "⚠️ این درخواست قبلاً تعیین تکلیف شده است.\n\n" +
+        `وضعیت فعلی: ${status || "نامشخص"}`,
+
+        [
+          [
+            {
+              text: "🔙 درخواست‌های پرداخت",
+              callback_data: "admin_payments"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    const telegramId =
+      String(row[1] || "").trim();
+
+    const name =
+      row[2] || "بدون نام";
+
+    const packageName =
+      row[3] || "";
+
+    const tokenAmount =
+      Number(row[5] || 0);
+
+    if (!telegramId || !tokenAmount || tokenAmount <= 0) {
+
+      throw new Error(
+        "Invalid payment request data."
+      );
+    }
+
+    /*
+      دریافت کیف پول کاربر
+    */
+
+    const walletResponse =
+      await sheets.spreadsheets.values.get({
+        spreadsheetId:
+          SPREADSHEET_ID,
+        range:
+          "کیف پول"
+      });
+
+    const walletValues =
+      walletResponse.data.values || [];
+
+    let walletRow = -1;
+    let oldBalance = 0;
+
+    for (
+      let i = 1;
+      i < walletValues.length;
+      i++
+    ) {
+
+      const walletRowData =
+        walletValues[i];
+
+      const walletTelegramId =
+        String(
+          walletRowData[0] || ""
+        ).trim();
+
+      if (
+        walletTelegramId === telegramId
+      ) {
+
+        walletRow = i + 1;
+
+        oldBalance =
+          Number(
+            walletRowData[2] || 0
+          );
+
+        break;
+      }
+    }
+
+    /*
+      اگر کیف پول وجود نداشته باشد،
+      ایجاد می‌کنیم.
+    */
+
+    if (walletRow === -1) {
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId:
+          SPREADSHEET_ID,
+
+        range:
+          "کیف پول",
+
+        valueInputOption:
+          "USER_ENTERED",
+
+        insertDataOption:
+          "INSERT_ROWS",
+
+        requestBody: {
+          values: [[
+            telegramId,
+            name,
+            0,
+            new Date()
+          ]]
+        }
+      });
+
+      /*
+        بعد از ساخت کیف پول، دوباره
+        شیت را می‌خوانیم تا شماره ردیف
+        دقیق را داشته باشیم.
+      */
+
+      const newWalletResponse =
+        await sheets.spreadsheets.values.get({
+          spreadsheetId:
+            SPREADSHEET_ID,
+          range:
+            "کیف پول"
+        });
+
+      const newWalletValues =
+        newWalletResponse.data.values || [];
+
+      for (
+        let i = 1;
+        i < newWalletValues.length;
+        i++
+      ) {
+
+        const walletRowData =
+          newWalletValues[i];
+
+        const walletTelegramId =
+          String(
+            walletRowData[0] || ""
+          ).trim();
+
+        if (
+          walletTelegramId === telegramId
+        ) {
+
+          walletRow = i + 1;
+          oldBalance = 0;
+
+          break;
+        }
+      }
+    }
+
+    if (walletRow === -1) {
+
+      throw new Error(
+        "Wallet row could not be found."
+      );
+    }
+
+    const newBalance =
+      oldBalance + tokenAmount;
+
+    /*
+      افزایش موجودی کیف پول
+    */
+
+    await sheets.spreadsheets.values.update({
+
+      spreadsheetId:
+        SPREADSHEET_ID,
+
+      range:
+        `کیف پول!C${walletRow}:D${walletRow}`,
+
+      valueInputOption:
+        "USER_ENTERED",
+
+      requestBody: {
+        values: [[
+          newBalance,
+          new Date()
+        ]]
+      }
+
+    });
+
+    /*
+      ثبت تراکنش
+    */
+
+    await sheets.spreadsheets.values.append({
+
+      spreadsheetId:
+        SPREADSHEET_ID,
+
+      range:
+        "تراکنش توکن",
+
+      valueInputOption:
+        "USER_ENTERED",
+
+      insertDataOption:
+        "INSERT_ROWS",
+
+      requestBody: {
+        values: [[
+          new Date(),
+          telegramId,
+          "خرید توکن",
+          tokenAmount,
+          oldBalance,
+          newBalance,
+          packageName,
+          String(rowNumber)
+        ]]
+      }
+
+    });
+
+    /*
+      تغییر وضعیت درخواست پرداخت
+    */
+
+    await sheets.spreadsheets.values.update({
+
+      spreadsheetId:
+        SPREADSHEET_ID,
+
+      range:
+        `درخواست پرداخت!G${rowNumber}:K${rowNumber}`,
+
+      valueInputOption:
+        "USER_ENTERED",
+
+      requestBody: {
+        values: [[
+          "تأیید شده",
+          row[7] || "",
+          row[8] || "",
+          new Date(),
+          "پرداخت توسط مدیر تأیید شد."
+        ]]
+      }
+
+    });
+
+    /*
+      اطلاع به مدیر
+    */
+
+    await sendTelegramMessage(
+      chatId,
+
+      "✅ پرداخت با موفقیت تأیید شد.\n\n" +
+
+      `👤 نام: ${name}\n` +
+      `🆔 شماره تلگرام: ${telegramId}\n` +
+      `🎟 بسته: ${packageName}\n` +
+      `🔢 توکن اضافه‌شده: ${tokenAmount}\n` +
+      `💰 موجودی قبلی: ${oldBalance}\n` +
+      `💰 موجودی جدید: ${newBalance}`,
+
+      [
+        [
+          {
+            text: "🔙 درخواست‌های پرداخت",
+            callback_data: "admin_payments"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+    /*
+      اطلاع به کاربر
+    */
+
+    await sendTelegramMessage(
+      telegramId,
+
+      "🎉 پرداخت شما تأیید شد.\n\n" +
+
+      `🎟 بسته: ${packageName}\n` +
+      `➕ توکن اضافه‌شده: ${tokenAmount}\n\n` +
+      `💰 موجودی جدید شما: ${newBalance} توکن\n\n` +
+      "اکنون می‌توانید از توکن‌های خود استفاده کنید.",
+
+      [
+        [
+          {
+            text: "💰 کیف پول",
+            callback_data: "wallet"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Approve payment error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+
+      "❌ در تأیید پرداخت مشکلی پیش آمد.\n\n" +
+      "هیچ تأیید موفقی ثبت نشده است؛ وضعیت را در شیت بررسی کنید.",
+
+      [
+        [
+          {
+            text: "🔙 درخواست‌های پرداخت",
+            callback_data: "admin_payments"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  } finally {
+
+    paymentApprovalLocks.delete(
+      lockKey
+    );
+
+  }
+
+}
+
+/* =========================
    پردازش دکمه‌ها
 ========================= */
 
@@ -2088,6 +2523,60 @@ async function processCallback(
     }
 
     await showAdminPaymentDetail(
+      chatId,
+      rowNumber
+    );
+
+    return;
+  }
+
+  /* =========================
+     تأیید پرداخت
+  ========================= */
+
+  if (data.startsWith("admin_approve_")) {
+
+    if (!isAdmin(chatId)) {
+
+      await sendTelegramMessage(
+        chatId,
+        "⛔️ شما دسترسی مدیریت ندارید.",
+        [
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    const rowNumber =
+      Number(
+        data.replace("admin_approve_", "")
+      );
+
+    if (
+      !Number.isInteger(rowNumber) ||
+      rowNumber < 2
+    ) {
+
+      await sendTelegramMessage(
+        chatId,
+        "❌ شناسه درخواست نامعتبر است.",
+        [
+          [
+            {
+              text: "🔙 درخواست‌های پرداخت",
+              callback_data: "admin_payments"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    await approvePayment(
       chatId,
       rowNumber
     );
