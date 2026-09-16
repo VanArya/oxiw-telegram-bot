@@ -1529,6 +1529,162 @@ if (data === "buy_tokens") {
 
   return;
 }
+
+  /* =========================
+   ثبت درخواست خرید توکن
+========================= */
+
+if (data.startsWith("token_package_")) {
+
+  const tokenAmount =
+    Number(
+      data.replace("token_package_", "")
+    );
+
+  const validPackages = [
+    5,
+    10,
+    15,
+    20,
+    50,
+    100
+  ];
+
+  if (!validPackages.includes(tokenAmount)) {
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ بسته انتخابی معتبر نیست.",
+      [
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+
+  const pricePerToken = 8000;
+
+  const amount =
+    tokenAmount * pricePerToken;
+
+  const telegramUser =
+    callback.from || {};
+
+  const telegramId =
+    telegramUser.id
+      ? String(telegramUser.id)
+      : String(chatId);
+
+  const name =
+    [
+      telegramUser.first_name,
+      telegramUser.last_name
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "مهمان";
+
+  const packageName =
+    `${tokenAmount} توکن`;
+
+  try {
+
+    const sheets =
+      await getGoogleSheets();
+
+    await sheets.spreadsheets.values.append({
+
+      spreadsheetId:
+        SPREADSHEET_ID,
+
+      range:
+        "درخواست پرداخت",
+
+      valueInputOption:
+        "USER_ENTERED",
+
+      insertDataOption:
+        "INSERT_ROWS",
+
+      requestBody: {
+
+        values: [[
+
+          new Date(),
+          telegramId,
+          name,
+          packageName,
+          amount,
+          tokenAmount,
+          "در انتظار رسید",
+          "",
+          "",
+          "",
+          ""
+
+        ]]
+
+      }
+
+    });
+
+    await sendTelegramMessage(
+
+      chatId,
+
+      "💳 درخواست خرید توکن ثبت شد.\n\n" +
+
+      `🎟 بسته: ${packageName}\n` +
+
+      `💰 مبلغ: ${amount.toLocaleString("en-US")} تومان\n\n` +
+
+      "لطفاً مبلغ را به کارت زیر واریز کنید و " +
+      "سپس تصویر رسید پرداخت را ارسال کنید.\n\n" +
+
+      "💳 شماره کارت:\n" +
+      "شماره کارت شما",
+
+      [
+        [
+          {
+            text: "📎 ارسال رسید",
+            callback_data: "send_payment_receipt"
+          }
+        ],
+        [
+          {
+            text: "💰 کیف پول",
+            callback_data: "wallet"
+          }
+        ],
+        getHomeButton()
+      ]
+
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Token purchase request error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+
+      "❌ در ثبت درخواست پرداخت مشکلی پیش آمد.\n\n" +
+      "لطفاً دوباره تلاش کنید.",
+
+      [
+        getHomeButton()
+      ]
+    );
+
+  }
+
+  return;
+}
   
   /* =========================
      جستجوی فیلم
