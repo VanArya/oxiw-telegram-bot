@@ -1415,6 +1415,64 @@ async function processCallback(
     return;
   }
 
+  /* =========================
+   کیف پول
+========================= */
+
+if (data === "wallet") {
+
+  const state =
+    userStates.get(chatId) || {};
+
+  const telegramUser =
+    state.telegramUser ||
+    callback.from ||
+    {};
+
+  try {
+
+    const wallet =
+      await getOrCreateWallet(
+        chatId,
+        telegramUser
+      );
+
+    await sendTelegramMessage(
+      chatId,
+
+      "💰 کیف پول شما\n\n" +
+      `موجودی فعلی: ${wallet.balance} توکن\n\n` +
+      "🎬 هر دانلود = 1 توکن",
+
+      [
+        [
+          {
+            text: "💳 افزایش موجودی",
+            callback_data: "buy_tokens"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Wallet error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ در دریافت اطلاعات کیف پول مشکلی پیش آمد.",
+      [
+        getHomeButton()
+      ]
+    );
+  }
+
+  return;
+}
 
   /* =========================
      جستجوی فیلم
