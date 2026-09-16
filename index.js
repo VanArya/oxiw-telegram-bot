@@ -1734,6 +1734,189 @@ async function showAdminPayments(chatId) {
 }
 
 /* =========================
+   جزئیات درخواست پرداخت
+========================= */
+
+async function showAdminPaymentDetail(chatId, rowNumber) {
+
+  if (!isAdmin(chatId)) {
+    await sendTelegramMessage(
+      chatId,
+      "⛔️ شما دسترسی مدیریت ندارید.",
+      [
+        getHomeButton()
+      ]
+    );
+    return;
+  }
+
+  try {
+
+    const sheets =
+      await getGoogleSheets();
+
+    const response =
+      await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `درخواست پرداخت!A${rowNumber}:K${rowNumber}`
+      });
+
+    const rows =
+      response.data.values || [];
+
+    if (!rows.length) {
+
+      await sendTelegramMessage(
+        chatId,
+        "❌ درخواست پرداخت پیدا نشد.",
+        [
+          [
+            {
+              text: "🔙 درخواست‌های پرداخت",
+              callback_data: "admin_payments"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    const row = rows[0];
+
+    const status =
+      String(row[6] || "").trim();
+
+    if (status !== "در انتظار بررسی") {
+
+      await sendTelegramMessage(
+        chatId,
+        "⚠️ این درخواست دیگر در وضعیت انتظار بررسی نیست.\n\n" +
+        `وضعیت فعلی: ${status || "نامشخص"}`,
+        [
+          [
+            {
+              text: "🔙 درخواست‌های پرداخت",
+              callback_data: "admin_payments"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    const telegramId =
+      row[1] || "";
+
+    const name =
+      row[2] || "بدون نام";
+
+    const packageName =
+      row[3] || "";
+
+    const amount =
+      Number(row[4] || 0);
+
+    const tokenAmount =
+      Number(row[5] || 0);
+
+    const trackingCode =
+      row[7] || "";
+
+    const receiptFileId =
+      row[8] || "";
+
+    const time =
+      row[0] || "";
+
+    let text =
+      "💳 بررسی درخواست پرداخت\n\n" +
+      `👤 نام: ${name}\n` +
+      `🆔 شماره تلگرام: ${telegramId}\n` +
+      `🎟 بسته: ${packageName}\n` +
+      `🔢 تعداد توکن: ${tokenAmount}\n` +
+      `💰 مبلغ: ${amount.toLocaleString("en-US")} تومان\n` +
+      `🕐 زمان درخواست: ${time}\n`;
+
+    if (trackingCode) {
+      text +=
+        `🔖 کد پیگیری: ${trackingCode}\n`;
+    }
+
+    text +=
+      `📌 ردیف شیت: ${rowNumber}`;
+
+    const keyboard = [
+      [
+        {
+          text: "✅ تأیید پرداخت",
+          callback_data: `admin_approve_${rowNumber}`
+        }
+      ],
+      [
+        {
+          text: "❌ رد پرداخت",
+          callback_data: `admin_reject_${rowNumber}`
+        }
+      ],
+      [
+        {
+          text: "🔙 درخواست‌های پرداخت",
+          callback_data: "admin_payments"
+        }
+      ],
+      getHomeButton()
+    ];
+
+    if (receiptFileId) {
+
+      await sendTelegramPhoto(
+        chatId,
+        receiptFileId,
+        text,
+        keyboard
+      );
+
+    } else {
+
+      await sendTelegramMessage(
+        chatId,
+        text +
+        "\n\n⚠️ رسیدی برای این درخواست ثبت نشده است.",
+        keyboard
+      );
+
+    }
+
+  } catch (error) {
+
+    console.error(
+      "Admin payment detail error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+      "❌ در دریافت جزئیات درخواست مشکلی پیش آمد.",
+      [
+        [
+          {
+            text: "🔙 درخواست‌های پرداخت",
+            callback_data: "admin_payments"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  }
+
+}
+
+/* =========================
    پردازش دکمه‌ها
 ========================= */
 
@@ -1857,6 +2040,57 @@ async function processCallback(
   if (data === "admin_payments") {
 
     await showAdminPayments(chatId);
+
+    return;
+  }
+
+  /* =========================
+     جزئیات درخواست پرداخت
+  ========================= */
+
+  if (data.startsWith("admin_payment_")) {
+
+    if (!isAdmin(chatId)) {
+
+      await sendTelegramMessage(
+        chatId,
+        "⛔️ شما دسترسی مدیریت ندارید.",
+        [
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    const rowNumber =
+      Number(
+        data.replace("admin_payment_", "")
+      );
+
+    if (!Number.isInteger(rowNumber) || rowNumber < 2) {
+
+      await sendTelegramMessage(
+        chatId,
+        "❌ شناسه درخواست نامعتبر است.",
+        [
+          [
+            {
+              text: "🔙 درخواست‌های پرداخت",
+              callback_data: "admin_payments"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+    await showAdminPaymentDetail(
+      chatId,
+      rowNumber
+    );
 
     return;
   }
