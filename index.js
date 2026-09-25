@@ -15,6 +15,8 @@ const SPREADSHEET_ID =
 
 const ADMIN_TELEGRAM_ID = "170870143";
 
+const DOWNLOAD_BOT_USERNAME = "OXIW_DOWNLOAD_bot";
+
 function isAdmin(chatId) {
   return String(chatId) === ADMIN_TELEGRAM_ID;
 }
@@ -28,6 +30,34 @@ const GOOGLE_KEY_FILE =
 ========================= */
 
 const userStates = new Map();
+
+function createDownloadToken(chatId, movie) {
+
+  const token =
+    `${chatId}_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+
+  const state =
+    userStates.get(chatId) || {};
+
+  userStates.set(
+    chatId,
+    {
+      ...state,
+
+      downloadToken: {
+        token: token,
+        movieCode: String(
+          movie["کد سیستم"] || ""
+        ).trim(),
+        createdAt: Date.now()
+      }
+    }
+  );
+
+  return token;
+}
 
 const paymentApprovalLocks = new Set();
 
@@ -771,6 +801,20 @@ async function showMovie(chatId, movie, isRecommendation = false) {
 
   }
 
+const downloadToken =
+  createDownloadToken(
+    chatId,
+    movie
+  );
+
+keyboard.push([
+  {
+    text: "⬇️ دانلود فیلم",
+    url:
+      `https://t.me/${DOWNLOAD_BOT_USERNAME}?start=${downloadToken}`
+  }
+]);
+  
   if (isRecommendation) {
   keyboard.push([
     {
