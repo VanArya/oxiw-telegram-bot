@@ -31,12 +31,26 @@ const GOOGLE_KEY_FILE =
 
 const userStates = new Map();
 
-function createDownloadToken(chatId, movie) {
+async function createDownloadToken(
+  chatId,
+  movie
+) {
 
   const token =
     `${chatId}_${Date.now()}_${Math.random()
       .toString(36)
       .slice(2, 10)}`;
+
+  const movieCode =
+    String(
+      movie["کد سیستم"] || ""
+    ).trim();
+
+  await saveDownloadToken(
+    token,
+    chatId,
+    movieCode
+  );
 
   const state =
     userStates.get(chatId) || {};
@@ -48,20 +62,15 @@ function createDownloadToken(chatId, movie) {
 
       downloadToken: {
         token: token,
-        movieCode: String(
-          movie["کد سیستم"] || ""
-        ).trim(),
+        movieCode: movieCode,
         createdAt: Date.now()
       }
     }
   );
 
   return token;
+
 }
-
-const paymentApprovalLocks = new Set();
-
-const paymentRejectionLocks = new Set();
 
 /* =========================
    Google Sheets
@@ -174,6 +183,69 @@ async function getSeries() {
 
       return series;
     });
+}
+
+/* =========================
+   ثبت Token دانلود
+========================= */
+
+async function saveDownloadToken(
+  token,
+  chatId,
+  movieCode
+) {
+
+  const sheets =
+    await getGoogleSheets();
+
+  const now =
+    new Date();
+
+  const expiresAt =
+    new Date(
+      now.getTime() + 5 * 60 * 1000
+    );
+
+  await sheets.spreadsheets.values.append({
+
+    spreadsheetId:
+      SPREADSHEET_ID,
+
+    range:
+      "توکن دانلود!A:G",
+
+    valueInputOption:
+      "USER_ENTERED",
+
+    requestBody: {
+
+      values: [[
+
+        now,
+
+        token,
+
+        String(chatId),
+
+        String(movieCode),
+
+        "فعال",
+
+        expiresAt,
+
+        ""
+
+      ]]
+
+    }
+
+  });
+
+  return {
+    createdAt: now,
+    expiresAt: expiresAt
+  };
+
 }
 
 /* =========================
@@ -802,7 +874,7 @@ async function showMovie(chatId, movie, isRecommendation = false) {
   }
 
 const downloadToken =
-  createDownloadToken(
+  await createDownloadToken(
     chatId,
     movie
   );
