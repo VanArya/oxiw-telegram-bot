@@ -30,6 +30,8 @@ const GOOGLE_KEY_FILE =
 ========================= */
 
 const userStates = new Map();
+const paymentApprovalLocks = new Set();
+const paymentRejectionLocks = new Set();
 
 async function createDownloadToken(
   chatId,
