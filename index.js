@@ -875,17 +875,10 @@ async function showMovie(chatId, movie, isRecommendation = false) {
 
   }
 
-const downloadToken =
-  await createDownloadToken(
-    chatId,
-    movie
-  );
-
 keyboard.push([
   {
     text: "⬇️ دانلود فیلم",
-    url:
-      `https://t.me/${DOWNLOAD_BOT_USERNAME}?start=${downloadToken}`
+    callback_data: "download_movie"
   }
 ]);
   
@@ -3684,6 +3677,141 @@ if (data === "recommend_next_cinema") {
   await recommendCinema(
     chatId
   );
+
+  return;
+}
+
+/* =========================
+   دانلود فیلم
+========================= */
+
+if (data === "download_movie") {
+
+  const state =
+    userStates.get(chatId) || {};
+
+  const movie =
+    state.selectedMovie;
+
+
+  if (!movie) {
+
+    await sendTelegramMessage(
+      chatId,
+
+      "⚠️ فیلم انتخاب‌شده دیگر در دسترس نیست.\n\n" +
+      "لطفاً دوباره فیلم را جستجو کنید.",
+
+      [
+        getHomeButton()
+      ]
+    );
+
+    return;
+  }
+
+
+  try {
+
+    /* =========================
+       بررسی موجودی
+    ========================= */
+
+    const balance =
+      await getWalletBalance(
+        chatId,
+        callback.from || state.telegramUser || {}
+      );
+
+
+    if (balance < 1) {
+
+      await sendTelegramMessage(
+        chatId,
+
+        "❌ موجودی توکن شما کافی نیست.\n\n" +
+        "🎬 هزینه هر دانلود: ۱ توکن\n" +
+        `💰 موجودی فعلی: ${balance} توکن`,
+
+        [
+          [
+            {
+              text: "💳 افزایش موجودی",
+              callback_data: "buy_tokens"
+            }
+          ],
+          [
+            {
+              text: "💰 کیف پول",
+              callback_data: "wallet"
+            }
+          ],
+          getHomeButton()
+        ]
+      );
+
+      return;
+    }
+
+
+    /* =========================
+       ساخت Token دانلود
+    ========================= */
+
+    const downloadToken =
+      await createDownloadToken(
+        chatId,
+        movie
+      );
+
+
+    const downloadUrl =
+      `https://t.me/${DOWNLOAD_BOT_USERNAME}?start=${downloadToken}`;
+
+
+    await sendTelegramMessage(
+      chatId,
+
+      "🎬 لینک دانلود فیلم آماده شد.\n\n" +
+      "⏳ این لینک تا ۵ دقیقه معتبر است.\n" +
+      "🎟 هزینه دانلود: ۱ توکن\n\n" +
+      "برای دریافت فیلم روی دکمه زیر بزنید.",
+
+      [
+        [
+          {
+            text: "⬇️ دریافت فیلم",
+            url: downloadUrl
+          }
+        ],
+        [
+          {
+            text: "💰 کیف پول",
+            callback_data: "wallet"
+          }
+        ],
+        getHomeButton()
+      ]
+    );
+
+  } catch (error) {
+
+    console.error(
+      "Download link creation error:",
+      error
+    );
+
+    await sendTelegramMessage(
+      chatId,
+
+      "❌ در آماده‌سازی لینک دانلود مشکلی پیش آمد.\n\n" +
+      "لطفاً دوباره تلاش کنید.",
+
+      [
+        getHomeButton()
+      ]
+    );
+  }
 
   return;
 }
