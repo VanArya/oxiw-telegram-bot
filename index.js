@@ -1,4 +1,5 @@
 const express = require("express");
+const fs = require("fs");
 const { google } = require("googleapis");
 const {
   registerTelegramWebhook,
@@ -28,6 +29,7 @@ function isAdmin(chatId) {
 }
 
 const GOOGLE_KEY_FILE =
+  process.env.GOOGLE_APPLICATION_CREDENTIALS ||
   "/etc/secrets/google-service-account.json";
 
 
@@ -85,6 +87,12 @@ async function createDownloadToken(
 ========================= */
 
 async function getGoogleSheets() {
+
+  if (!fs.existsSync(GOOGLE_KEY_FILE)) {
+    throw new Error(
+      "Google service-account credentials file is unavailable. Set GOOGLE_APPLICATION_CREDENTIALS to an existing JSON file."
+    );
+  }
 
   const auth =
     new google.auth.GoogleAuth({
