@@ -1,9 +1,15 @@
 const express = require("express");
 const { google } = require("googleapis");
+const {
+  registerTelegramWebhook,
+  logSafeError,
+  logTelegramApiResult
+} = require("./security");
 
 const app = express();
 
-app.use(express.json());
+const TELEGRAM_WEBHOOK_SECRET =
+  process.env.TELEGRAM_WEBHOOK_SECRET;
 
 const PORT = process.env.PORT || 3000;
 
@@ -329,11 +335,7 @@ async function getOrCreateWallet(
     }
   });
 
-  console.log(
-    "New wallet created:",
-    telegramId,
-    name
-  );
+  console.info("New wallet created");
 
   return {
     telegramId: telegramId,
@@ -393,12 +395,7 @@ async function registerTelegramVisit(message) {
     }
   });
 
-  console.log(
-    "Telegram visit registered:",
-    telegramId,
-    username,
-    name
-  );
+  console.info("Telegram visit registered");
 }
 
 async function registerTelegramMovieView(message, movie) {
@@ -441,13 +438,7 @@ async function registerTelegramMovieView(message, movie) {
     }
   });
 
-  console.log(
-    "Telegram movie view registered:",
-    movieName,
-    visitorId,
-    username,
-    name
-  );
+  console.info("Telegram movie view registered");
 }
 
 async function registerTelegramSeriesView(message, series) {
@@ -490,13 +481,7 @@ async function registerTelegramSeriesView(message, series) {
     }
   });
 
-  console.log(
-    "Telegram series view registered:",
-    seriesName,
-    visitorId,
-    username,
-    name
-  );
+  console.info("Telegram series view registered");
 }
 
 /* =========================
@@ -608,12 +593,7 @@ async function registerPaymentReceipt(
 
   });
 
-  console.log(
-    "Payment receipt registered:",
-    telegramId,
-    "row:",
-    targetRow
-  );
+  console.info("Payment receipt registered");
 
   return {
     success: true,
@@ -659,10 +639,7 @@ async function sendTelegramMessage(
   const result =
     await response.json();
 
-  console.log(
-    "Telegram response:",
-    result
-  );
+  logTelegramApiResult(console, "Telegram message response", result);
 
   return result;
 }
@@ -704,10 +681,7 @@ async function sendTelegramPhoto(
   const result =
     await response.json();
 
-  console.log(
-    "Telegram photo response:",
-    result
-  );
+  logTelegramApiResult(console, "Telegram photo response", result);
 
   if (!result.ok) {
 
@@ -809,10 +783,7 @@ async function showMovie(chatId, movie, isRecommendation = false) {
       movie
     );
   } catch (error) {
-    console.error(
-      "Telegram movie view log error:",
-      error
-    );
+    logSafeError(console, "Telegram movie view log error", error);
   }
   
   let message =
@@ -936,10 +907,7 @@ keyboard.push([
 
     } catch (error) {
 
-      console.error(
-        "Poster error:",
-        error
-      );
+      logSafeError(console, "Poster error", error);
 
     }
 
@@ -969,10 +937,7 @@ async function showSeries(chatId, series, isRecommendation = false) {
 
   } catch (error) {
 
-    console.error(
-      "Telegram series view log error:",
-      error
-    );
+    logSafeError(console, "Telegram series view log error", error);
 
   }
   
@@ -1095,10 +1060,7 @@ if (isRecommendation) {
 
     } catch (error) {
 
-      console.error(
-        "Series poster error:",
-        error
-      );
+      logSafeError(console, "Series poster error", error);
 
     }
 
@@ -1222,11 +1184,6 @@ async function searchSeries(
   const series =
     await getSeries();
 
-console.log(
-  "SERIES SAMPLE:",
-  JSON.stringify(series.slice(0, 3))
-);
-  
   const search =
     searchText
       .trim()
@@ -1510,10 +1467,7 @@ async function processMessage(
     try {
   await registerTelegramVisit(message);
 } catch (error) {
-  console.error(
-    "Telegram visit log error:",
-    error
-  );
+  logSafeError(console, "Telegram visit log error", error);
 }
     
     await sendTelegramMessage(
@@ -1591,10 +1545,7 @@ if (
 
   } catch (error) {
 
-    console.error(
-      "Payment receipt error:",
-      error
-    );
+    logSafeError(console, "Payment receipt error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -1824,10 +1775,7 @@ async function showAdminPayments(chatId) {
 
   } catch (error) {
 
-    console.error(
-      "Admin payments error:",
-      error
-    );
+    logSafeError(console, "Admin payments error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -2007,10 +1955,7 @@ async function showAdminPaymentDetail(chatId, rowNumber) {
 
   } catch (error) {
 
-    console.error(
-      "Admin payment detail error:",
-      error
-    );
+    logSafeError(console, "Admin payment detail error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -2432,10 +2377,7 @@ async function approvePayment(chatId, rowNumber) {
 
   } catch (error) {
 
-    console.error(
-      "Approve payment error:",
-      error
-    );
+    logSafeError(console, "Approve payment error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -2670,10 +2612,7 @@ async function rejectPayment(chatId, rowNumber) {
 
   } catch (error) {
 
-    console.error(
-      "Reject payment error:",
-      error
-    );
+    logSafeError(console, "Reject payment error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -2753,10 +2692,7 @@ async function processCallback(
 
   } catch (error) {
 
-    console.error(
-      "Callback acknowledgement error:",
-      error
-    );
+    logSafeError(console, "Callback acknowledgement error", error);
 
   }
 
@@ -3031,10 +2967,7 @@ if (data === "wallet") {
 
   } catch (error) {
 
-    console.error(
-      "Wallet error:",
-      error
-    );
+    logSafeError(console, "Wallet error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -3355,10 +3288,7 @@ if (data.startsWith("token_package_")) {
 
   } catch (error) {
 
-    console.error(
-      "Token purchase request error:",
-      error
-    );
+    logSafeError(console, "Token purchase request error", error);
 
     await sendTelegramMessage(
 
@@ -3796,10 +3726,7 @@ if (data === "download_movie") {
 
   } catch (error) {
 
-    console.error(
-      "Download link creation error:",
-      error
-    );
+    logSafeError(console, "Download link creation error", error);
 
     await sendTelegramMessage(
       chatId,
@@ -4066,15 +3993,11 @@ app.get(
 );
 
 
-app.post(
-  "/telegram",
+registerTelegramWebhook(
+  app,
+  express,
+  TELEGRAM_WEBHOOK_SECRET,
   async (req, res) => {
-
-    console.log(
-      "Telegram update:",
-      JSON.stringify(req.body)
-    );
-
 
     /* پاسخ فوری به Telegram */
 
@@ -4108,10 +4031,7 @@ app.post(
 
     } catch (error) {
 
-      console.error(
-        "Bot error:",
-        error
-      );
+      logSafeError(console, "Bot error", error);
 
     }
 
@@ -4128,9 +4048,7 @@ app.listen(
 
   () => {
 
-    console.log(
-      `OXIW Telegram Bot running on port ${PORT}`
-    );
+    console.info(`OXIW Telegram Bot running on port ${PORT}`);
 
   }
 );
