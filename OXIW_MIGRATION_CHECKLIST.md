@@ -23,7 +23,7 @@
 - [ ] سورس و قرارداد token میان ربات اصلی و ربات دانلود؛ پروژهٔ مقصد در این مخزن نیست.
 - [x] PR [شمارهٔ ۱](https://github.com/VanArya/oxiw-telegram-bot/pull/1) با مقصد `main` باز است و شاخهٔ `codex/oxiw-independent-dev` را به آن پیشنهاد می‌کند؛ این وضعیت از GitHub بررسی شد.
 - [x] وضعیت PR در GitHub `mergeable=true` است؛ هنگام بررسی، امکان ادغام بدون conflict گزارش شد. PR ادغام نشده است.
-- [x] GitHub Actions run شمارهٔ `39438982174` برای commit `fc0b2eb223baf636006a6d7194e909aebacff23c` با نتیجهٔ `success` تمام شد. هر چهار job (`test (18)`, `test (20)`, `test (22)`, `test (24)`) و گام اجرای تست موفق بودند.
+- [x] جدیدترین بررسی PR در GitHub Actions، run شمارهٔ `39439649686` برای commit `3dfa437977f8672644c36bae89672bb17acc9392`، با نتیجهٔ `success` تمام شد. هر چهار job (`test (18)`, `test (20)`, `test (22)`, `test (24)`) و گام اجرای تست موفق بودند.
 - [ ] endpointهای `/setup-webhook` و `/test-download` در این checkout پیدا نشدند. اگر در سرویس زنده یا Apps Script وجود دارند، محافظت آن‌ها باید در همان سورس/محیط جداگانه بررسی شود.
 
 ## باقی‌مانده برای انتقال مستقل کامل
