@@ -3,7 +3,7 @@
 ## پیش‌نیازها و وابستگی‌ها
 
 - Node.js حداقل ۱۸؛ محیط قابل‌حمل محلی Node.js `24.22.0` است.
-- وابستگی‌های manifest: Express و `googleapis`؛ در محیط مستقل `C:\Users\neo\Tools\oxiw-main-bot-env` نصب شده‌اند (Express `4.22.3`، Google APIs `144.0.0`). lockfile و `node_modules` این محیط بیرون مخزن قرار دارند.
+- وابستگی‌ها در `package.json` ثبت شده‌اند و `package-lock.json` مبنای نصب تکرارپذیر است. در صورت نیاز، پس از تأیید دسترسی شبکه، `npm ci` را اجرا کنید. در این checkout یک `node_modules` محلیِ نادیده‌گرفته‌شده نیز موجود است؛ آن را به Git اضافه نکنید.
 - `index.js` برنامه را اجرا می‌کند و `security.js` middleware وب‌هوک را فراهم می‌کند.
 
 ## Configuration names
@@ -37,6 +37,14 @@ process environment or the hosting environment.
 خودکار بارگذاری نمی‌کند.
 
 ## راه‌اندازی محلی
+
+برای اجرای آزمون‌های محلیِ بدون سرویس عملیاتی:
+
+```powershell
+npm test
+```
+
+تست یکپارچهٔ وب‌هوک فقط روی localhost و با handler ساختگی اجرا می‌شود. اجرای برنامهٔ اصلی، برخلاف آزمون‌ها، ممکن است به Telegram یا Google دسترسی پیدا کند.
 
 پس از تأمین امن تنظیمات و اعتبارنامه، وابستگی‌ها از محیط مستقل با `NODE_PATH` موقت
 قابل دسترسی‌اند:
