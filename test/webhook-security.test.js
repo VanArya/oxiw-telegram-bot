@@ -91,6 +91,25 @@ test("rejects an invalid secret before JSON parsing or handler side effects", as
   });
 });
 
+test("rejects a missing secret header before JSON parsing or handler side effects", async () => {
+  let handlerCalls = 0;
+  const handlerMock = async (req, res) => {
+    handlerCalls += 1;
+    res.sendStatus(200);
+  };
+
+  await withWebhookServer("expected-secret", handlerMock, async baseUrl => {
+    const response = await fetchAndConsume(`${baseUrl}/telegram`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ malformed json"
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(handlerCalls, 0);
+  });
+});
+
 test("validates the secret, parses JSON, and then invokes the handler mock", async () => {
   const receivedBodies = [];
   const handlerMock = async (req, res) => {

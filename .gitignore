@@ -1,0 +1,16 @@
+node_modules/
+.env
+.env.*
+!.env.example
+credentials/
+secrets/
+*service-account*.json
+*credentials*.json
+*.pem
+*.key
+npm-debug.log*
+coverage/
+dist/
+build/
+.DS_Store
+Thumbs.db
