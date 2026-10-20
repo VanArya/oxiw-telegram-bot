@@ -21,14 +21,15 @@
 - [ ] مالک قبلاً گزارش کرده اصلاح `setTelegramWebhookRender()` مشکل 403 را برطرف کرده و ربات پاسخ داده است؛ کد Apps Script و وضعیت زنده در این بررسی در دسترس نبود و این گزارش مستقل تأیید نشد.
 - [ ] تأمین امن service-account JSON و grant دسترسی Sheets برای حساب Google محیط مقصد؛ این فایل خارج مخزن است و در این ممیزی باز یا نمایش داده نشد.
 - [ ] سورس و قرارداد token میان ربات اصلی و ربات دانلود؛ پروژهٔ مقصد در این مخزن نیست.
-- [x] شاخهٔ `codex/oxiw-independent-dev` به `origin` push شد. ساخت PR با GitHub integration پاسخ 403 `Resource not accessible by integration` داد؛ PR ساخته نشد و برای دور زدن محدودیت از credential دیگری استفاده نشد. لینک آمادهٔ ایجاد PR: https://github.com/VanArya/oxiw-telegram-bot/pull/new/codex/oxiw-independent-dev
-- [ ] workflow روی GitHub و وضعیت CI از این اتصال قابل تأیید نشد؛ status check commit خالی بود. اجرای واقعی Actions باید در GitHub بررسی شود.
+- [x] PR [شمارهٔ ۱](https://github.com/VanArya/oxiw-telegram-bot/pull/1) با مقصد `main` باز است و شاخهٔ `codex/oxiw-independent-dev` را به آن پیشنهاد می‌کند؛ این وضعیت از GitHub بررسی شد.
+- [x] وضعیت PR در GitHub `mergeable=true` است؛ هنگام بررسی، امکان ادغام بدون conflict گزارش شد. PR ادغام نشده است.
+- [x] GitHub Actions run شمارهٔ `39438982174` برای commit `fc0b2eb223baf636006a6d7194e909aebacff23c` با نتیجهٔ `success` تمام شد. هر چهار job (`test (18)`, `test (20)`, `test (22)`, `test (24)`) و گام اجرای تست موفق بودند.
 - [ ] endpointهای `/setup-webhook` و `/test-download` در این checkout پیدا نشدند. اگر در سرویس زنده یا Apps Script وجود دارند، محافظت آن‌ها باید در همان سورس/محیط جداگانه بررسی شود.
 
 ## باقی‌مانده برای انتقال مستقل کامل
 
 - [ ] مالک secrets و فایل credential را در Render/محیط امن تأیید کند؛ Codex نباید مقادیر را بخواند یا تغییر دهد.
-- [ ] برای ساخت PR، اتصال GitHub باید مجوز لازم داشته باشد یا مالک PR را از لینک بالا بسازد. push شاخه از checkout موفق شد.
+- [x] push شاخه و ساخت PR شمارهٔ ۱ تأیید شدند؛ ادغام هنوز انجام نشده است.
 - [ ] سورس Apps Script و ربات دانلود در مخزن/محیط قابل دسترسی قرار گیرد یا مالک اجازهٔ دسترسی جداگانه بدهد.
-- [ ] CI از GitHub اجرا شود و نتیجهٔ واقعی آن بررسی شود؛ ساخت workflow به تنهایی اجرای موفق CI را ثابت نمی‌کند.
+- [x] CI مربوط به PR شمارهٔ ۱ در run ثبت‌شدهٔ بالا موفق شد. هر push جدید، run تازه‌ای ایجاد می‌کند و باید نتیجهٔ آن جداگانه بررسی شود.
 - [ ] هر پرداخت، دادهٔ کاربران یا وب‌هوک عملیاتی فقط با مجوز صریح و برنامهٔ برگشت‌پذیر بررسی شود؛ آزمون‌های این checkout دادهٔ واقعی را تغییر نمی‌دهند.
