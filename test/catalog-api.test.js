@@ -5,7 +5,10 @@ const http = require('node:http');
 const test = require('node:test');
 const { createCatalogApi } = require('../src/catalog-api');
 const { categories } = require('./fixtures/catalog-fixtures');
-const { createFixtureProvider } = require('./fixtures/catalog-sheet-source-fixtures');
+const {
+  createFixtureMetadataProvider,
+  createFixtureProvider,
+} = require('./fixtures/catalog-sheet-source-fixtures');
 
 async function withApiServer(options, run) {
   const server = http.createServer(createCatalogApi(options));
@@ -30,7 +33,11 @@ async function jsonResponse(url, options) {
   return { response, body: await response.json() };
 }
 
-const options = () => ({ provider: createFixtureProvider(), categories });
+const options = () => ({
+  provider: createFixtureProvider(),
+  categories,
+  metadataProvider: createFixtureMetadataProvider(),
+});
 
 test('lists only public fixture DTOs with supported filters and bounded pagination', async () => {
   await withApiServer(options(), async (baseUrl) => {
@@ -38,7 +45,7 @@ test('lists only public fixture DTOs with supported filters and bounded paginati
       `${baseUrl}/api/v1/catalog/items?kind=movie&countryId=IR&page=1&pageSize=1`,
     );
     assert.equal(response.status, 200);
-    assert.deepEqual(body.data.map((item) => item.id), ['fixture-movie-ir']);
+    assert.deepEqual(body.data.map((item) => item.id), ['movie:fixture-movie-ir']);
     assert.deepEqual(body.meta, {
       page: 1,
       pageSize: 1,
@@ -55,7 +62,7 @@ test('rejects invalid and not-yet-supported filters without running them', async
       ['countryId=ZZ', 'INVALID_FILTER'],
       ['year=1700', 'INVALID_FILTER'],
       ['kind=series&year=2020', 'INVALID_FILTER'],
-      ['genreId=drama', 'FILTER_NOT_READY'],
+      ['genreId=missing', 'INVALID_FILTER'],
       ['q=title', 'FILTER_NOT_READY'],
       ['unknown=value', 'INVALID_FILTER'],
       ['kind=movie&kind=series', 'INVALID_FILTER'],
@@ -89,11 +96,11 @@ test('validates pagination and caps page size', async () => {
 
 test('details return published content but hide unpublished and unknown IDs identically', async () => {
   await withApiServer(options(), async (baseUrl) => {
-    const found = await jsonResponse(`${baseUrl}/api/v1/catalog/items/fixture-series-ir`);
+    const found = await jsonResponse(`${baseUrl}/api/v1/catalog/items/series:fixture-series-ir`);
     assert.equal(found.response.status, 200);
     assert.equal(found.body.data.kind, 'series');
 
-    const unpublished = await jsonResponse(`${baseUrl}/api/v1/catalog/items/fixture-movie-draft`);
+    const unpublished = await jsonResponse(`${baseUrl}/api/v1/catalog/items/movie:fixture-movie-draft`);
     const unknown = await jsonResponse(`${baseUrl}/api/v1/catalog/items/no-such-content`);
     assert.equal(unpublished.response.status, 404);
     assert.equal(unknown.response.status, 404);
@@ -113,16 +120,16 @@ test('serves data-driven Iranian categories and only implemented taxonomy terms'
 
     const taxonomies = await jsonResponse(`${baseUrl}/api/v1/catalog/taxonomies`);
     assert.equal(taxonomies.response.status, 200);
-    assert.deepEqual(taxonomies.body.meta.availableTypes, ['country']);
+    assert.deepEqual(taxonomies.body.meta.availableTypes, ['country', 'genre']);
     assert.deepEqual(taxonomies.body.data.country.map((term) => term.id), ['IR', 'US']);
-    assert.equal(JSON.stringify(taxonomies.body).includes('genre'), false);
+    assert.deepEqual(taxonomies.body.data.genre.map((term) => term.id), ['drama', 'comedy']);
   });
 });
 
 test('never serializes source rows, file IDs, secrets, or provider errors', async () => {
   await withApiServer(options(), async (baseUrl) => {
     const list = await jsonResponse(`${baseUrl}/api/v1/catalog/items`);
-    const detail = await jsonResponse(`${baseUrl}/api/v1/catalog/items/fixture-movie-ir`);
+    const detail = await jsonResponse(`${baseUrl}/api/v1/catalog/items/movie:fixture-movie-ir`);
     const serialized = JSON.stringify([list.body, detail.body]);
     for (const forbidden of ['fake-file-', 'sourceRecord', 'Telegram File ID', 'token']) {
       assert.equal(serialized.includes(forbidden), false, forbidden);

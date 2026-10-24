@@ -6,40 +6,45 @@ const assert = require('node:assert/strict');
 const { createCatalogSheetAdapter } = require('../src/catalog-sheet-adapter');
 const { categories } = require('./fixtures/catalog-fixtures');
 const {
+  createFixtureMetadataProvider,
   createFixtureProvider,
   movieHeaders,
   seriesHeaders,
 } = require('./fixtures/catalog-sheet-source-fixtures');
+const { createCatalogContentId } = require('../src/catalog-content-identity');
+
+const createAdapter = (provider = createFixtureProvider(), metadataProvider = createFixtureMetadataProvider()) =>
+  createCatalogSheetAdapter(provider, { metadataProvider });
 
 test('reads movie and series snapshots through the replaceable provider interface', async () => {
-  const adapter = createCatalogSheetAdapter(createFixtureProvider());
+  const adapter = createAdapter();
   const results = await adapter.listItems();
   assert.deepEqual(
     results.map((item) => item.id).sort(),
     [
-      'fixture-movie-invalid-country',
-      'fixture-movie-ir',
-      'fixture-movie-unknown-country',
-      'fixture-movie-us',
-      'fixture-series-ir',
-      'fixture-series-us',
+      'movie:fixture-movie-invalid-country',
+      'movie:fixture-movie-ir',
+      'movie:fixture-movie-unknown-country',
+      'movie:fixture-movie-us',
+      'series:fixture-series-ir',
+      'series:fixture-series-us',
     ].sort(),
   );
-  assert.equal(results.find((item) => item.id === 'fixture-series-ir').kind, 'series');
-  assert.equal(results.find((item) => item.id === 'fixture-movie-ir').kind, 'movie');
+  assert.equal(results.find((item) => item.id === 'series:fixture-series-ir').kind, 'series');
+  assert.equal(results.find((item) => item.id === 'movie:fixture-movie-ir').kind, 'movie');
 });
 
 test('uses existing Core category filters for Iranian movies and series', async () => {
-  const adapter = createCatalogSheetAdapter(createFixtureProvider());
+  const adapter = createAdapter();
   const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
   const seriesCategory = categories.find((category) => category.slug === 'iranian-series');
   assert.deepEqual(
     (await adapter.listCategoryItems(movieCategory)).map((item) => item.id),
-    ['fixture-movie-ir'],
+    ['movie:fixture-movie-ir'],
   );
   assert.deepEqual(
     (await adapter.listCategoryItems(seriesCategory)).map((item) => item.id),
-    ['fixture-series-ir'],
+    ['series:fixture-series-ir'],
   );
 });
 
@@ -49,18 +54,18 @@ test('legacy rows without country remain readable but stay out of Iranian catego
     'سینمایی': { headers: legacyHeaders, rows: [['legacy-movie-1', 'فیلم قدیمی', '2010']] },
     'سریال': { headers: seriesHeaders, rows: [] },
   });
-  const adapter = createCatalogSheetAdapter(legacyProvider);
+  const adapter = createAdapter(legacyProvider);
   const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
   assert.deepEqual(await adapter.listItems(), []);
   assert.deepEqual(await adapter.listCategoryItems(movieCategory), []);
 });
 
-test('missing, draft, and unknown publication states are excluded', async () => {
-  const adapter = createCatalogSheetAdapter(createFixtureProvider());
+test('missing metadata and non-public approval/publication states are excluded', async () => {
+  const adapter = createAdapter();
   const results = await adapter.listItems();
   const ids = results.map((item) => item.id);
-  assert.equal(ids.includes('fixture-movie-draft'), false);
-  assert.equal(ids.includes('fixture-movie-unknown-status'), false);
+  assert.equal(ids.includes('movie:fixture-movie-draft'), false);
+  assert.equal(ids.includes('movie:fixture-movie-unknown-status'), false);
 
   const noStatusProvider = createFixtureProvider({
     'سینمایی': {
@@ -69,7 +74,21 @@ test('missing, draft, and unknown publication states are excluded', async () => 
     },
     'سریال': { headers: seriesHeaders, rows: [] },
   });
-  assert.deepEqual(await createCatalogSheetAdapter(noStatusProvider).listItems(), []);
+  assert.deepEqual(await createAdapter(noStatusProvider).listItems(), []);
+});
+
+test('legacy visibility or Sheet status cannot publish content without both metadata states', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': {
+      headers: movieHeaders,
+      rows: [['no-metadata', 'فیلم ساختگی', '2020', 'IR', 'published', 'private-file']],
+    },
+    'سریال': { headers: seriesHeaders, rows: [] },
+  });
+  const legacyVisibility = createFixtureMetadataProvider({
+    [createCatalogContentId('movie', 'no-metadata')]: { visibility: 'approved' },
+  });
+  assert.deepEqual(await createCatalogSheetAdapter(provider, { metadataProvider: legacyVisibility }).listItems(), []);
 });
 
 test('missing required columns and incomplete rows fail with structural errors', async () => {
@@ -78,7 +97,7 @@ test('missing required columns and incomplete rows fail with structural errors',
     'سریال': { headers: seriesHeaders, rows: [] },
   });
   await assert.rejects(
-    createCatalogSheetAdapter(missingColumnProvider).listItems(),
+    createAdapter(missingColumnProvider).listItems(),
     /Missing required headers in سینمایی/,
   );
 
@@ -87,12 +106,12 @@ test('missing required columns and incomplete rows fail with structural errors',
     'سریال': { headers: seriesHeaders, rows: [] },
   });
   await assert.rejects(
-    createCatalogSheetAdapter(incompleteRowProvider).listItems(),
+    createAdapter(incompleteRowProvider).listItems(),
     /Invalid catalog row in سینمایی at index 0/,
   );
 });
 
-test('invalid country values cannot match Iranian categories', async () => {
+test('country values in Sheet rows cannot supply metadata or classify content', async () => {
   const provider = createFixtureProvider({
     'سینمایی': {
       headers: movieHeaders,
@@ -100,16 +119,15 @@ test('invalid country values cannot match Iranian categories', async () => {
     },
     'سریال': { headers: seriesHeaders, rows: [] },
   });
-  const adapter = createCatalogSheetAdapter(provider);
+  const adapter = createAdapter(provider);
   const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
   const results = await adapter.listItems();
-  assert.deepEqual(results.map((item) => item.id), ['bad-country']);
-  assert.equal(results[0].countries, undefined);
+  assert.deepEqual(results, []);
   assert.deepEqual(await adapter.listCategoryItems(movieCategory), []);
 });
 
 test('public DTOs do not expose raw rows, Telegram file IDs, or mapper internals', async () => {
-  const results = await createCatalogSheetAdapter(createFixtureProvider()).listItems();
+  const results = await createAdapter().listItems();
   const serialized = JSON.stringify(results);
   assert.equal(serialized.includes('fake-file-'), false);
   assert.equal(serialized.includes('sourceRecord'), false);
@@ -131,9 +149,16 @@ test('a replacement provider works without changing the Core or adapter', async 
       return { headers: ['کد سیستم', 'اسم فیلم'], rows: [] };
     },
   };
-  const result = await createCatalogSheetAdapter(replacementProvider).listItems();
+  const result = await createAdapter(
+    replacementProvider,
+    createFixtureMetadataProvider({
+      [createCatalogContentId('movie', 'replacement-movie')]: {
+        approvalStatus: 'approved', publicationStatus: 'published',
+      },
+    }),
+  ).listItems();
   assert.equal(calls, 2);
-  assert.deepEqual(result, [{ id: 'replacement-movie', kind: 'movie', title: 'فیلم منبع جایگزین' }]);
+  assert.deepEqual(result, [{ id: 'movie:replacement-movie', kind: 'movie', title: 'فیلم منبع جایگزین' }]);
 });
 
 test('provider contract is checked when the adapter is created', () => {

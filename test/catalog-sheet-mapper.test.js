@@ -47,25 +47,24 @@ const seriesRow = {
 test('maps only the supported movie identity and year fields', () => {
   const result = mapCatalogSheetRow('سینمایی', movieRow);
   assert.deepEqual(result.content, {
-    id: 'M-100',
+    id: 'movie:M-100',
     kind: 'movie',
     title: 'فیلم نمونه',
-    countryIds: ['IR'],
     releaseYear: 2020,
   });
   assert.equal(result.sourceRecord['Telegram File ID'], 'fake-file-id');
-  assert.deepEqual(result.content.countryIds, ['IR']);
+  assert.equal(result.content.countryIds, undefined);
   assert.equal('genreIds' in result.content, false);
-  assert.equal('status' in result.content, false);
+  assert.equal('approvalStatus' in result.content, false);
+  assert.equal('publicationStatus' in result.content, false);
 });
 
 test('maps series years and keeps combined season/episode data unparsed', () => {
   const result = mapCatalogSheetRow('سریال', seriesRow);
   assert.deepEqual(result.content, {
-    id: 'S-200',
+    id: 'series:S-200',
     kind: 'series',
     title: 'سریال نمونه',
-    countryIds: ['IR'],
     seriesMetadata: {
       startYear: 2018,
       endYear: 2022,
@@ -75,52 +74,73 @@ test('maps series years and keeps combined season/episode data unparsed', () => 
   assert.equal('releaseYear' in result.content, false);
 });
 
-test('legacy rows without country stay valid and cannot enter Iranian categories', () => {
+test('mapper does not infer country or publication from source rows', () => {
   const legacyRow = { ...movieRow };
   delete legacyRow['کشور سازنده'];
   const mapped = mapCatalogSheetRow('سینمایی', legacyRow);
   assert.equal(mapped.content.countryIds, undefined);
   const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
   assert.deepEqual(getCategoryItems([mapped.content], movieCategory), []);
-  assert.deepEqual(getCategoryItems([{ ...mapped.content, status: null }], movieCategory), []);
+  assert.deepEqual(getCategoryItems([{
+    ...mapped.content,
+    approvalStatus: 'approved',
+    publicationStatus: 'unknown',
+  }], movieCategory), []);
   assert.equal(toPublicCatalogDto(mapped), null);
   assert.equal(
-    toPublicCatalogDto({ ...mapped, content: { ...mapped.content, status: null } }),
+    toPublicCatalogDto({ ...mapped, content: {
+      ...mapped.content,
+      approvalStatus: 'approved',
+      publicationStatus: 'unknown',
+    } }),
     null,
   );
 });
 
-test('multi-country values use pipe-separated stable IDs', () => {
+test('country columns are ignored because country data belongs to metadata', () => {
   const mapped = mapCatalogSheetRow('سینمایی', { ...movieRow, 'کشور سازنده': 'IR | US' });
-  assert.deepEqual(mapped.content.countryIds, ['IR', 'US']);
-  const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
-  assert.equal(
-    getCategoryItems([{ ...mapped.content, status: 'published' }], movieCategory).length,
-    1,
-  );
+  assert.equal(mapped.content.countryIds, undefined);
+  assert.equal('approvalStatus' in mapped.content, false);
+  assert.equal('publicationStatus' in mapped.content, false);
 });
 
-test('invalid or unsupported country values are omitted and cannot classify as Iranian', () => {
+test('invalid or unsupported country columns cannot classify content', () => {
   const mapped = mapCatalogSheetRow('سینمایی', { ...movieRow, 'کشور سازنده': 'IR|ZZ' });
-  assert.deepEqual(mapped.mappingWarnings, ['invalid-country-values']);
+  assert.deepEqual(mapped.mappingWarnings, []);
   assert.equal(mapped.content.countryIds, undefined);
-  const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
-  assert.deepEqual(getCategoryItems([{ ...mapped.content, status: 'published' }], movieCategory), []);
 });
 
 test('public DTO allowlists fields and excludes source row and Telegram file IDs', () => {
   const mapped = mapCatalogSheetRow('سینمایی', movieRow);
-  mapped.content.status = 'published';
+  mapped.content.approvalStatus = 'approved';
+  mapped.content.publicationStatus = 'published';
   const dto = toPublicCatalogDto(mapped);
   assert.deepEqual(dto, {
-    id: 'M-100',
+    id: 'movie:M-100',
     kind: 'movie',
     title: 'فیلم نمونه',
     releaseYear: 2020,
-    countries: [{ id: 'IR', labelFa: 'ایران' }],
   });
   assert.equal(JSON.stringify(dto).includes('fake-file-id'), false);
   assert.equal('sourceRecord' in dto, false);
+  assert.equal('approvalStatus' in dto, false);
+  assert.equal('publicationStatus' in dto, false);
+});
+
+test('legacy visibility or a single publication state never authorizes a public DTO', () => {
+  const mapped = mapCatalogSheetRow('سینمایی', movieRow);
+  assert.equal(toPublicCatalogDto({
+    ...mapped,
+    content: { ...mapped.content, visibility: 'approved' },
+  }), null);
+  assert.equal(toPublicCatalogDto({
+    ...mapped,
+    content: { ...mapped.content, status: 'published' },
+  }), null);
+  assert.equal(toPublicCatalogDto({
+    ...mapped,
+    content: { ...mapped.content, approvalStatus: 'approved' },
+  }), null);
 });
 
 test('rejects missing required identity or title fields', () => {

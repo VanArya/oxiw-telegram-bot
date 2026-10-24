@@ -4,11 +4,8 @@ const MOVIE_SHEET = 'سینمایی';
 const SERIES_SHEET = 'سریال';
 const YEAR_MIN = 1800;
 const YEAR_MAX = 3000;
-const COUNTRY_COLUMN = 'کشور سازنده';
-const COUNTRY_LABELS_FA = Object.freeze({
-  IR: 'ایران',
-  US: 'ایالات متحده',
-});
+const { createCatalogContentId } = require('./catalog-content-identity');
+const { isPubliclyVisible } = require('./catalog-core');
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -44,25 +41,6 @@ function optionalYear(row, fieldName) {
   return year;
 }
 
-function optionalCountryIds(row) {
-  const value = row[COUNTRY_COLUMN];
-  if (value === undefined || value === null || value === '') {
-    return { countryIds: undefined, warnings: [] };
-  }
-  if (typeof value !== 'string') {
-    return { countryIds: undefined, warnings: ['invalid-country-values'] };
-  }
-
-  const ids = value.split('|').map((part) => part.trim());
-  if (
-    ids.some((id) => !/^[A-Z]{2}$/.test(id) || !Object.hasOwn(COUNTRY_LABELS_FA, id))
-  ) {
-    return { countryIds: undefined, warnings: ['invalid-country-values'] };
-  }
-
-  return { countryIds: [...new Set(ids)], warnings: [] };
-}
-
 function mapCatalogSheetRow(sheetName, row) {
   if (!isRecord(row)) {
     throw new TypeError('Row must be an object keyed by sheet headers.');
@@ -78,15 +56,10 @@ function mapCatalogSheetRow(sheetName, row) {
   }
 
   const content = {
-    id: requiredText(row, 'کد سیستم'),
+    id: createCatalogContentId(kind, requiredText(row, 'کد سیستم')),
     kind,
     title: requiredText(row, 'اسم فیلم'),
   };
-  const countryResult = optionalCountryIds(row);
-  if (countryResult.countryIds !== undefined) {
-    content.countryIds = countryResult.countryIds;
-  }
-
   if (kind === 'movie') {
     const releaseYear = optionalYear(row, 'سال');
     if (releaseYear !== undefined) {
@@ -110,17 +83,17 @@ function mapCatalogSheetRow(sheetName, row) {
   // object through the public Catalog API or log it; it may contain file IDs.
   return {
     content,
-    mappingWarnings: countryResult.warnings,
+    mappingWarnings: [],
     sourceRecord: { ...row },
     sourceSheet: sheetName,
   };
 }
 
-function toPublicCatalogDto(mappedRecord) {
+function toPublicCatalogDto(mappedRecord, { countryLabels = {}, genreLabels = {} } = {}) {
   const content = mappedRecord && mappedRecord.content;
   if (
     !isRecord(content) ||
-    content.status !== 'published' ||
+    !isPubliclyVisible(content) ||
     typeof content.id !== 'string' ||
     !['movie', 'series'].includes(content.kind) ||
     typeof content.title !== 'string'
@@ -134,9 +107,15 @@ function toPublicCatalogDto(mappedRecord) {
   }
   if (
     Array.isArray(content.countryIds) &&
-    content.countryIds.every((id) => Object.hasOwn(COUNTRY_LABELS_FA, id))
+    content.countryIds.every((id) => Object.hasOwn(countryLabels, id))
   ) {
-    dto.countries = content.countryIds.map((id) => ({ id, labelFa: COUNTRY_LABELS_FA[id] }));
+    dto.countries = content.countryIds.map((id) => ({ id, labelFa: countryLabels[id] }));
+  }
+  if (
+    Array.isArray(content.genreIds) &&
+    content.genreIds.every((id) => Object.hasOwn(genreLabels, id))
+  ) {
+    dto.genres = content.genreIds.map((id) => ({ id, labelFa: genreLabels[id] }));
   }
   if (content.kind === 'series' && isRecord(content.seriesMetadata)) {
     dto.seriesMetadata = {};

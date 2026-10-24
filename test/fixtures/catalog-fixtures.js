@@ -8,7 +8,8 @@ const items = [
     countryIds: ['IR'],
     genreIds: ['drama'],
     releaseYear: 2020,
-    status: 'published',
+    approvalStatus: 'approved',
+    publicationStatus: 'published',
   },
   {
     id: 'fixture-series-ir-1',
@@ -17,7 +18,8 @@ const items = [
     countryIds: ['IR'],
     genreIds: ['drama'],
     releaseYear: 2022,
-    status: 'published',
+    approvalStatus: 'approved',
+    publicationStatus: 'published',
   },
   {
     id: 'fixture-movie-us-1',
@@ -26,7 +28,8 @@ const items = [
     countryIds: ['US'],
     genreIds: ['drama'],
     releaseYear: 2019,
-    status: 'published',
+    approvalStatus: 'approved',
+    publicationStatus: 'published',
   },
   {
     id: 'fixture-series-us-1',
@@ -34,14 +37,16 @@ const items = [
     title: 'سریال نمونه خارجی',
     countryIds: ['US'],
     genreIds: ['drama'],
-    status: 'published',
+    approvalStatus: 'approved',
+    publicationStatus: 'published',
   },
   {
     id: 'fixture-movie-country-unknown',
     kind: 'movie',
     title: 'فیلم با کشور نامشخص',
     genreIds: ['drama'],
-    status: 'published',
+    approvalStatus: 'approved',
+    publicationStatus: 'published',
   },
   {
     id: 'fixture-movie-ir-draft',
@@ -50,7 +55,8 @@ const items = [
     countryIds: ['IR'],
     genreIds: ['comedy'],
     releaseYear: 2024,
-    status: 'draft',
+    approvalStatus: 'approved',
+    publicationStatus: 'draft',
   },
 ];
 

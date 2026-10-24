@@ -64,12 +64,40 @@ test('public catalog filters exclude unpublished items', () => {
     op: 'contains',
     value: 'IR',
   });
-  assert.equal(result.some((item) => item.status !== 'published'), false);
+  assert.equal(result.some((item) => (
+    item.approvalStatus !== 'approved' || item.publicationStatus !== 'published'
+  )), false);
+});
+
+test('public visibility requires independent approved and published states', () => {
+  const variants = [
+    { id: 'approval-pending', approvalStatus: 'pending', publicationStatus: 'published' },
+    { id: 'approval-rejected', approvalStatus: 'rejected', publicationStatus: 'published' },
+    { id: 'approval-unknown', approvalStatus: 'unknown', publicationStatus: 'published' },
+    { id: 'publication-draft', approvalStatus: 'approved', publicationStatus: 'draft' },
+    { id: 'publication-archived', approvalStatus: 'approved', publicationStatus: 'archived' },
+    { id: 'publication-unknown', approvalStatus: 'approved', publicationStatus: 'unknown' },
+    { id: 'missing-approval', publicationStatus: 'published' },
+    { id: 'missing-publication', approvalStatus: 'approved' },
+    { id: 'legacy-visibility', visibility: 'approved' },
+    { id: 'legacy-status', status: 'published' },
+    { id: 'invalid-states', approvalStatus: 'published', publicationStatus: 'approved' },
+    { id: 'public', approvalStatus: 'approved', publicationStatus: 'published' },
+  ].map((state) => ({ kind: 'movie', countryIds: ['IR'], ...state }));
+
+  const result = filterCatalogItems(variants, { field: 'kind', op: 'eq', value: 'movie' });
+  assert.deepEqual(result.map(({ id }) => id), ['public']);
+  assert.equal(findPublishedItem(variants, 'legacy-visibility'), null);
+  assert.equal(findPublishedItem(variants, 'legacy-status'), null);
 });
 
 test('unsupported fields are rejected', () => {
   assert.throws(
     () => filterCatalogItems(items, { field: 'telegramFileId', op: 'eq', value: 'x' }),
+    /Unsupported filter field/,
+  );
+  assert.throws(
+    () => filterCatalogItems(items, { field: 'status', op: 'eq', value: 'published' }),
     /Unsupported filter field/,
   );
 });

@@ -3,10 +3,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createCatalogSheetAdapter } = require('../src/catalog-sheet-adapter');
+const { createCatalogContentId } = require('../src/catalog-content-identity');
 const {
   createGoogleSheetsCatalogProvider,
 } = require('../src/google-sheets-catalog-provider');
 const { categories } = require('./fixtures/catalog-fixtures');
+const { createFixtureMetadataProvider } = require('./fixtures/catalog-sheet-source-fixtures');
 
 const spreadsheetIdFixture = 'synthetic-spreadsheet-id';
 
@@ -110,9 +112,15 @@ test('legacy rows remain mappable without country and internal Telegram IDs stay
     }),
     spreadsheetId: spreadsheetIdFixture,
   });
-  const adapter = createCatalogSheetAdapter(provider);
+  const adapter = createCatalogSheetAdapter(provider, {
+    metadataProvider: createFixtureMetadataProvider({
+      [createCatalogContentId('movie', 'legacy-movie')]: {
+        approvalStatus: 'approved', publicationStatus: 'published',
+      },
+    }),
+  });
   const items = await adapter.listItems();
-  assert.deepEqual(items, [{ id: 'legacy-movie', kind: 'movie', title: 'فیلم قدیمی ساختگی' }]);
+  assert.deepEqual(items, [{ id: 'movie:legacy-movie', kind: 'movie', title: 'فیلم قدیمی ساختگی' }]);
   assert.equal(JSON.stringify(items).includes('synthetic-file-id'), false);
   assert.deepEqual(await adapter.listCategoryItems(
     categories.find((category) => category.slug === 'iranian-movies'),

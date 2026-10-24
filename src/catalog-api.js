@@ -8,12 +8,8 @@ const { createCatalogSheetAdapter } = require('./catalog-sheet-adapter');
 const BASE_PATH = '/api/v1/catalog';
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
-const COUNTRY_TERMS = Object.freeze([
-  Object.freeze({ id: 'IR', labelFa: 'ایران' }),
-  Object.freeze({ id: 'US', labelFa: 'ایالات متحده' }),
-]);
 const ALLOWED_QUERY_KEYS = new Set([
-  'kind', 'countryId', 'genreId', 'q', 'year', 'page', 'pageSize',
+  'kind', 'countryId', 'genreId', 'category', 'q', 'year', 'page', 'pageSize',
 ]);
 
 class ApiError extends Error {
@@ -58,7 +54,7 @@ function positiveInteger(value, key, fallback, maximum) {
   return parsed;
 }
 
-function parseListQuery(searchParams) {
+function parseListQuery(searchParams, { countryTerms, genreTerms, categories, metadataEnabled }) {
   for (const key of searchParams.keys()) {
     if (!ALLOWED_QUERY_KEYS.has(key)) {
       throw new ApiError(400, 'INVALID_FILTER', 'یکی از پارامترهای فیلتر پشتیبانی نمی‌شود.');
@@ -69,8 +65,8 @@ function parseListQuery(searchParams) {
     [...ALLOWED_QUERY_KEYS].map((key) => [key, readSingleQuery(searchParams, key)]),
   );
 
-  if (values.genreId !== undefined) {
-    throw new ApiError(400, 'FILTER_NOT_READY', 'فیلتر ژانر هنوز در نگاشت داده پیاده‌سازی نشده است.');
+  if (values.genreId !== undefined && !metadataEnabled) {
+    throw new ApiError(400, 'FILTER_NOT_READY', 'فیلتر ژانر هنوز در منبع فراداده فعال نیست.');
   }
   if (values.q !== undefined) {
     throw new ApiError(400, 'FILTER_NOT_READY', 'جست‌وجوی عنوان هنوز در قرارداد اجرایی آماده نیست.');
@@ -78,6 +74,15 @@ function parseListQuery(searchParams) {
 
   const filters = [];
   const filtersApplied = {};
+  if (values.category !== undefined) {
+    if (!categories.some((category) => category.slug === values.category && category.enabled === true)) {
+      throw new ApiError(400, 'INVALID_FILTER', 'دسته‌بندی پشتیبانی نمی‌شود.');
+    }
+    if (['kind', 'countryId', 'genreId', 'year'].some((key) => values[key] !== undefined)) {
+      throw new ApiError(400, 'INVALID_FILTER', 'دسته‌بندی را نمی‌توان با فیلترهای دیگر ترکیب کرد.');
+    }
+    filtersApplied.category = values.category;
+  }
   if (values.kind !== undefined) {
     if (!['movie', 'series'].includes(values.kind)) {
       throw new ApiError(400, 'INVALID_FILTER', 'نوع محتوا پشتیبانی نمی‌شود.');
@@ -86,11 +91,18 @@ function parseListQuery(searchParams) {
     filtersApplied.kind = values.kind;
   }
   if (values.countryId !== undefined) {
-    if (!COUNTRY_TERMS.some((term) => term.id === values.countryId)) {
+    if (!countryTerms.some((term) => term.id === values.countryId)) {
       throw new ApiError(400, 'INVALID_FILTER', 'شناسهٔ کشور در taxonomy پشتیبانی‌شده نیست.');
     }
     filters.push({ field: 'countryIds', op: 'contains', value: values.countryId });
     filtersApplied.countryId = values.countryId;
+  }
+  if (values.genreId !== undefined) {
+    if (!genreTerms.some((term) => term.id === values.genreId)) {
+      throw new ApiError(400, 'INVALID_FILTER', 'شناسهٔ ژانر در taxonomy پشتیبانی‌شده نیست.');
+    }
+    filters.push({ field: 'genreIds', op: 'contains', value: values.genreId });
+    filtersApplied.genreId = values.genreId;
   }
   if (values.year !== undefined) {
     if (values.kind === 'series') {
@@ -145,15 +157,30 @@ function publicFilter(filter) {
   return { field: filter.field, op: filter.op, value: filter.value };
 }
 
-function createCatalogApi({ provider, categories = [] }) {
-  const adapter = createCatalogSheetAdapter(provider);
+function createCatalogApi({ provider, categories = [], metadataProvider }) {
+  const adapter = createCatalogSheetAdapter(provider, { metadataProvider });
   const app = express();
   app.disable('x-powered-by');
 
   app.get(`${BASE_PATH}/items`, async (req, res) => {
     try {
-      const parsed = parseListQuery(new URL(req.originalUrl, 'http://localhost').searchParams);
-      const items = await adapter.listItems(parsed.filter);
+      const [activeCategories, countryTerms, genreTerms] = await Promise.all([
+        adapter.listCategories(categories),
+        adapter.listTaxonomyTerms('country'),
+        adapter.listTaxonomyTerms('genre'),
+      ]);
+      const parsed = parseListQuery(new URL(req.originalUrl, 'http://localhost').searchParams, {
+        countryTerms,
+        genreTerms,
+        categories: listCategories(activeCategories),
+        metadataEnabled: metadataProvider !== undefined,
+      });
+      const selectedCategory = parsed.filtersApplied.category === undefined
+        ? undefined
+        : listCategories(activeCategories).find((category) => category.slug === parsed.filtersApplied.category);
+      const items = selectedCategory
+        ? await adapter.listCategoryItems(selectedCategory)
+        : await adapter.listItems(parsed.filter);
       const start = (parsed.page - 1) * parsed.pageSize;
       if (!Number.isSafeInteger(start)) {
         throw new ApiError(400, 'INVALID_PAGINATION', 'محدودهٔ صفحه‌بندی معتبر نیست.');
@@ -183,20 +210,34 @@ function createCatalogApi({ provider, categories = [] }) {
     }
   });
 
-  app.get(`${BASE_PATH}/categories`, (req, res) => {
+  app.get(`${BASE_PATH}/categories`, async (req, res) => {
     try {
-      const active = listCategories(categories).map(publicCategory);
+      const active = listCategories(await adapter.listCategories(categories)).map(publicCategory);
       return res.json({ data: active });
     } catch (error) {
       return sendError(res, error);
     }
   });
 
-  app.get(`${BASE_PATH}/taxonomies`, (req, res) => {
-    return res.json({
-      data: { country: COUNTRY_TERMS.map((term) => ({ ...term })) },
-      meta: { availableTypes: ['country'] },
-    });
+  app.get(`${BASE_PATH}/taxonomies`, async (req, res) => {
+    try {
+      const [countryTerms, genreTerms] = await Promise.all([
+        adapter.listTaxonomyTerms('country'),
+        adapter.listTaxonomyTerms('genre'),
+      ]);
+      const data = {
+        country: countryTerms.map(({ id, labelFa }) => ({ id, labelFa })),
+      };
+      if (metadataProvider !== undefined) {
+        data.genre = genreTerms.map(({ id, labelFa }) => ({ id, labelFa }));
+      }
+      return res.json({
+        data,
+        meta: { availableTypes: Object.keys(data) },
+      });
+    } catch (error) {
+      return sendError(res, error);
+    }
   });
 
   app.use((req, res) => {

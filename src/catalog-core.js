@@ -4,11 +4,9 @@ const FILTER_FIELDS = new Set([
   'kind',
   'countryIds',
   'genreIds',
-  'status',
   'releaseYear',
 ]);
 const KINDS = new Set(['movie', 'series']);
-const STATUSES = new Set(['draft', 'published', 'archived']);
 const COMPARISON_OPS = new Set(['eq', 'gte', 'lte']);
 const MAX_FILTER_DEPTH = 8;
 const MAX_FILTER_CHILDREN = 32;
@@ -59,13 +57,6 @@ function assertFilter(expression, depth = 0) {
   if (field === 'kind') {
     if (op !== 'eq' || !KINDS.has(value)) {
       throw new TypeError('Invalid kind condition.');
-    }
-    return;
-  }
-
-  if (field === 'status') {
-    if (op !== 'eq' || !STATUSES.has(value)) {
-      throw new TypeError('Invalid status condition.');
     }
     return;
   }
@@ -128,7 +119,15 @@ function filterCatalogItems(items, expression) {
   }
 
   return items.filter(
-    (item) => item && item.status === 'published' && matchesFilter(item, expression),
+    (item) => isPubliclyVisible(item) && matchesFilter(item, expression),
+  );
+}
+
+function isPubliclyVisible(item) {
+  return Boolean(
+    item &&
+    item.approvalStatus === 'approved' &&
+    item.publicationStatus === 'published',
   );
 }
 
@@ -161,12 +160,13 @@ function findPublishedItem(items, id) {
   if (!Array.isArray(items)) {
     throw new TypeError('Items must be an array.');
   }
-  return items.find((item) => item && item.id === id && item.status === 'published') || null;
+  return items.find((item) => item && item.id === id && isPubliclyVisible(item)) || null;
 }
 
 module.exports = {
   filterCatalogItems,
   findPublishedItem,
   getCategoryItems,
+  isPubliclyVisible,
   listCategories,
 };

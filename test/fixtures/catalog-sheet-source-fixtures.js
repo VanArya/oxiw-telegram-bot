@@ -8,6 +8,9 @@ const movieHeaders = [
   'وضعیت انتشار',
   'Telegram File ID',
 ];
+const { createCatalogContentId } = require('../../src/catalog-content-identity');
+const { createInMemoryCatalogMetadataProvider } = require('../../src/in-memory-catalog-metadata-provider');
+const { categories } = require('./catalog-fixtures');
 
 const seriesHeaders = [
   'کد سیستم',
@@ -56,4 +59,37 @@ function createFixtureProvider(sourceSheets = sheets) {
   };
 }
 
-module.exports = { createFixtureProvider, movieHeaders, seriesHeaders, sheets };
+function createFixtureMetadataProvider(overrides = {}) {
+  return createInMemoryCatalogMetadataProvider({
+    contentMetadata: {
+      [createCatalogContentId('movie', 'fixture-movie-ir')]: { approvalStatus: 'approved', publicationStatus: 'published', countryIds: ['IR'], genreIds: ['drama'] },
+      [createCatalogContentId('movie', 'fixture-movie-us')]: { approvalStatus: 'approved', publicationStatus: 'published', countryIds: ['US'], genreIds: ['drama'] },
+      [createCatalogContentId('movie', 'fixture-movie-unknown-country')]: { approvalStatus: 'approved', publicationStatus: 'published', genreIds: ['drama'] },
+      [createCatalogContentId('movie', 'fixture-movie-invalid-country')]: { approvalStatus: 'approved', publicationStatus: 'published' },
+      [createCatalogContentId('movie', 'fixture-movie-draft')]: { approvalStatus: 'approved', publicationStatus: 'draft', countryIds: ['IR'] },
+      [createCatalogContentId('movie', 'fixture-movie-unknown-status')]: { approvalStatus: 'unknown', publicationStatus: 'published', countryIds: ['IR'] },
+      [createCatalogContentId('series', 'fixture-series-ir')]: { approvalStatus: 'approved', publicationStatus: 'published', countryIds: ['IR'], genreIds: ['drama'] },
+      [createCatalogContentId('series', 'fixture-series-us')]: { approvalStatus: 'approved', publicationStatus: 'published', countryIds: ['US'], genreIds: ['drama'] },
+      ...overrides,
+    },
+    categories,
+    taxonomies: {
+      country: [
+        { id: 'IR', labelFa: 'ایران', enabled: true },
+        { id: 'US', labelFa: 'ایالات متحده', enabled: true },
+      ],
+      genre: [
+        { id: 'drama', labelFa: 'درام', enabled: true },
+        { id: 'comedy', labelFa: 'کمدی', enabled: true },
+      ],
+    },
+  });
+}
+
+module.exports = {
+  createFixtureMetadataProvider,
+  createFixtureProvider,
+  movieHeaders,
+  seriesHeaders,
+  sheets,
+};
