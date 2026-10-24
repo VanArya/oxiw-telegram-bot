@@ -1,6 +1,6 @@
 # Catalog API v1 — قرارداد پیشنهادی
 
-وضعیت: پیشنهادی، هنوز پیاده‌سازی‌شده یا منتشرشده نیست
+وضعیت: نمونهٔ محلی خواندنی پیاده‌سازی شده؛ منبع داده fixture است و API منتشر نشده است.
 دامنه: خواندن کاتالوگ و دسته‌بندی‌های عمومی
 
 ## قواعد قرارداد
@@ -27,11 +27,11 @@
 |---|---|---|
 | kind | enum اختیاری | movie یا series |
 | countryId | رشتهٔ taxonomy اختیاری | فیلتر کشور سازنده |
-| genreId | رشتهٔ taxonomy اختیاری | فیلتر ژانر |
-| q | رشتهٔ اختیاری | جست‌وجوی عنوان در آینده؛ نیازمند تعریف نرمال‌سازی فارسی |
-| year | عدد اختیاری | سال انتشار، پس از تأیید منبع |
+| genreId | رشتهٔ اختیاری | فعلاً رد می‌شود؛ mapper ژانر را به مدل دامنه نگاشت نمی‌کند |
+| q | رشتهٔ اختیاری | فعلاً رد می‌شود؛ جست‌وجوی عنوان و نرمال‌سازی فارسی پیاده‌سازی نشده |
+| year | عدد چهاررقمی اختیاری | تطبیق دقیق با `releaseYear`؛ فقط برای فیلم سینمایی |
 | page | عدد صحیح مثبت، پیش‌فرض 1 | شمارهٔ صفحه |
-| pageSize | عدد صحیح محدود، پیش‌فرض 20 | اندازهٔ صفحه |
+| pageSize | عدد صحیح 1 تا 100، پیش‌فرض 20 | اندازهٔ صفحه |
 
 پاسخ پیشنهادی:
 
@@ -48,9 +48,9 @@
 
 هر دسته شامل id، slug، localizedTitle، sortOrder و یک تعریف فیلتر محدود است. کلاینت‌ها عنوان و فهرست دسته را از این endpoint می‌گیرند؛ نام دسته در شرط ثابت هر رابط قرار نمی‌گیرد.
 
-### GET /api/v1/taxonomies/{type}
+### GET /api/v1/catalog/taxonomies
 
-مقادیر مجاز taxonomy برای typeهایی مانند country، genre و tag؛ فقط termهای فعال، با labelهای ترجمه‌شده و sortOrder.
+taxonomyهای واقعاً پیاده‌سازی‌شده را برمی‌گرداند. در نمونهٔ فعلی فقط `country` با شناسه‌های پشتیبانی‌شدهٔ `IR` و `US` ارائه می‌شود. ژانر هنوز taxonomy قابل‌استفاده در API نیست.
 
 ### قالب پاسخ و خطا
 
@@ -64,6 +64,8 @@
 - error.code: کد پایدار مانند INVALID_FILTER یا NOT_FOUND
 - error.message: پیام غیرمحرمانه
 - error.requestId: شناسهٔ رخداد تصادفی، بدون اطلاعات شخصی یا secret
+
+کدهای خطای نمونهٔ محلی شامل `INVALID_FILTER`، `FILTER_NOT_READY`، `INVALID_PAGINATION`، `NOT_FOUND` و `INTERNAL_ERROR` هستند. خطای داخلی به پیام عمومی تبدیل می‌شود و stack یا جزئیات provider برگردانده نمی‌شود.
 
 ## DSL فیلتر دسته
 
@@ -123,6 +125,12 @@
 - نوشتن محتوا، مدیریت taxonomies، عملیات کاربر و صدور مجوز دانلود باید احراز هویت و مجوزدهی جداگانه داشته باشند؛ در این مرحله endpoint نوشتن طراحی اجرایی نشده است.
 - در log نباید token، Telegram payload کامل، credential یا دادهٔ شخصی ثبت شود.
 - Web App فعلی Apps Script در manifest دسترسی anonymous دارد؛ این وضعیت به‌تنهایی برای endpointهای تغییردهنده مجوز کافی نیست.
+
+## پیاده‌سازی آزمایشی محلی
+
+`createCatalogApi({ provider, categories })` یک Express app محلی می‌سازد و provider را به adapter موجود تزریق می‌کند. قرارداد provider همان `readSheet(sheetName) -> Promise<{ headers, rows }>` است. API از mapper و Core موجود استفاده می‌کند و fixture provider فقط دادهٔ ساختگی می‌خواند؛ اتصال Google Sheets پیاده‌سازی نشده است. ردیف خام، Telegram File ID، token و خطای provider وارد پاسخ نمی‌شوند. تا زمانی که وضعیت انتشار صریح و معتبر نباشد، DTO عمومی ساخته نمی‌شود.
+
+endpointهای اجراشده در نمونه: `GET /api/v1/catalog/items`, `GET /api/v1/catalog/items/{id}`, `GET /api/v1/catalog/categories` و `GET /api/v1/catalog/taxonomies`. مسیرهای نوشتن و دانلود تعریف نشده‌اند. `genreId` و `q` در حال حاضر با `FILTER_NOT_READY` رد می‌شوند.
 
 ## سازگاری و نسخه‌بندی
 
