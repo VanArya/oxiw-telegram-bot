@@ -50,7 +50,7 @@
 
 ### GET /api/v1/catalog/taxonomies
 
-taxonomyهای واقعاً پیاده‌سازی‌شده را برمی‌گرداند. در نمونهٔ فعلی فقط `country` با شناسه‌های پشتیبانی‌شدهٔ `IR` و `US` ارائه می‌شود. ژانر هنوز taxonomy قابل‌استفاده در API نیست.
+taxonomyهای نمونه را برمی‌گرداند. `IR` و `US` در کد فعلی فقط fixtureهای محدود هستند، نه فهرست production. در معماری نهایی کشور و category definitions از منبع metadata جداگانه و از طریق interface مستقل خوانده می‌شوند؛ ژانر تا زمان نگاشت صریح آماده نیست.
 
 ### قالب پاسخ و خطا
 
@@ -96,7 +96,7 @@ taxonomyهای واقعاً پیاده‌سازی‌شده را برمی‌گر�
 - posterAssetId یا URL عمومی کنترل‌شده، فقط پس از تعریف سیاست asset
 - status در API عمومی فقط published است
 
-در schema فعلی شیت‌های «سینمایی» و «سریال» ستون کشور یا وضعیت انتشار ارائه نشده است. این فیلدها تا زمان افزودن و تأیید منبع داده، از ردیف‌ها ساخته نمی‌شوند؛ DTO نمونه نیز فقط رکوردی را برمی‌گرداند که وضعیت `published` آن صریح باشد.
+در schema فعلی شیت‌های «سینمایی» و «سریال» ستون کشور یا وضعیت انتشار ارائه نشده است و این شیت‌ها تغییر نمی‌کنند. کشور، category definitions و visibility آینده از metadata store جداگانه با کلید Content ID می‌آیند. هیچ وضعیت قدیمی حدس زده نمی‌شود؛ تا وقتی رفتار عمومی سرویس فعلی با شواهد read-only تأیید و parity خروجی بررسی نشده، API جدید جایگزین آن نمی‌شود. DTO نمونه فقط محتوای دارای وضعیت صریح `published` را می‌پذیرد.
 
 ### ContentDetail
 
@@ -131,6 +131,19 @@ taxonomyهای واقعاً پیاده‌سازی‌شده را برمی‌گر�
 `createCatalogApi({ provider, categories })` یک Express app محلی می‌سازد و provider را به adapter موجود تزریق می‌کند. قرارداد provider همان `readSheet(sheetName) -> Promise<{ headers, rows }>` است. API از mapper و Core موجود استفاده می‌کند و fixture provider فقط دادهٔ ساختگی می‌خواند؛ اتصال Google Sheets پیاده‌سازی نشده است. ردیف خام، Telegram File ID، token و خطای provider وارد پاسخ نمی‌شوند. تا زمانی که وضعیت انتشار صریح و معتبر نباشد، DTO عمومی ساخته نمی‌شود.
 
 endpointهای اجراشده در نمونه: `GET /api/v1/catalog/items`, `GET /api/v1/catalog/items/{id}`, `GET /api/v1/catalog/categories` و `GET /api/v1/catalog/taxonomies`. مسیرهای نوشتن و دانلود تعریف نشده‌اند. `genreId` و `q` در حال حاضر با `FILTER_NOT_READY` رد می‌شوند.
+
+### منبع فرادادهٔ آینده
+
+قرارداد پیشنهادی و مستقل از storage:
+
+```text
+CatalogMetadataProvider
+  getContentMetadata(contentId) -> { countryIds?, genreIds?, visibility } | null
+  listTaxonomyTerms(type) -> TaxonomyTerm[]
+  listCategories() -> CategoryDefinition[]
+```
+
+نمونهٔ محلی هنوز این interface را به API متصل نکرده است. در staging آینده، metadata بر اساس شناسهٔ پایدار محتوا روی رکوردهای Google Sheets اعمال می‌شود. `visibility=approved` می‌تواند پس از اعتبارسنجی به `published` نگاشت شود؛ `unknown` و `hidden` عمومی نیستند. برای جلوگیری از پنهان‌شدن ناخواستهٔ محتوای جاری، تعویض consumer تا تأیید رفتار فعلی و تطبیق مجموعهٔ شناسه‌های public متوقف می‌ماند.
 
 ## سازگاری و نسخه‌بندی
 
