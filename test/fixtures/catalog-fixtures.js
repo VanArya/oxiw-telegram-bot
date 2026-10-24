@@ -29,6 +29,21 @@ const items = [
     status: 'published',
   },
   {
+    id: 'fixture-series-us-1',
+    kind: 'series',
+    title: 'سریال نمونه خارجی',
+    countryIds: ['US'],
+    genreIds: ['drama'],
+    status: 'published',
+  },
+  {
+    id: 'fixture-movie-country-unknown',
+    kind: 'movie',
+    title: 'فیلم با کشور نامشخص',
+    genreIds: ['drama'],
+    status: 'published',
+  },
+  {
     id: 'fixture-movie-ir-draft',
     kind: 'movie',
     title: 'پیش‌نویس ساختگی',

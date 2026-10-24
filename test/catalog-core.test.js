@@ -31,6 +31,20 @@ test('Iranian series category selects published series from Iran', () => {
   assert.deepEqual(result.map((item) => item.id), ['fixture-series-ir-1']);
 });
 
+test('Iranian categories exclude foreign and unknown-country content', () => {
+  const movieCategory = categories.find((item) => item.slug === 'iranian-movies');
+  const seriesCategory = categories.find((item) => item.slug === 'iranian-series');
+  assert.deepEqual(
+    getCategoryItems(items, movieCategory).map((item) => item.id),
+    ['fixture-movie-ir-1'],
+  );
+  assert.deepEqual(
+    getCategoryItems(items, seriesCategory).map((item) => item.id),
+    ['fixture-series-ir-1'],
+  );
+  assert.equal(items.find((item) => item.id === 'fixture-movie-country-unknown').countryIds, undefined);
+});
+
 test('country and genre filters combine without category-specific code', () => {
   const result = filterCatalogItems(items, {
     all: [
