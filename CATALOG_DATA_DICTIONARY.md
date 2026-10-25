@@ -155,7 +155,23 @@ Adapter هرگز ستون `وضعیت انتشار` را از Sheet نمی‌خ�
 
 ### منبع مستقل فراداده و قرارداد storage
 
-کشور سازنده، شناسه‌های taxonomy، تعریف دسته‌ها، تأیید محتوا و انتشار عمومی در یک منبع جدا از spreadsheet فعلی نگهداری می‌شوند. interface `CatalogMetadataProvider` و `createInMemoryCatalogMetadataProvider` اکنون در نمونهٔ محلی وجود دارند؛ Google Sheets Provider فقط محتوای فعلی را می‌آورد و adapter metadata را با شناسهٔ ترکیبی به مدل وصل می‌کند. fixtureهای `IR`/`US` و ژانرها ساختگی‌اند و فهرست production یا دادهٔ واقعی نیستند.
+کشور سازنده، شناسه‌های taxonomy، تعریف دسته‌ها، تأیید محتوا و انتشار عمومی در یک منبع جدا از spreadsheet فعلی نگهداری می‌شوند. interface `CatalogMetadataProvider`، `createInMemoryCatalogMetadataProvider` و adapter محلی `createFirestoreCatalogMetadataProvider` اکنون در کد هستند؛ هیچ Firestore یا اتصال واقعی ایجاد یا فعال نشده است. Google Sheets Provider فقط محتوای فعلی را می‌آورد و adapter metadata را با شناسهٔ ترکیبی به مدل وصل می‌کند. fixtureهای `IR`/`US` و ژانرها ساختگی‌اند و فهرست production یا دادهٔ واقعی نیستند.
+
+### طرح پیشنهادی اسناد Firestore — هنوز غیرفعال
+
+این شکل ذخیره‌سازی پیشنهاد آینده است، نه schema واقعی یا مهاجرت داده. Google Sheets فعلی منبع فیلدهای فعلی محتوا باقی می‌ماند و ساختار آن تغییر نمی‌کند.
+
+| مجموعه / مسیر پیشنهادی | کلید سند | فیلدهای پیشنهادی |
+|---|---|---|
+| `catalogContentMetadata/{contentId}` | شناسهٔ پایدار فعلی، مانند `movie:<encoded-systemCode>` یا `series:<encoded-systemCode>` | `contentId`, `approvalStatus`, `publicationStatus`, `countryIds`, `genreIds`, `createdAt?`, `updatedAt?` |
+| `catalogCategories/{categoryId}` | شناسهٔ پایدار تعریف دسته | `id`, `slug`, `localizedTitle`, `filters`, `enabled`, `sortOrder` |
+| `catalogTaxonomies/{type}/terms/{termId}` | `type` یکی از `country` یا `genre` و شناسهٔ taxonomy | `id`, `labelFa`, `enabled`, `sortOrder?` |
+
+زمان‌های `createdAt` و `updatedAt` فقط در صورت نیاز عملیاتی، به‌عنوان timestamp سرور نگهداری می‌شوند؛ interface خواندنی فعلی به آن‌ها وابسته نیست و آن‌ها را وارد DTO عمومی نمی‌کند. کشورها، ژانرها، دسته‌ها و وضعیت‌ها باید با مقدارهای معتبر مطابق قرارداد مدل شوند. سند فراداده باید `contentId` خود را با ID سند تطبیق دهد. فیلدهای ناشناخته—including شناسهٔ فایل تلگرام یا توکن دانلود—به قرارداد MetadataProvider برگردانده نمی‌شوند. هیچ مقدار واقعی برای این مجموعه‌ها در این سند فرض نشده است.
+
+`src/firestore-catalog-metadata-provider.js` فقط یک adapter محلی وابسته به کلاینت تزریق‌شده است. قرارداد متدها بدون تغییر می‌ماند: `getContentMetadata(contentId)`, `listCategories()`, `listTaxonomyTerms(type)`. provider حافظه‌ای برای fixture و تست باقی می‌ماند؛ در staging می‌توان provider را فقط از composition root تزریق کرد و برای rollback همان composition را به provider آزمایشی قبلی برگرداند. Core و Google Sheets adapter تغییر storage را نمی‌شناسند.
+
+پیش از هر قابلیت نوشتن، مالک باید احراز هویت و نقش مدیر، محل امن اجرای backend، سیاست دسترسی Firestore، اعتبارسنجی تغییر وضعیت‌ها، audit trail و بازیابی را تعیین کند. کلاینت Android و سایت نباید credential سرور یا مجوز نوشتن مستقیم دریافت کنند. این adapter فقط خواندنی است و endpoint ایجاد/ویرایش/حذف ارائه نمی‌کند.
 
 گزینه‌های storage:
 
