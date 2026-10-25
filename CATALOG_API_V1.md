@@ -154,7 +154,34 @@ CatalogMetadataProvider
 
 `createFirestoreCatalogMetadataProvider({ firestore })` همین interface را با کلاینت تزریق‌شده پیاده می‌کند و فقط `collection/doc/get` می‌خواند. تست‌ها از fake client استفاده می‌کنند؛ SDK، credential و شبکه لازم نیست. provider حافظه‌ای همچنان گزینهٔ پیش‌فرض fixtureهاست و Core هیچ وابستگی‌ای به نوع storage ندارد. در staging بعدی می‌توان فقط `metadataProvider` را در composition root به provider حافظه‌ای یا Firestore تغییر داد؛ برای بازگشت، همان تزریق staging دوباره به provider حافظه‌ای/آزمایشی برگردانده می‌شود. این کار نیازمند تغییر Core نیست و در این مرحله composition زنده‌ای ساخته نشده است.
 
-پیش از قابلیت نوشتن فراداده، باید روش احراز هویت مدیر و نقش‌ها انتخاب شود، مجوز نوشتن فقط در backend مورداعتماد اعمال شود، دسترسی مستقیم کلاینت‌های عمومی به اسناد محدود بماند، ورودی‌ها و transitionهای هر دو وضعیت اعتبارسنجی شوند و ثبت audit/change history و روش بازیابی مشخص شود. credential یا مجوز مدیریتی هرگز در سایت عمومی یا اپ Android قرار نمی‌گیرد. هیچ API نوشتنی در این مرحله وجود ندارد.
+پیش از نوشتن پایدار یا استفادهٔ عملیاتی از مدیریت فراداده، باید روش احراز هویت مدیر و نقش‌ها انتخاب شود، مجوز نوشتن فقط در backend مورداعتماد اعمال شود، دسترسی مستقیم کلاینت‌های عمومی به اسناد محدود بماند، ورودی‌ها و transitionهای هر دو وضعیت اعتبارسنجی شوند و ثبت audit/change history و روش بازیابی مشخص شود. credential یا مجوز مدیریتی هرگز در سایت عمومی یا اپ Android قرار نمی‌گیرد. تنها API نوشتنی فعلی همان نمونهٔ محلی حافظه‌ای در بخش بعد است؛ API تولیدی یا ذخیره‌سازی پایدار وجود ندارد.
+
+## API مدیریتی — نمونهٔ محلی، نه آمادهٔ استقرار
+
+`createCatalogAdminApi({ writableProvider, authorizeAdmin })` یک Express app جدا از API عمومی می‌سازد. هر درخواست، از جمله GETهای مدیریتی، از `authorizeAdmin(request)` عبور می‌کند؛ فقط نتیجهٔ boolean دقیق `true` مجوز می‌دهد. اگر authorizer داده نشود، همهٔ درخواست‌ها با `503 ADMIN_AUTH_NOT_CONFIGURED` رد می‌شوند؛ پاسخ دیگر با `403 FORBIDDEN` رد می‌شود. استثنای authorizer به خطای عمومی تبدیل می‌شود. این seam تست‌پذیر است و هنوز روش ورود مدیر یا credential واقعی ندارد.
+
+Endpointهای نمونه:
+
+| روش و مسیر | عملیات |
+|---|---|
+| `GET /api/v1/admin/catalog/items/{contentId}/metadata` | خواندن metadata یک شناسهٔ پایدار |
+| `PUT /api/v1/admin/catalog/items/{contentId}/metadata` | ایجاد یا جایگزینی metadata کامل؛ statusهای تأیید و انتشار هر دو لازم‌اند |
+| `PATCH /api/v1/admin/catalog/items/{contentId}/approval` | تغییر مستقل `approvalStatus` |
+| `PATCH /api/v1/admin/catalog/items/{contentId}/publication` | تغییر مستقل `publicationStatus` |
+| `GET /api/v1/admin/catalog/categories` | فهرست دسته‌ها، شامل غیرفعال‌ها |
+| `GET /api/v1/admin/catalog/categories/{categoryId}` | دریافت یک تعریف دسته |
+| `PUT /api/v1/admin/catalog/categories/{categoryId}` | ایجاد یا ویرایش تعریف دسته |
+| `GET /api/v1/admin/catalog/taxonomies/{type}` | فهرست کشور یا ژانر، شامل غیرفعال‌ها |
+| `GET /api/v1/admin/catalog/taxonomies/{type}/{termId}` | دریافت یک اصطلاح taxonomy |
+| `PUT /api/v1/admin/catalog/taxonomies/{type}/{termId}` | ایجاد یا ویرایش اصطلاح taxonomy |
+
+هیچ DELETE، حذف محتوا یا پاک‌کردن تاریخچه‌ای پیاده‌سازی نشده است. انتشار با `publicationStatus=published` تا زمانی که metadata فعلی `approvalStatus=approved` نباشد با `409 APPROVAL_REQUIRED` رد می‌شود. تأیید محتوا به‌تنهایی publication را تغییر نمی‌دهد. اگر approval از approved به حالت دیگری برود، publication ذخیره‌شده دست‌نخورده می‌ماند اما API عمومی به دلیل شرط دوگانه محتوا را پنهان می‌کند. DTO مدیریتی نیز allowlist دارد و فیلد ناشناخته، توکن یا Telegram File ID را نمی‌پذیرد یا برنمی‌گرداند. پاسخ خطاها request ID دارند و جزئیات خام را افشا نمی‌کنند.
+
+## ذخیره‌سازی نوشتنی آزمایشی
+
+`WritableCatalogMetadataProvider` از interface خواندنی `CatalogMetadataProvider` جداست. `createInMemoryWritableCatalogMetadataProvider(...)` هر دو قرارداد را برای همان اجرای آزمایشی فراهم می‌کند؛ داده‌ها تا پایان process در Map می‌مانند و با restart از بین می‌روند. API عمومی می‌تواند همان instance را به‌عنوان `metadataProvider` دریافت کند تا تغییرات مجاز همان اجرا را بخواند. provider حافظه‌ای سادهٔ قبلی برای fixtureهای صرفاً خواندنی همچنان قابل استفاده است.
+
+اعتبارسنجی مشترک در `src/catalog-metadata-validation.js` متمرکز است. شناسهٔ محتوا باید canonical و ترکیبی `kind + systemCode` باشد؛ body نمی‌تواند کلید دیگری جایگزین کند. شناسه‌های کشور/ژانر باید یکتا و عضو taxonomy فعال باشند، slug دسته تکراری مجاز نیست، DSL فیلتر همان Core محدود را رعایت می‌کند و غیرفعال‌کردن taxonomy مورد استفاده رد می‌شود. این نمونه تاریخچهٔ تغییرات durable ندارد. پیش از استفادهٔ واقعی باید احراز هویت و نقش‌ها، audit trail، ثبت زمان/عامل تغییر، سیاست concurrency، قواعد backend/IAM و بازیابی طراحی شوند.
 
 ## سازگاری و نسخه‌بندی
 

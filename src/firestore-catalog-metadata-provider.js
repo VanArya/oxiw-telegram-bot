@@ -1,73 +1,37 @@
 'use strict';
 
-const { getCategoryItems } = require('./catalog-core');
 const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider');
-const { createCatalogContentId } = require('./catalog-content-identity');
+const {
+  isCanonicalContentId,
+  validateCatalogCategory,
+  validateCatalogContentMetadata,
+  validateCatalogTaxonomyTerm,
+} = require('./catalog-metadata-validation');
 
 const COLLECTIONS = Object.freeze({
   contentMetadata: 'catalogContentMetadata',
   categories: 'catalogCategories',
   taxonomies: 'catalogTaxonomies',
 });
-const CONTENT_KINDS = new Set(['movie', 'series']);
-const APPROVAL_STATUSES = new Set(['pending', 'approved', 'rejected', 'unknown']);
-const PUBLICATION_STATUSES = new Set(['draft', 'published', 'archived', 'unknown']);
 const TAXONOMY_TYPES = new Set(['country', 'genre']);
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isCanonicalContentId(contentId) {
-  if (typeof contentId !== 'string') return false;
-  const separator = contentId.indexOf(':');
-  if (separator < 1) return false;
-  const kind = contentId.slice(0, separator);
-  const encodedCode = contentId.slice(separator + 1);
-  if (!CONTENT_KINDS.has(kind) || encodedCode.length === 0) return false;
-  try {
-    return createCatalogContentId(kind, decodeURIComponent(encodedCode)) === contentId;
-  } catch {
-    return false;
-  }
-}
-
-function validIdList(value, type) {
-  if (value === undefined) return true;
-  if (!Array.isArray(value)) return false;
-  const ids = new Set();
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index)) return false;
-    const id = value[index];
-    const valid = typeof id === 'string' &&
-      (type === 'country' ? /^[A-Z]{2}$/.test(id) : ID_PATTERN.test(id)) &&
-      !ids.has(id);
-    if (!valid) return false;
-    ids.add(id);
-  }
-  return true;
-}
-
 function projectContentMetadata(data, contentId) {
-  if (
-    !isRecord(data) ||
-    data.contentId !== contentId ||
-    !APPROVAL_STATUSES.has(data.approvalStatus) ||
-    !PUBLICATION_STATUSES.has(data.publicationStatus) ||
-    !validIdList(data.countryIds, 'country') ||
-    !validIdList(data.genreIds, 'genre')
-  ) return null;
-
-  const metadata = {
-    contentId,
-    approvalStatus: data.approvalStatus,
-    publicationStatus: data.publicationStatus,
-  };
-  if (data.countryIds !== undefined) metadata.countryIds = [...data.countryIds];
-  if (data.genreIds !== undefined) metadata.genreIds = [...data.genreIds];
-  return metadata;
+  if (!isRecord(data) || data.contentId !== contentId) return null;
+  try {
+    return validateCatalogContentMetadata(contentId, {
+      contentId: data.contentId,
+      approvalStatus: data.approvalStatus,
+      publicationStatus: data.publicationStatus,
+      ...(data.countryIds === undefined ? {} : { countryIds: data.countryIds }),
+      ...(data.genreIds === undefined ? {} : { genreIds: data.genreIds }),
+    });
+  } catch {
+    return null;
+  }
 }
 
 function readDocumentData(document) {
@@ -113,32 +77,16 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
 
         const categories = snapshot.docs.map((document) => {
           const data = readDocumentData(document);
-          if (
-            !isRecord(data) ||
-            typeof document.id !== 'string' ||
-            data.id !== document.id ||
-            !ID_PATTERN.test(data.id) ||
-            typeof data.slug !== 'string' || !SLUG_PATTERN.test(data.slug) ||
-            typeof data.enabled !== 'boolean' ||
-            !isRecord(data.localizedTitle) ||
-            Object.keys(data.localizedTitle).length === 0 ||
-            Object.entries(data.localizedTitle).some(([locale, title]) => (
-              !/^[a-z]{2}(?:-[A-Z]{2})?$/.test(locale) ||
-              typeof title !== 'string' || title.trim() === ''
-            )) ||
-            (data.sortOrder !== undefined && !Number.isFinite(data.sortOrder))
-          ) throw new TypeError();
-
-          const category = {
-            id: data.id,
+          if (!isRecord(data) || typeof document.id !== 'string' || data.id !== document.id) {
+            throw new TypeError();
+          }
+          return validateCatalogCategory(data.id, {
             slug: data.slug,
-            localizedTitle: { ...data.localizedTitle },
+            localizedTitle: data.localizedTitle,
             enabled: data.enabled,
-            sortOrder: data.sortOrder,
-          };
-          if (data.filters !== undefined) category.filters = data.filters;
-          if (category.enabled) getCategoryItems([], category);
-          return category;
+            ...(data.sortOrder === undefined ? {} : { sortOrder: data.sortOrder }),
+            ...(data.filters === undefined ? {} : { filters: data.filters }),
+          });
         }).filter((category) => category.enabled);
         const slugs = categories.map(({ slug }) => slug);
         if (new Set(slugs).size !== slugs.length) throw new TypeError();
@@ -160,18 +108,14 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
 
         return snapshot.docs.map((document) => {
           const data = readDocumentData(document);
-          const validTypeId = type === 'country'
-            ? typeof data?.id === 'string' && /^[A-Z]{2}$/.test(data.id)
-            : typeof data?.id === 'string' && ID_PATTERN.test(data.id);
-          if (
-            !isRecord(data) ||
-            typeof document.id !== 'string' ||
-            data.id !== document.id ||
-            !validTypeId ||
-            typeof data.labelFa !== 'string' || data.labelFa.trim() === '' ||
-            typeof data.enabled !== 'boolean'
-          ) throw new TypeError();
-          return { id: data.id, labelFa: data.labelFa, enabled: data.enabled };
+          if (!isRecord(data) || typeof document.id !== 'string' || data.id !== document.id) {
+            throw new TypeError();
+          }
+          return validateCatalogTaxonomyTerm(type, data.id, {
+            labelFa: data.labelFa,
+            enabled: data.enabled,
+            ...(data.sortOrder === undefined ? {} : { sortOrder: data.sortOrder }),
+          });
         }).filter((term) => term.enabled);
       } catch {
         throw safeReadError();
