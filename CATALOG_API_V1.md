@@ -40,6 +40,8 @@
 - data: آرایه‌ای از خلاصهٔ Content
 - meta: page، pageSize، total، filtersApplied
 
+برای محتوای series، فیلد اختیاری seriesMetadata می‌تواند شامل startYear، endYear، isOngoing و seasonsAndEpisodes باشد. اگر مقدار ستون «سال پایان» در شیت سریال «در حال پخش» باشد، endYear ارسال نمی‌شود و isOngoing: true برمی‌گردد. اگر سال پایان عددی باشد، endYear و isOngoing: false ارسال می‌شوند. خالی بودن سال پایان به‌تنهایی به معنی در حال پخش بودن سریال نیست و isOngoing در آن حالت حذف می‌شود.
+
 ### GET /api/v1/catalog/items/{contentId}
 
 جزئیات یک محتوای منتشرشده. برای series می‌تواند فصل‌ها و فهرست episodeها را برگرداند. مرجع خصوصی فایل و اطلاعات دانلود بازگردانده نمی‌شود.

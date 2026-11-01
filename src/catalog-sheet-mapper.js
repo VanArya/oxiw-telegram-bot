@@ -67,13 +67,20 @@ function mapCatalogSheetRow(sheetName, row) {
     }
   } else {
     const startYear = optionalYear(row, 'سال شروع');
-    const endYear = optionalYear(row, 'سال پایان');
+    const rawEndYear = row['سال پایان'];
+    const isOngoing = typeof rawEndYear === 'string' &&
+      rawEndYear.normalize('NFC').trim() === 'در حال پخش';
+    const endYear = isOngoing ? undefined : optionalYear(row, 'سال پایان');
     if (startYear !== undefined && endYear !== undefined && startYear > endYear) {
       throw new TypeError('Series start year cannot be after end year.');
     }
     content.seriesMetadata = {};
     if (startYear !== undefined) content.seriesMetadata.startYear = startYear;
-    if (endYear !== undefined) content.seriesMetadata.endYear = endYear;
+    if (endYear !== undefined) {
+      content.seriesMetadata.endYear = endYear;
+      content.seriesMetadata.isOngoing = false;
+    }
+    if (isOngoing) content.seriesMetadata.isOngoing = true;
     if (row['تعداد فصل و قسمت'] !== undefined) {
       content.seriesMetadata.seasonsAndEpisodes = row['تعداد فصل و قسمت'];
     }
@@ -119,7 +126,7 @@ function toPublicCatalogDto(mappedRecord, { countryLabels = {}, genreLabels = {}
   }
   if (content.kind === 'series' && isRecord(content.seriesMetadata)) {
     dto.seriesMetadata = {};
-    for (const field of ['startYear', 'endYear', 'seasonsAndEpisodes']) {
+    for (const field of ['startYear', 'endYear', 'isOngoing', 'seasonsAndEpisodes']) {
       if (content.seriesMetadata[field] !== undefined) {
         dto.seriesMetadata[field] = content.seriesMetadata[field];
       }

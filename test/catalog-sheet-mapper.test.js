@@ -68,12 +68,43 @@ test('maps series years and keeps combined season/episode data unparsed', () => 
     seriesMetadata: {
       startYear: 2018,
       endYear: 2022,
+      isOngoing: false,
       seasonsAndEpisodes: '۴ فصل، ۳۲ قسمت',
     },
   });
   assert.equal('releaseYear' in result.content, false);
 });
 
+test('maps the in-progress series marker and exposes it in the public DTO', () => {
+  const mapped = mapCatalogSheetRow('سریال', {
+    ...seriesRow,
+    'سال پایان': '  در حال پخش  ',
+  });
+
+  assert.deepEqual(mapped.content.seriesMetadata, {
+    startYear: 2018,
+    isOngoing: true,
+    seasonsAndEpisodes: '۴ فصل، ۳۲ قسمت',
+  });
+
+  mapped.content.approvalStatus = 'approved';
+  mapped.content.publicationStatus = 'published';
+  const dto = toPublicCatalogDto(mapped);
+  assert.deepEqual(dto.seriesMetadata, {
+    startYear: 2018,
+    isOngoing: true,
+    seasonsAndEpisodes: '۴ فصل، ۳۲ قسمت',
+  });
+});
+
+test('does not infer ongoing status when the series end year is blank', () => {
+  const mapped = mapCatalogSheetRow('سریال', {
+    ...seriesRow,
+    'سال پایان': '',
+  });
+  assert.equal(mapped.content.seriesMetadata.endYear, undefined);
+  assert.equal(mapped.content.seriesMetadata.isOngoing, undefined);
+});
 test('mapper does not infer country or publication from source rows', () => {
   const legacyRow = { ...movieRow };
   delete legacyRow['کشور سازنده'];
@@ -166,6 +197,10 @@ test('rejects invalid years and reversed series year ranges', () => {
   assert.throws(
     () => mapCatalogSheetRow('سریال', { ...seriesRow, 'سال شروع': '2024' }),
     /start year cannot be after end year/,
+  );
+  assert.throws(
+    () => mapCatalogSheetRow('سریال', { ...seriesRow, 'سال پایان': 'نامشخص' }),
+    /Invalid year field/,
   );
 });
 
