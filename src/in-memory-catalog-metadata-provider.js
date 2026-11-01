@@ -1,6 +1,7 @@
 'use strict';
 
 const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider');
+const { markCatalogProviderKind } = require('./catalog-provider-kind');
 
 function clone(value) {
   return value === undefined ? undefined : structuredClone(value);
@@ -31,7 +32,7 @@ function createInMemoryCatalogMetadataProvider({ contentMetadata = {}, categorie
     },
   };
 
-  return Object.freeze(assertCatalogMetadataProvider(provider));
+  return Object.freeze(markCatalogProviderKind(assertCatalogMetadataProvider(provider), 'in-memory'));
 }
 
 module.exports = { createInMemoryCatalogMetadataProvider };

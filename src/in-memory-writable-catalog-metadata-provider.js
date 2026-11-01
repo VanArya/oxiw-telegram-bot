@@ -1,6 +1,7 @@
 'use strict';
 
 const { assertWritableCatalogMetadataProvider } = require('./catalog-writable-metadata-provider');
+const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const {
   CatalogConflictError,
   CatalogNotFoundError,
@@ -8,6 +9,7 @@ const {
   validateCatalogCategory,
   validateCatalogContentMetadata,
   validateCatalogTaxonomyTerm,
+  validateExpectedVersion,
   validatePublicationStatus,
 } = require('./catalog-metadata-validation');
 
@@ -41,8 +43,21 @@ function createInMemoryWritableCatalogMetadataProvider({
   }
 
   const metadata = new Map();
+  const metadataVersions = new Map();
   const categoryStore = new Map();
+  const categoryVersions = new Map();
   const taxonomyTerms = new Map([['country', new Map()], ['genre', new Map()]]);
+  const taxonomyVersions = new Map([['country', new Map()], ['genre', new Map()]]);
+
+  function checkExpectedVersion(versions, id, options) {
+    const { expectedVersion } = validateExpectedVersion(options);
+    const currentVersion = versions.get(id) ?? 0;
+    if (expectedVersion === 0 && currentVersion > 0) throw new CatalogConflictError('ALREADY_EXISTS');
+    if (expectedVersion > 0 && expectedVersion !== currentVersion) {
+      throw new CatalogConflictError('VERSION_CONFLICT');
+    }
+    return currentVersion + 1;
+  }
 
   for (const item of contentMetadata) {
     if (!item || typeof item.contentId !== 'string' || metadata.has(item.contentId)) {
@@ -50,6 +65,7 @@ function createInMemoryWritableCatalogMetadataProvider({
     }
     const record = validateCatalogContentMetadata(item.contentId, item);
     metadata.set(record.contentId, record);
+    metadataVersions.set(record.contentId, 1);
   }
 
   for (const item of categories) {
@@ -57,6 +73,7 @@ function createInMemoryWritableCatalogMetadataProvider({
       throw new CatalogConflictError('DUPLICATE_CATEGORY_ID');
     }
     categoryStore.set(item.id, validateCatalogCategory(item.id, item));
+    categoryVersions.set(item.id, 1);
   }
   const seededSlugs = [...categoryStore.values()].map(({ slug }) => slug);
   if (new Set(seededSlugs).size !== seededSlugs.length) {
@@ -71,6 +88,7 @@ function createInMemoryWritableCatalogMetadataProvider({
         throw new CatalogConflictError('DUPLICATE_TAXONOMY_ID');
       }
       taxonomyTerms.get(type).set(item.id, validateCatalogTaxonomyTerm(type, item.id, item));
+      taxonomyVersions.get(type).set(item.id, 1);
     }
   }
 
@@ -88,6 +106,11 @@ function createInMemoryWritableCatalogMetadataProvider({
     async getContentMetadata(contentId) {
       return clone(metadata.get(contentId) ?? null);
     },
+    async getContentMetadataWithVersion(contentId) {
+      const value = metadata.get(contentId);
+      if (!value) return null;
+      return { value: clone(value), version: metadataVersions.get(contentId) };
+    },
     async listCategories() {
       return clone([...categoryStore.values()]);
     },
@@ -99,38 +122,56 @@ function createInMemoryWritableCatalogMetadataProvider({
       if (!taxonomyTerms.has(type)) return [];
       return clone([...taxonomyTerms.get(type).values()]);
     },
-    async upsertContentMetadata(contentId, value) {
+    async getCategoryWithVersion(categoryId) {
+      const value = categoryStore.get(categoryId);
+      if (!value) return null;
+      return { value: clone(value), version: categoryVersions.get(categoryId) };
+    },
+    async getTaxonomyTermWithVersion(type, termId) {
+      const value = taxonomyTerms.get(type)?.get(termId);
+      if (!value) return null;
+      return { value: clone(value), version: taxonomyVersions.get(type).get(termId) };
+    },
+    async upsertContentMetadata(contentId, value, options) {
       const record = validateCatalogContentMetadata(contentId, value);
       if (record.publicationStatus === 'published' && record.approvalStatus !== 'approved') {
         throw new CatalogConflictError('PUBLICATION_REQUIRES_APPROVAL');
       }
       assertTaxonomyReferences(record, taxonomyTerms);
+      const version = checkExpectedVersion(metadataVersions, contentId, options);
       metadata.set(contentId, record);
-      return clone(record);
+      metadataVersions.set(contentId, version);
+      return { value: clone(record), version };
     },
-    async updateApprovalStatus(contentId, approvalStatus) {
+    async updateApprovalStatus(contentId, approvalStatus, options) {
       const current = metadata.get(contentId);
       if (!current) throw new CatalogNotFoundError('CONTENT_METADATA_NOT_FOUND');
       const status = validateApprovalStatus(approvalStatus);
+      const version = checkExpectedVersion(metadataVersions, contentId, options);
       const updated = { ...current, approvalStatus: status };
       metadata.set(contentId, updated);
-      return clone(updated);
+      metadataVersions.set(contentId, version);
+      return { value: clone(updated), version };
     },
-    async updatePublicationStatus(contentId, publicationStatus) {
+    async updatePublicationStatus(contentId, publicationStatus, options) {
       const current = metadata.get(contentId);
       if (!current) throw new CatalogNotFoundError('CONTENT_METADATA_NOT_FOUND');
       const status = validatePublicationStatus(publicationStatus, current.approvalStatus);
+      const version = checkExpectedVersion(metadataVersions, contentId, options);
       const updated = { ...current, publicationStatus: status };
       metadata.set(contentId, updated);
-      return clone(updated);
+      metadataVersions.set(contentId, version);
+      return { value: clone(updated), version };
     },
-    async upsertCategory(categoryId, value) {
+    async upsertCategory(categoryId, value, options) {
       const category = validateCatalogCategory(categoryId, value);
       assertUniqueCategorySlug(category);
+      const version = checkExpectedVersion(categoryVersions, categoryId, options);
       categoryStore.set(categoryId, category);
-      return clone(category);
+      categoryVersions.set(categoryId, version);
+      return { value: clone(category), version };
     },
-    async upsertTaxonomyTerm(type, termId, value) {
+    async upsertTaxonomyTerm(type, termId, value, options) {
       if (!taxonomyTerms.has(type)) {
         validateCatalogTaxonomyTerm(type, termId, value);
       }
@@ -142,12 +183,14 @@ function createInMemoryWritableCatalogMetadataProvider({
         ));
         if (referenced) throw new CatalogConflictError('TAXONOMY_TERM_IN_USE');
       }
+      const version = checkExpectedVersion(taxonomyVersions.get(type), termId, options);
       taxonomyTerms.get(type).set(termId, term);
-      return clone(term);
+      taxonomyVersions.get(type).set(termId, version);
+      return { value: clone(term), version };
     },
   };
 
-  return Object.freeze(assertWritableCatalogMetadataProvider(provider));
+  return Object.freeze(markCatalogProviderKind(assertWritableCatalogMetadataProvider(provider), 'in-memory'));
 }
 
 module.exports = { createInMemoryWritableCatalogMetadataProvider };

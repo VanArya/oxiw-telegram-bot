@@ -5,13 +5,18 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "catalog:start": "node src/catalog-operational-entrypoint.js",
+    "catalog:bootstrap-admin": "node src/catalog-admin-bootstrap-entrypoint.js",
+    "catalog:probe-firestore": "node scripts/probe-firestore-readonly.js",
     "test": "node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24 <25"
   },
   "dependencies": {
-  "express": "^4.21.2",
-  "googleapis": "^144.0.0"
-}
+    "@google-cloud/firestore": "9.4.0",
+    "express": "^4.21.2",
+    "firebase-admin": "^14.5.0",
+    "googleapis": "^188.0.0"
+  }
 }

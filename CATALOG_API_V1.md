@@ -125,7 +125,7 @@ taxonomyهای فعال را برمی‌گرداند. در composition محلی 
 ## احراز هویت و ایمنی
 
 - خواندن کاتالوگ عمومی می‌تواند anonymous باشد، مشروط به اینکه پاسخ فقط دادهٔ مجاز و منتشرشده داشته باشد.
-- نوشتن محتوا، مدیریت taxonomies، عملیات کاربر و صدور مجوز دانلود باید احراز هویت و مجوزدهی جداگانه داشته باشند؛ در این مرحله endpoint نوشتن طراحی اجرایی نشده است.
+- endpointهای محلی مدیریت فراداده سیاست مجوزدهی جدا دارند؛ این نمونه هنوز token verifier یا احراز هویت عملیاتی ندارد و نباید به‌عنوان سرویس مستقرشده استفاده شود. عملیات کاربر و صدور مجوز دانلود خارج از دامنهٔ این API هستند.
 - در log نباید token، Telegram payload کامل، credential یا دادهٔ شخصی ثبت شود.
 - Web App فعلی Apps Script در manifest دسترسی anonymous دارد؛ این وضعیت به‌تنهایی برای endpointهای تغییردهنده مجوز کافی نیست.
 
@@ -154,11 +154,34 @@ CatalogMetadataProvider
 
 `createFirestoreCatalogMetadataProvider({ firestore })` همین interface را با کلاینت تزریق‌شده پیاده می‌کند و فقط `collection/doc/get` می‌خواند. تست‌ها از fake client استفاده می‌کنند؛ SDK، credential و شبکه لازم نیست. provider حافظه‌ای همچنان گزینهٔ پیش‌فرض fixtureهاست و Core هیچ وابستگی‌ای به نوع storage ندارد. در staging بعدی می‌توان فقط `metadataProvider` را در composition root به provider حافظه‌ای یا Firestore تغییر داد؛ برای بازگشت، همان تزریق staging دوباره به provider حافظه‌ای/آزمایشی برگردانده می‌شود. این کار نیازمند تغییر Core نیست و در این مرحله composition زنده‌ای ساخته نشده است.
 
-پیش از نوشتن پایدار یا استفادهٔ عملیاتی از مدیریت فراداده، باید روش احراز هویت مدیر و نقش‌ها انتخاب شود، مجوز نوشتن فقط در backend مورداعتماد اعمال شود، دسترسی مستقیم کلاینت‌های عمومی به اسناد محدود بماند، ورودی‌ها و transitionهای هر دو وضعیت اعتبارسنجی شوند و ثبت audit/change history و روش بازیابی مشخص شود. credential یا مجوز مدیریتی هرگز در سایت عمومی یا اپ Android قرار نمی‌گیرد. تنها API نوشتنی فعلی همان نمونهٔ محلی حافظه‌ای در بخش بعد است؛ API تولیدی یا ذخیره‌سازی پایدار وجود ندارد.
+پیش از نوشتن پایدار یا استفادهٔ عملیاتی از مدیریت فراداده، باید منبع احراز هویت مدیر و نقش‌ها پیاده‌سازی و تأیید شود، مجوز نوشتن فقط در backend مورداعتماد اعمال شود، دسترسی مستقیم کلاینت‌های عمومی به اسناد محدود بماند، ورودی‌ها و transitionهای هر دو وضعیت اعتبارسنجی شوند و ثبت audit/change history و روش بازیابی عملیاتی مشخص شود. credential یا مجوز مدیریتی هرگز در سایت عمومی یا اپ Android قرار نمی‌گیرد. API نوشتنی فعلی فقط نمونهٔ محلی است؛ API تولیدی یا ذخیره‌سازی پایدار فعال وجود ندارد.
 
 ## API مدیریتی — نمونهٔ محلی، نه آمادهٔ استقرار
 
-`createCatalogAdminApi({ writableProvider, authorizeAdmin })` یک Express app جدا از API عمومی می‌سازد. هر درخواست، از جمله GETهای مدیریتی، از `authorizeAdmin(request)` عبور می‌کند؛ فقط نتیجهٔ boolean دقیق `true` مجوز می‌دهد. اگر authorizer داده نشود، همهٔ درخواست‌ها با `503 ADMIN_AUTH_NOT_CONFIGURED` رد می‌شوند؛ پاسخ دیگر با `403 FORBIDDEN` رد می‌شود. استثنای authorizer به خطای عمومی تبدیل می‌شود. این seam تست‌پذیر است و هنوز روش ورود مدیر یا credential واقعی ندارد.
+`createCatalogAdminApi({ writableProvider, verifyAdminPrincipal, roleProvider, authorizePermission })` یک Express app جدا از API عمومی می‌سازد. `verifyAdminPrincipal(request)` فقط هویت تأییدشده با شکل `{ authenticated: true, subjectId }` را برمی‌گرداند؛ نقش در این مرحله پذیرفته نمی‌شود. API principal را از body، query، cookie یا header عادی استخراج نمی‌کند. پس از تأیید شناسه، `CatalogAdminRoleProvider.resolveRoles(subjectId)` نقش‌ها را از منبع trusted می‌خواند و فقط نقش‌های allowlist‌شده به policy موجود می‌رسند. فهرست خالی/کاربر بدون assignment، هویت معتبر ولی فاقد مجوز است و به `403 FORBIDDEN` می‌رسد؛ خطای resolver یا دادهٔ نقش ناقص/ناشناخته/تکراری fail-closed با `503 ROLE_RESOLUTION_UNAVAILABLE` است. verifier مفقود یا نامعتبر همان قرارداد `401`/`503` را دارد و جزئیات خام خطا افشا نمی‌شود.
+
+`src/catalog-admin-role-provider.js` قرارداد `CatalogAdminRoleProvider.resolveRoles(subjectId) -> Promise<Role[]>` را تعریف می‌کند. principal نامعتبر هرگز به resolver داده نمی‌شود؛ resolver فقط subjectId نرمال‌شده می‌گیرد. `createInMemoryCatalogAdminRoleProvider(assignments)` یک fake صریح برای تست است، نه fallback runtime. منبع عملیاتی نقش، schema، provisioning مدیران و فرایند لغو نقش هنوز انتخاب/پیاده‌سازی نشده‌اند. `roleProvider` باید صریحاً به Admin API، HTTP service و Runtime Factory تزریق شود؛ نبود آن readiness و مسیر مدیریت را fail-closed می‌کند.
+
+در صورت نیاز به تشخیص داخلی خطا، `reportRoleResolutionFailure(event)` اختیاری است و فقط `{ category: 'provider_error' | 'invalid_assignment' }` دریافت می‌کند؛ شناسهٔ principal، roleها و خطای خام به آن داده نمی‌شود. خطای callback نادیده گرفته می‌شود تا پاسخ fail-closed تغییر نکند. این hook منبع نقش یا احراز هویت عملیاتی ایجاد نمی‌کند.
+
+`src/catalog-admin-authorization.js` قرارداد نقش و مجوز را مستقل از ارائه‌دهندهٔ ورود تعریف می‌کند. `createCatalogRoleAuthorizer()` نقش‌های principal تأییدشده را به مجوزهای محدود نگاشت می‌کند:
+
+| نقش | مجوزها |
+|---|---|
+| `observer` | `catalog.admin.read` |
+| `editor` | `catalog.admin.read`, `catalog.metadata.write` |
+| `approver` | `catalog.admin.read`, `catalog.content.approve` |
+| `publisher` | `catalog.admin.read`, `catalog.content.publish` |
+| `taxonomy_manager` | `catalog.admin.read`, `catalog.categories.manage`, `catalog.taxonomies.manage` |
+| `administrator` | همهٔ مجوزهای فهرست‌شده، فقط وقتی principal از verifier مورداعتماد معتبر شده باشد |
+
+همهٔ GETهای مدیریتی به `catalog.admin.read` نیاز دارند. PUT metadata به `catalog.metadata.write` نیاز دارد؛ اگر مقدار `approvalStatus` یا `publicationStatus` نسبت به رکورد فعلی تغییر کند، مجوز مستقل `catalog.content.approve` یا `catalog.content.publish` هم لازم است. هنگام ایجاد، مقدارهای پایهٔ `pending` و `draft` برای editor مجازند؛ ایجاد با وضعیت دیگر به مجوز مربوط نیاز دارد. PATCH تأیید، PATCH انتشار، PUT دسته و PUT taxonomy به‌ترتیب به مجوزهای `catalog.content.approve`، `catalog.content.publish`، `catalog.categories.manage` و `catalog.taxonomies.manage` نیاز دارند. بنابراین `metadata.write` به‌تنهایی امکان تأیید یا انتشار نمی‌دهد. تأیید و انتشار همچنان وضعیت‌های جدا هستند و شرط عمومی‌شدن `approved AND published` تغییر نمی‌کند.
+
+بدنهٔ JSON فقط پس از احراز و مجوز route parse می‌شود. شناسهٔ عامل در گزینه‌های write از `principal.subjectId` معتبر به Provider داده می‌شود؛ ورودی کاربر برای `actorId` مبنا نیست. verifier، role provider حافظه‌ای و authorizer این مرحله fake/تزریق‌شده‌اند؛ هیچ JWT verifier، منبع نقش عملیاتی، ارائه‌دهندهٔ هویت یا credential عملیاتی پیاده‌سازی نشده است. این قرارداد جایگزین احراز هویت واقعی یا بررسی امنیت عملیاتی نیست.
+
+### آزمون یکپارچهٔ محلی
+
+`node --test test/catalog-end-to-end.test.js` یک مسیر کامل را با fake Google Sheets، یک fake Firestore مشترک برای Provider خواندنی و نوشتنی، verifier ساختگی و APIهای محلی اجرا می‌کند. سرور HTTP تست فقط روی loopback (`127.0.0.1`) باز می‌شود؛ هیچ Google، Firestore، Telegram یا سرویس خارجی فراخوانی نمی‌شود. `node --test` این سناریو را همراه کل suite اجرا می‌کند. Fakeها سازگاری قرارداد و rollback/تعارض را در این پیاده‌سازی می‌سنجند و جایگزین تست SDK، IAM، احراز هویت یا استقرار واقعی نیستند.
 
 Endpointهای نمونه:
 
@@ -177,11 +200,31 @@ Endpointهای نمونه:
 
 هیچ DELETE، حذف محتوا یا پاک‌کردن تاریخچه‌ای پیاده‌سازی نشده است. انتشار با `publicationStatus=published` تا زمانی که metadata فعلی `approvalStatus=approved` نباشد با `409 APPROVAL_REQUIRED` رد می‌شود. تأیید محتوا به‌تنهایی publication را تغییر نمی‌دهد. اگر approval از approved به حالت دیگری برود، publication ذخیره‌شده دست‌نخورده می‌ماند اما API عمومی به دلیل شرط دوگانه محتوا را پنهان می‌کند. DTO مدیریتی نیز allowlist دارد و فیلد ناشناخته، توکن یا Telegram File ID را نمی‌پذیرد یا برنمی‌گرداند. پاسخ خطاها request ID دارند و جزئیات خام را افشا نمی‌کنند.
 
+### پیش‌شرط نسخه برای مدیریت
+
+GET تک‌رکورد metadata، دسته و taxonomy، ETag قوی پاسخ می‌دهد. قالب یکسان است: `"catalog-v1.<identity-base64url>.v<version>"`؛ identity از نوع منبع و شناسهٔ پایدار آن ساخته می‌شود و version عدد `_version` Provider است. نسخه فقط در هدر است و در JSON یا metadata قابل ویرایش قرار نمی‌گیرد.
+
+ویرایش metadata، PATCH تأیید/انتشار، و ویرایش دسته یا taxonomy باید `If-Match` با ETag دقیق و فعلی بفرستند. ایجاد metadata، دسته یا taxonomy باید `If-None-Match: *` بفرستد. پیش‌شرط مفقود `428 PRECONDITION_REQUIRED`، قالب نامعتبر `400 INVALID_PRECONDITION`، نسخهٔ منقضی/متعلق به رکورد دیگر `412 PRECONDITION_FAILED`، و تلاش ایجاد روی رکورد موجود `409 ALREADY_EXISTS` می‌دهد. Provider هم expectedVersion را داخل transaction مقایسه می‌کند؛ تعارض provider به `412` تبدیل می‌شود. درخواست stale هرگز با نسخهٔ جدید خودکار retry نمی‌شود.
+
 ## ذخیره‌سازی نوشتنی آزمایشی
 
 `WritableCatalogMetadataProvider` از interface خواندنی `CatalogMetadataProvider` جداست. `createInMemoryWritableCatalogMetadataProvider(...)` هر دو قرارداد را برای همان اجرای آزمایشی فراهم می‌کند؛ داده‌ها تا پایان process در Map می‌مانند و با restart از بین می‌روند. API عمومی می‌تواند همان instance را به‌عنوان `metadataProvider` دریافت کند تا تغییرات مجاز همان اجرا را بخواند. provider حافظه‌ای سادهٔ قبلی برای fixtureهای صرفاً خواندنی همچنان قابل استفاده است.
 
 اعتبارسنجی مشترک در `src/catalog-metadata-validation.js` متمرکز است. شناسهٔ محتوا باید canonical و ترکیبی `kind + systemCode` باشد؛ body نمی‌تواند کلید دیگری جایگزین کند. شناسه‌های کشور/ژانر باید یکتا و عضو taxonomy فعال باشند، slug دسته تکراری مجاز نیست، DSL فیلتر همان Core محدود را رعایت می‌کند و غیرفعال‌کردن taxonomy مورد استفاده رد می‌شود. این نمونه تاریخچهٔ تغییرات durable ندارد. پیش از استفادهٔ واقعی باید احراز هویت و نقش‌ها، audit trail، ثبت زمان/عامل تغییر، سیاست concurrency، قواعد backend/IAM و بازیابی طراحی شوند.
+
+## Provider نوشتنی Firestore — mock-only
+
+`createFirestoreWritableCatalogMetadataProvider({ firestore, auditEventSink })` گسترش نسخه‌دار `WritableCatalogMetadataProvider` را پیاده می‌کند؛ Firebase SDK به آن وابسته نیست و کلاینت و sink از بیرون تزریق می‌شوند. مجموعه‌های پیشنهادی همان `catalogContentMetadata`، `catalogCategories` و `catalogTaxonomies` هستند؛ رخدادها در `catalogAuditEvents` ذخیره می‌شوند. این نام‌ها قرارداد پیشنهادی‌اند و هیچ collection واقعی ساخته نشده است.
+
+هر سند دارای `_version` عددی داخلی است. خواندن نسخه‌دار به شکل `{ value, version }` و نوشتن به شکل `{ value, version }` انجام می‌شود؛ نسخه در metadata عمومی یا DTO برنمی‌گردد. تمام متدهای نوشتن گزینهٔ اجباری `{ expectedVersion }` می‌گیرند: مقدار `0` فقط ایجاد در نبود سند را می‌پذیرد و مقدار مثبت فقط وقتی update می‌کند که نسخهٔ ذخیره‌شده دقیقاً مطابق باشد. عدم تطابق، سند مفقود هنگام update یا وجود سند هنگام create با تعارض امن رد می‌شود. خواندن، مقایسه، نوشتن سند و ثبت رخداد در یک transaction انجام می‌شود تا به‌روزرسانی هم‌زمان بی‌صدا overwrite نشود.
+
+API مدیریتی محلی ETag را به expectedVersion تبدیل و به Provider منتقل می‌کند؛ provider حافظه‌ای نیز همین قرارداد را در process اعمال می‌کند. API و Provider Firestore در تست‌های mock هماهنگ‌اند، اما این به معنی آماده‌بودن authentication، Firestore یا staging عملیاتی نیست.
+
+## رخدادهای audit
+
+قرارداد `CatalogAuditEventSink.appendInTransaction(transaction, event)` مستقل است و `createFirestoreCatalogAuditEventSink` فقط رخداد allowlist‌شده را در همان تراکنش ایجاد می‌کند. رخدادهای موفق شامل `eventId`, `operation`, `entityType`, `entityId`, `occurredAt`, `outcome=committed`, `previousVersion`, `version` و نام فیلدهای تغییرکرده است؛ operation برای approval و publication وضعیت مقصد را به‌شکل `approval.approved` یا `publication.archived` مشخص می‌کند، بدون ذخیرهٔ مقدارهای دیگر metadata. `actorId` اختیاری و فقط برای شناسهٔ opaque دریافتی از احراز هویت مورداعتماد است. مقدارهای قبلی/جدید، snapshot کامل، token، Telegram File ID و credential ذخیره نمی‌شوند. شکست تراکنش رخداد موفقی ایجاد نمی‌کند؛ ثبت تلاش‌های ناموفق و تغییرات مجوز باید در سیاست audit عملیاتی جداگانه طراحی شود. ساعت فعلی از تابع تزریق‌شده می‌آید؛ پیش از production باید منبع زمان مورداعتماد و سیاست retention مشخص شود.
+
+Provider و sink جدید فقط با fake Firestore آزمایش شده‌اند. هیچ credential، SDK، پروژه یا اتصال واقعی Firestore آماده نیست. برای استفادهٔ عملیاتی، احراز هویت مدیر و نقش‌ها، کنترل دسترسی backend/IAM، انتقال نسخه از مسیر API، audit امن، backup و rollback لازم‌اند.
 
 ## سازگاری و نسخه‌بندی
 

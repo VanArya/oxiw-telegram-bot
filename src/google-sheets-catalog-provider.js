@@ -1,6 +1,7 @@
 'use strict';
 
 const SHEETS = new Set(['سینمایی', 'سریال']);
+const { markCatalogProviderKind } = require('./catalog-provider-kind');
 
 function assertSheetClient(sheetsClient) {
   if (
@@ -21,7 +22,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     throw new TypeError('A Spreadsheet ID is required.');
   }
 
-  return Object.freeze({
+  const provider = {
     async readSheet(sheetName) {
       if (!SHEETS.has(sheetName)) {
         throw new RangeError('Unsupported catalog sheet.');
@@ -58,7 +59,8 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         rows: values.slice(1).map((row) => [...row]),
       };
     },
-  });
+  };
+  return Object.freeze(markCatalogProviderKind(provider, 'google-sheets'));
 }
 
 module.exports = { createGoogleSheetsCatalogProvider };

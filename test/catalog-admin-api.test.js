@@ -8,6 +8,10 @@ const { createCatalogAdminApi } = require('../src/catalog-admin-api');
 const { createCatalogApi } = require('../src/catalog-api');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
 const {
+  createCatalogRoleAuthorizer,
+} = require('../src/catalog-admin-authorization');
+const { createInMemoryCatalogAdminRoleProvider } = require('../src/catalog-admin-role-provider');
+const {
   createInMemoryWritableCatalogMetadataProvider,
 } = require('../src/in-memory-writable-catalog-metadata-provider');
 
@@ -15,6 +19,24 @@ const ADMIN_PATH = '/api/v1/admin/catalog';
 const contentId = createCatalogContentId('movie', 'admin-fixture-1');
 const countryFixture = { id: 'IR', labelFa: 'ایران', enabled: true };
 const genreFixture = { id: 'drama', labelFa: 'درام', enabled: true };
+const roleAuthorizer = createCatalogRoleAuthorizer();
+
+function createAdminApi(writableProvider, {
+  roles = ['administrator'],
+  subjectId = 'fixture-admin',
+  verifyAdminPrincipal,
+  roleProvider = createInMemoryCatalogAdminRoleProvider({ [subjectId]: roles }),
+  reportRoleResolutionFailure,
+  authorizePermission = roleAuthorizer,
+} = {}) {
+  return createCatalogAdminApi({
+    writableProvider,
+    verifyAdminPrincipal: verifyAdminPrincipal || (() => ({ authenticated: true, subjectId })),
+    roleProvider,
+    reportRoleResolutionFailure,
+    authorizePermission,
+  });
+}
 
 function createStore(overrides = {}) {
   return createInMemoryWritableCatalogMetadataProvider({
@@ -41,7 +63,11 @@ async function withServer(app, run) {
 }
 
 async function json(response) {
-  return { status: response.status, body: await response.json() };
+  return {
+    status: response.status,
+    body: await response.json(),
+    etag: response.headers.get('etag'),
+  };
 }
 
 const sheetProvider = {
@@ -70,38 +96,335 @@ test('admin API fails closed when authorization is absent or denied', async () =
     assert.equal(await store.getContentMetadata(contentId), null);
   });
 
-  const denied = createCatalogAdminApi({
+  const missingVerifier = createCatalogAdminApi({
     writableProvider: store,
-    authorizeAdmin: async () => false,
+    authorizePermission: roleAuthorizer,
   });
+  await withServer(missingVerifier, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+    assert.equal(result.status, 503);
+    assert.equal(result.body.error.code, 'ADMIN_AUTH_NOT_CONFIGURED');
+  });
+
+  const missingPolicy = createCatalogAdminApi({
+    writableProvider: store,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+  });
+  await withServer(missingPolicy, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+    assert.equal(result.status, 503);
+    assert.equal(result.body.error.code, 'ADMIN_AUTH_NOT_CONFIGURED');
+  });
+
+  const denied = createAdminApi(store, { roles: ['observer'] });
   await withServer(denied, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`));
+    assert.equal(result.status, 404);
+  });
+
+  const invalidPrincipals = [
+    null,
+    { authenticated: false, subjectId: 'fixture-admin' },
+    { authenticated: true, subjectId: 'bad subject' },
+    { authenticated: true, subjectId: 'fixture-admin', roles: ['administrator'] },
+    { authenticated: true, subjectId: 'fixture-admin', extra: 'untrusted' },
+    Object.create({ authenticated: true, subjectId: 'fixture-admin' }),
+  ];
+  for (const principal of invalidPrincipals) {
+    const invalid = createAdminApi(store, { verifyAdminPrincipal: () => principal });
+    await withServer(invalid, async (baseUrl) => {
+      const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+      assert.equal(result.status, 401);
+      assert.equal(result.body.error.code, 'UNAUTHENTICATED');
+    });
+  }
+
+  const throwing = createAdminApi(store, {
+    verifyAdminPrincipal: () => { throw new Error('synthetic-private-verifier-detail'); },
+  });
+  await withServer(throwing, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+    assert.equal(result.status, 503);
+    assert.equal(result.body.error.code, 'AUTHENTICATION_UNAVAILABLE');
+    assert.equal(JSON.stringify(result.body).includes('synthetic-private-verifier-detail'), false);
+  });
+
+  const throwingPolicy = createAdminApi(store, {
+    authorizePermission: () => { throw new Error('synthetic-private-policy-detail'); },
+  });
+  await withServer(throwingPolicy, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+    assert.equal(result.status, 503);
+    assert.equal(result.body.error.code, 'AUTHORIZATION_UNAVAILABLE');
+    assert.equal(JSON.stringify(result.body).includes('synthetic-private-policy-detail'), false);
+  });
+});
+
+test('role resolution follows identity verification and distinguishes no assignment from invalid or unavailable roles', async () => {
+  const store = createStore();
+  const roleSubjects = [];
+  const roleProvider = {
+    async resolveRoles(subjectId) {
+      roleSubjects.push(subjectId);
+      return subjectId === 'verified-observer' ? ['observer'] : [];
+    },
+  };
+  const observer = createAdminApi(store, {
+    subjectId: 'verified-observer',
+    roleProvider,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'verified-observer' }),
+  });
+  await withServer(observer, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories?role=administrator`, {
+      headers: { 'x-catalog-role': 'administrator', 'x-catalog-subject': 'attacker' },
+    }));
+    assert.equal(result.status, 200);
+  });
+  assert.deepEqual(roleSubjects, ['verified-observer']);
+
+  let resolverCalls = 0;
+  const invalidIdentity = createAdminApi(store, {
+    verifyAdminPrincipal: () => ({ authenticated: false, subjectId: 'unverified' }),
+    roleProvider: { async resolveRoles() { resolverCalls += 1; return ['administrator']; } },
+  });
+  await withServer(invalidIdentity, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+    assert.equal(result.status, 401);
+  });
+  assert.equal(resolverCalls, 0, 'unverified identities must never reach the role source');
+
+  const noAssignmentFailures = [];
+  const noAssignment = createAdminApi(store, {
+    subjectId: 'verified-without-role',
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'verified-without-role' }),
+    roleProvider: { async resolveRoles() { return []; } },
+    reportRoleResolutionFailure: (event) => noAssignmentFailures.push(event),
+  });
+  await withServer(noAssignment, async (baseUrl) => {
     const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
     assert.equal(result.status, 403);
     assert.equal(result.body.error.code, 'FORBIDDEN');
   });
+  assert.deepEqual(noAssignmentFailures, []);
 
-  const throwing = createCatalogAdminApi({
-    writableProvider: store,
-    authorizeAdmin: () => { throw new Error('synthetic-private-authorizer-detail'); },
+  for (const { provider: brokenProvider, category } of [
+    { provider: { async resolveRoles() { return ['unrecognized-role']; } }, category: 'invalid_assignment' },
+    { provider: { async resolveRoles() { return ['observer', 'observer']; } }, category: 'invalid_assignment' },
+    { provider: { async resolveRoles() { throw new Error('synthetic-role-database-detail'); } }, category: 'provider_error' },
+  ]) {
+    const failures = [];
+    const unavailable = createAdminApi(store, {
+      roleProvider: brokenProvider,
+      reportRoleResolutionFailure: (event) => failures.push(event),
+    });
+    await withServer(unavailable, async (baseUrl) => {
+      const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+      assert.equal(result.status, 503);
+      assert.equal(result.body.error.code, 'ROLE_RESOLUTION_UNAVAILABLE');
+      assert.equal(JSON.stringify(result.body).includes('synthetic-role-database-detail'), false);
+    });
+    assert.deepEqual(failures, [{ category }]);
+    assert.equal(JSON.stringify(failures).includes('synthetic-role-database-detail'), false);
+  }
+});
+
+test('catalog admin roles enforce least privilege and audit actor comes only from verified principal', async () => {
+  const store = createStore();
+  const auditActors = [];
+  const observedProvider = {
+    ...store,
+    async upsertContentMetadata(id, value, options) {
+      auditActors.push(options.actorId);
+      return store.upsertContentMetadata(id, value, options);
+    },
+  };
+
+  const observer = createAdminApi(store, { roles: ['observer'] });
+  await withServer(observer, async (baseUrl) => {
+    const read = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
+    assert.equal(read.status, 200);
+    const write = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+        body: JSON.stringify({
+          approvalStatus: 'pending', publicationStatus: 'draft', countryIds: [], genreIds: [],
+        }),
+      },
+    ));
+    assert.equal(write.status, 403);
   });
-  await withServer(throwing, async (baseUrl) => {
-    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`));
-    assert.equal(result.status, 500);
-    assert.equal(result.body.error.code, 'INTERNAL_ERROR');
-    assert.equal(JSON.stringify(result.body).includes('synthetic-private-authorizer-detail'), false);
+
+  const editor = createAdminApi(observedProvider, { roles: ['editor'], subjectId: 'verified-editor' });
+  await withServer(editor, async (baseUrl) => {
+    const url = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`;
+    const created = await json(await fetch(
+      `${url}?role=administrator&subjectId=request-controlled`,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          'if-none-match': '*',
+          'x-catalog-role': 'administrator',
+          'x-catalog-subject': 'request-controlled',
+        },
+        body: JSON.stringify({
+          approvalStatus: 'pending', publicationStatus: 'draft', countryIds: [], genreIds: [],
+        }),
+      },
+    ));
+    assert.equal(created.status, 201);
+    assert.deepEqual(auditActors, ['verified-editor']);
+    const edited = await json(await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-match': created.etag },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft', countryIds: ['IR'], genreIds: [],
+      }),
+    }));
+    assert.equal(edited.status, 200);
+    assert.deepEqual(auditActors, ['verified-editor', 'verified-editor']);
+
+    const approve = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/approval?role=administrator`,
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json', 'if-match': edited.etag,
+          'x-catalog-role': 'administrator',
+          'x-catalog-subject': 'request-controlled',
+          'x-actor-id': 'request-controlled',
+        },
+        body: JSON.stringify({
+          approvalStatus: 'approved', role: 'administrator', subjectId: 'request-controlled',
+        }),
+      },
+    ));
+    assert.equal(approve.status, 403);
+    const publish = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/publication`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'if-match': edited.etag },
+        body: JSON.stringify({ publicationStatus: 'published' }),
+      },
+    ));
+    assert.equal(publish.status, 403);
+
+    const approvalAttemptId = createCatalogContentId('movie', 'editor-approval-attempt');
+    const approvalAttempt = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(approvalAttemptId)}/metadata`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+        body: JSON.stringify({
+          approvalStatus: 'approved', publicationStatus: 'draft', countryIds: [], genreIds: [],
+        }),
+      },
+    ));
+    assert.equal(approvalAttempt.status, 403);
+
+    const publicationAttemptId = createCatalogContentId('movie', 'editor-publication-attempt');
+    const initial = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(publicationAttemptId)}/metadata`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+        body: JSON.stringify({
+          approvalStatus: 'pending', publicationStatus: 'draft', countryIds: [], genreIds: [],
+        }),
+      },
+    ));
+    assert.equal(initial.status, 201);
+    const publicationAttempt = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(publicationAttemptId)}/metadata`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-match': initial.etag },
+        body: JSON.stringify({
+          approvalStatus: 'pending', publicationStatus: 'published', countryIds: [], genreIds: [],
+        }),
+      },
+    ));
+    assert.equal(publicationAttempt.status, 403);
+  });
+
+  const approver = createAdminApi(store, { roles: ['approver'] });
+  await withServer(approver, async (baseUrl) => {
+    const url = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}`;
+    const current = await json(await fetch(`${url}/metadata`));
+    assert.equal(current.status, 200);
+    const approved = await json(await fetch(`${url}/approval`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': current.etag },
+      body: JSON.stringify({ approvalStatus: 'approved' }),
+    }));
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.data.publicationStatus, 'draft');
+    const publish = await json(await fetch(`${url}/publication`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': approved.etag },
+      body: JSON.stringify({ publicationStatus: 'published' }),
+    }));
+    assert.equal(publish.status, 403);
+  });
+
+  const publisher = createAdminApi(store, { roles: ['publisher'] });
+  await withServer(publisher, async (baseUrl) => {
+    const url = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}`;
+    const current = await json(await fetch(`${url}/metadata`));
+    const approve = await json(await fetch(`${url}/approval`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': current.etag },
+      body: JSON.stringify({ approvalStatus: 'rejected' }),
+    }));
+    assert.equal(approve.status, 403);
+    const publish = await json(await fetch(`${url}/publication`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': current.etag },
+      body: JSON.stringify({ publicationStatus: 'published' }),
+    }));
+    assert.equal(publish.status, 200);
+    assert.equal(publish.body.data.approvalStatus, 'approved');
+    assert.equal(publish.body.data.publicationStatus, 'published');
+  });
+
+  const taxonomyManager = createAdminApi(store, { roles: ['taxonomy_manager'] });
+  await withServer(taxonomyManager, async (baseUrl) => {
+    const category = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories/example`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({
+        slug: 'example', localizedTitle: { fa: 'نمونه' }, enabled: true, sortOrder: 1,
+        filters: { all: [{ field: 'kind', op: 'eq', value: 'movie' }] },
+      }),
+    }));
+    assert.equal(category.status, 201);
+    const contentWrite = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+        body: JSON.stringify({
+          approvalStatus: 'pending', publicationStatus: 'draft', countryIds: [], genreIds: [],
+        }),
+      },
+    ));
+    assert.equal(contentWrite.status, 403);
   });
 });
 
 test('metadata approval and publication are separate and only their approved/published pair is public', async () => {
   const store = createStore();
-  const admin = createCatalogAdminApi({ writableProvider: store, authorizeAdmin: () => true });
+  const admin = createAdminApi(store);
   const publicApi = createCatalogApi({ provider: sheetProvider, metadataProvider: store });
 
   await withServer(admin, async (baseUrl) => {
     const url = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`;
     const created = await json(await fetch(url, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({
         approvalStatus: 'pending', publicationStatus: 'draft',
         countryIds: ['IR'], genreIds: ['drama'],
@@ -113,20 +436,26 @@ test('metadata approval and publication are separate and only their approved/pub
 
     const validCreated = await json(await fetch(url, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({
         approvalStatus: 'pending', publicationStatus: 'draft',
         countryIds: ['IR'], genreIds: ['drama'],
       }),
     }));
     assert.equal(validCreated.status, 201);
+    assert.equal(Object.hasOwn(validCreated.body.data, '_version'), false);
 
     const fetchedMetadata = await json(await fetch(url));
     assert.equal(fetchedMetadata.status, 200);
     assert.equal(fetchedMetadata.body.data.approvalStatus, 'pending');
+    assert.equal(fetchedMetadata.etag,
+      `"catalog-v1.${Buffer.from(`content:${contentId}`).toString('base64url')}.v1"`);
     const editedMetadata = await json(await fetch(url, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'if-match': fetchedMetadata.etag,
+      },
       body: JSON.stringify({
         approvalStatus: 'pending', publicationStatus: 'draft',
         countryIds: ['IR'], genreIds: [],
@@ -134,10 +463,29 @@ test('metadata approval and publication are separate and only their approved/pub
     }));
     assert.equal(editedMetadata.status, 200);
     assert.deepEqual(editedMetadata.body.data.genreIds, []);
+    assert.notEqual(editedMetadata.etag, fetchedMetadata.etag);
+
+    const missingPrecondition = await json(await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft', countryIds: ['IR'], genreIds: [],
+      }),
+    }));
+    assert.equal(missingPrecondition.status, 428);
+
+    const stalePrecondition = await json(await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-match': fetchedMetadata.etag },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft', countryIds: ['IR'], genreIds: [],
+      }),
+    }));
+    assert.equal(stalePrecondition.status, 412);
 
     const invalidCombinedStatus = await json(await fetch(url, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({
         approvalStatus: 'pending', publicationStatus: 'published',
         countryIds: ['IR'], genreIds: ['drama'],
@@ -146,11 +494,40 @@ test('metadata approval and publication are separate and only their approved/pub
     assert.equal(invalidCombinedStatus.status, 409);
     assert.equal(invalidCombinedStatus.body.error.code, 'APPROVAL_REQUIRED');
 
+    const clientVersionField = await json(await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft',
+        countryIds: ['IR'], genreIds: [], _version: 1,
+      }),
+    }));
+    assert.equal(clientVersionField.status, 400);
+
+    const existingCreate = await json(await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft',
+        countryIds: ['IR'], genreIds: [],
+      }),
+    }));
+    assert.equal(existingCreate.status, 409);
+    assert.equal(existingCreate.body.error.code, 'ALREADY_EXISTS');
+
+    const invalidEtag = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/approval`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': 'W/"catalog-v1-invalid"' },
+      body: JSON.stringify({ approvalStatus: 'approved' }),
+    }));
+    assert.equal(invalidEtag.status, 400);
+    assert.equal(invalidEtag.body.error.code, 'INVALID_PRECONDITION');
+
     const prematurePublication = await json(await fetch(
       `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/publication`,
       {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'if-match': editedMetadata.etag },
         body: JSON.stringify({ publicationStatus: 'published' }),
       },
     ));
@@ -159,12 +536,13 @@ test('metadata approval and publication are separate and only their approved/pub
 
     const approved = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/approval`, {
       method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'if-match': editedMetadata.etag },
       body: JSON.stringify({ approvalStatus: 'approved' }),
     }));
     assert.equal(approved.status, 200);
     assert.equal(approved.body.data.publicationStatus, 'draft');
     assert.equal('sourceRecord' in approved.body.data, false);
+    assert.equal(Object.hasOwn(approved.body.data, '_version'), false);
 
   });
 
@@ -175,9 +553,11 @@ test('metadata approval and publication are separate and only their approved/pub
   });
 
   await withServer(admin, async (baseUrl) => {
+    const current = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`));
+    assert.equal(current.status, 200);
     const published = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/publication`, {
       method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'if-match': current.etag },
       body: JSON.stringify({ publicationStatus: 'published' }),
     }));
     assert.equal(published.status, 200);
@@ -201,9 +581,10 @@ test('metadata approval and publication are separate and only their approved/pub
   });
 
   await withServer(admin, async (baseUrl) => {
+    const current = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`));
     const rejected = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/approval`, {
       method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'if-match': current.etag },
       body: JSON.stringify({ approvalStatus: 'rejected' }),
     }));
     assert.equal(rejected.status, 200);
@@ -217,7 +598,7 @@ test('metadata approval and publication are separate and only their approved/pub
 
 test('admin API creates and edits categories and country/genre taxonomy with validation', async () => {
   const store = createStore();
-  const app = createCatalogAdminApi({ writableProvider: store, authorizeAdmin: () => true });
+  const app = createAdminApi(store);
   await withServer(app, async (baseUrl) => {
     const categoryUrl = `${baseUrl}${ADMIN_PATH}/categories/iranian-movies`;
     const category = {
@@ -231,11 +612,12 @@ test('admin API creates and edits categories and country/genre taxonomy with val
       ] },
     };
     const created = await json(await fetch(categoryUrl, {
-      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(category),
+      method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify(category),
     }));
     assert.equal(created.status, 201);
     const updated = await json(await fetch(categoryUrl, {
-      method: 'PUT', headers: { 'content-type': 'application/json' },
+      method: 'PUT', headers: { 'content-type': 'application/json', 'if-match': created.etag },
       body: JSON.stringify({ ...category, sortOrder: 20 }),
     }));
     assert.equal(updated.status, 200);
@@ -243,34 +625,42 @@ test('admin API creates and edits categories and country/genre taxonomy with val
     const fetchedCategory = await json(await fetch(categoryUrl));
     assert.equal(fetchedCategory.status, 200);
     assert.equal(fetchedCategory.body.data.slug, 'iranian-movies');
+    assert.notEqual(fetchedCategory.etag, created.etag);
 
     const invalidCategory = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories/bad-category`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' },
+      method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({ ...category, filters: { field: 'secretField', op: 'eq', value: 'x' } }),
     }));
     assert.equal(invalidCategory.status, 400);
 
     const duplicateSlug = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories/other-category`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' },
+      method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify(category),
     }));
     assert.equal(duplicateSlug.status, 409);
 
     const newCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' },
+      method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({ labelFa: 'آمریکا', enabled: false, sortOrder: 2 }),
     }));
     assert.equal(newCountry.status, 201);
     const fetchedCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`));
     assert.equal(fetchedCountry.status, 200);
     assert.equal(fetchedCountry.body.data.enabled, false);
+    const updatedCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-match': fetchedCountry.etag },
+      body: JSON.stringify({ labelFa: 'آمریکا', enabled: true, sortOrder: 2 }),
+    }));
+    assert.equal(updatedCountry.status, 200);
+    assert.notEqual(updatedCountry.etag, fetchedCountry.etag);
     const countries = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country`));
     assert.equal(countries.status, 200);
     assert.deepEqual(countries.body.data.map(({ id }) => id).sort(), ['IR', 'US']);
-    assert.equal(countries.body.data.find(({ id }) => id === 'US').enabled, false);
+    assert.equal(countries.body.data.find(({ id }) => id === 'US').enabled, true);
 
     const newGenre = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/genre/comedy`, {
-      method: 'PUT', headers: { 'content-type': 'application/json' },
+      method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({ labelFa: 'کمدی', enabled: true }),
     }));
     assert.equal(newGenre.status, 201);
@@ -283,6 +673,50 @@ test('admin API creates and edits categories and country/genre taxonomy with val
     const deleteAttempt = await json(await fetch(categoryUrl, { method: 'DELETE' }));
     assert.equal(deleteAttempt.status, 404);
     assert.equal((await store.listCategories()).length, 1);
+  });
+});
+
+test('only one concurrent write using the same ETag succeeds', async () => {
+  const store = createStore();
+  const app = createAdminApi(store);
+  await withServer(app, async (baseUrl) => {
+    const metadataUrl = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`;
+    const missingCreatePrecondition = await json(await fetch(metadataUrl, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft',
+        countryIds: ['IR'], genreIds: ['drama'],
+      }),
+    }));
+    assert.equal(missingCreatePrecondition.status, 428);
+
+    const created = await json(await fetch(metadataUrl, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft',
+        countryIds: ['IR'], genreIds: ['drama'],
+      }),
+    }));
+    assert.equal(created.status, 201);
+
+    const approvalUrl = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/approval`;
+    const responses = await Promise.all([
+      fetch(approvalUrl, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'if-match': created.etag },
+        body: JSON.stringify({ approvalStatus: 'approved' }),
+      }),
+      fetch(approvalUrl, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'if-match': created.etag },
+        body: JSON.stringify({ approvalStatus: 'rejected' }),
+      }),
+    ]);
+    const statuses = responses.map(({ status }) => status).sort((left, right) => left - right);
+    assert.deepEqual(statuses, [200, 412]);
+    assert.equal((await store.getContentMetadataWithVersion(contentId)).version, 2);
   });
 });
 

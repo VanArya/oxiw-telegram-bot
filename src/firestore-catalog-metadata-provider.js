@@ -1,6 +1,7 @@
 'use strict';
 
 const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider');
+const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const {
   isCanonicalContentId,
   validateCatalogCategory,
@@ -123,7 +124,7 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
     },
   };
 
-  return Object.freeze(assertCatalogMetadataProvider(provider));
+  return Object.freeze(markCatalogProviderKind(assertCatalogMetadataProvider(provider), 'firestore-read'));
 }
 
 module.exports = { createFirestoreCatalogMetadataProvider };

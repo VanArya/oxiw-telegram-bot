@@ -11,6 +11,12 @@ const WRITABLE_METHODS = Object.freeze([
   'listAllTaxonomyTerms',
 ]);
 
+const VERSIONED_METHODS = Object.freeze([
+  'getContentMetadataWithVersion',
+  'getCategoryWithVersion',
+  'getTaxonomyTermWithVersion',
+]);
+
 function assertWritableCatalogMetadataProvider(provider) {
   assertCatalogMetadataProvider(provider);
   if (WRITABLE_METHODS.some((method) => typeof provider[method] !== 'function')) {
@@ -21,4 +27,17 @@ function assertWritableCatalogMetadataProvider(provider) {
   return provider;
 }
 
-module.exports = { assertWritableCatalogMetadataProvider };
+function assertVersionedWritableCatalogMetadataProvider(provider) {
+  assertWritableCatalogMetadataProvider(provider);
+  if (VERSIONED_METHODS.some((method) => typeof provider[method] !== 'function')) {
+    throw new TypeError(
+      'VersionedWritableCatalogMetadataProvider must expose versioned record reads.',
+    );
+  }
+  return provider;
+}
+
+module.exports = {
+  assertWritableCatalogMetadataProvider,
+  assertVersionedWritableCatalogMetadataProvider,
+};

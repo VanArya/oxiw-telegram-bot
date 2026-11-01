@@ -110,6 +110,17 @@ function validatePublicationStatus(value, approvalStatus) {
   return value;
 }
 
+function validateExpectedVersion(options) {
+  if (!isRecord(options) || !Object.hasOwn(options, 'expectedVersion') ||
+      Object.keys(options).some((key) => !['expectedVersion', 'actorId'].includes(key)) ||
+      !Number.isSafeInteger(options.expectedVersion) || options.expectedVersion < 0 ||
+      (options.actorId !== undefined &&
+        (typeof options.actorId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(options.actorId)))) {
+    throw new CatalogInputError('EXPECTED_VERSION_REQUIRED');
+  }
+  return options;
+}
+
 function validateCatalogCategory(categoryId, value) {
   if (typeof categoryId !== 'string' || !ID_PATTERN.test(categoryId)) {
     throw new CatalogInputError('INVALID_CATEGORY_ID');
@@ -179,4 +190,5 @@ module.exports = {
   validateCatalogContentMetadata,
   validateCatalogTaxonomyTerm,
   validatePublicationStatus,
+  validateExpectedVersion,
 };

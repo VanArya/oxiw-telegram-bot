@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <title>ورود آزمایشی مدیران OXIW</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="page-title">
+      <section class="card">
+        <p class="eyebrow">پنل آزمایشی مستقل</p>
+        <h1 id="page-title">ورود مدیران OXIW</h1>
+        <p class="intro">
+          این صفحه فقط وضعیت ورود Firebase Authentication را نمایش می‌دهد.
+          ورود موفق به‌تنهایی به معنی داشتن نقش <code>administrator</code> نیست.
+        </p>
+
+        <div id="status" class="status" role="status" aria-live="polite">
+          در حال آماده‌سازی…
+        </div>
+
+        <div class="actions">
+          <button id="sign-in" type="button" disabled>ورود با Google</button>
+          <button id="sign-out" class="secondary" type="button" hidden>خروج</button>
+        </div>
+
+        <section id="user-panel" class="user-panel" aria-labelledby="user-title" hidden>
+          <h2 id="user-title">کاربر واردشده</h2>
+          <dl>
+            <div>
+              <dt>ایمیل</dt>
+              <dd id="user-email">—</dd>
+            </div>
+            <div>
+              <dt>UID</dt>
+              <dd id="user-uid">—</dd>
+            </div>
+          </dl>
+          <p class="role-warning">
+            نقش مدیریتی از این صفحه بررسی یا اعطا نمی‌شود. هر عملیات مدیریتی باید
+            در سمت سرور با توکن ID معتبر و منبع نقش مجاز احراز شود.
+          </p>
+        </section>
+
+        <p class="footnote">
+          این نسخه هیچ API، Firestore، endpoint یا مسیر عملیاتی را فراخوانی نمی‌کند.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

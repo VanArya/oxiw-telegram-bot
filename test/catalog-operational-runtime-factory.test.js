@@ -1,0 +1,222 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const test = require('node:test');
+const {
+  CatalogOperationalRuntimeConfigurationError,
+  DEFAULT_DATABASE_ID,
+  FIREBASE_APP_NAME,
+  createOperationalCatalogRuntime,
+} = require('../src/catalog-operational-runtime-factory');
+const { getCatalogProviderKind } = require('../src/catalog-provider-kind');
+
+function makeFirestore() {
+  const documents = new Map();
+  function reference(path) {
+    return {
+      path,
+      id: path.split('/').at(-1),
+      async get() {
+        const value = documents.get(path);
+        return value === undefined
+          ? { exists: false }
+          : { exists: true, data: () => ({ ...value }) };
+      },
+    };
+  }
+  const firestore = {
+    collection(name) {
+      return {
+        path: name,
+        doc(id) { return reference(`${name}/${id}`); },
+        async get() { return { docs: [] }; },
+      };
+    },
+    async runTransaction(callback) {
+      return callback({
+        async get(ref) { return ref.get(); },
+        set(ref, value) { documents.set(ref.path, { ...value }); },
+        create(ref, value) {
+          if (documents.has(ref.path)) throw new Error('duplicate');
+          documents.set(ref.path, { ...value });
+        },
+      });
+    },
+  };
+  return firestore;
+}
+
+function makeGoogle(state) {
+  const authClient = Object.freeze({ marker: 'adc-client' });
+  return {
+    auth: {
+      GoogleAuth: class FakeGoogleAuth {
+        constructor(options) { state.googleAuthOptions = options; }
+        async getClient() {
+          state.googleAuthClient = authClient;
+          return authClient;
+        }
+      },
+    },
+    sheets(options) {
+      state.sheetsOptions = options;
+      return {
+        spreadsheets: {
+          values: {
+            async get() { return { data: { values: [] } }; },
+          },
+        },
+      };
+    },
+  };
+}
+
+function makeFirebaseAdmin({ firestore = makeFirestore(), failCredential = false } = {}) {
+  const state = {
+    appOptions: null,
+    appName: null,
+    credentialCalls: 0,
+    authApp: null,
+    firestoreArgs: null,
+    verifyCalls: [],
+  };
+  const auth = {
+    async verifyIdToken(token, checkRevoked) {
+      state.verifyCalls.push([token, checkRevoked]);
+      return { uid: 'admin-user' };
+    },
+  };
+  const app = { name: FIREBASE_APP_NAME, options: { projectId: 'oxiw-catalog-test-123' } };
+  return {
+    state,
+    firebaseAdmin: {
+      applicationDefault() {
+        state.credentialCalls += 1;
+        if (failCredential) throw new Error('private credential detail');
+        return { marker: 'application-default' };
+      },
+      initializeApp(options, name) {
+        state.appOptions = options;
+        state.appName = name;
+        return app;
+      },
+      getApps() { return []; },
+      getApp() { return app; },
+      getAuth(value) {
+        state.authApp = value;
+        return auth;
+      },
+      getFirestore(value, databaseId) {
+        state.firestoreArgs = [value, databaseId];
+        return firestore;
+      },
+    },
+  };
+}
+
+function env(overrides = {}) {
+  return {
+    CATALOG_GCP_PROJECT_ID: 'oxiw-catalog-test-123',
+    CATALOG_SPREADSHEET_ID: 'spreadsheet-fixture',
+    ...overrides,
+  };
+}
+
+test('builds operational runtime with Firebase Admin, revoked-token verifier, shared Firestore, and Sheets ADC', async () => {
+  const state = {};
+  const google = makeGoogle(state);
+  const firebase = makeFirebaseAdmin();
+  const runtime = await createOperationalCatalogRuntime({
+    env: env({ CATALOG_FIRESTORE_DATABASE_ID: 'catalog-db' }),
+    google,
+    firebaseAdmin: firebase.firebaseAdmin,
+  });
+
+  assert.equal(runtime.runtimeMode, 'operational');
+  assert.equal(runtime.projectId, 'oxiw-catalog-test-123');
+  assert.equal(runtime.databaseId, 'catalog-db');
+  assert.equal(getCatalogProviderKind(runtime.provider), 'google-sheets');
+  assert.equal(getCatalogProviderKind(runtime.metadataProvider), 'firestore-read');
+  assert.equal(getCatalogProviderKind(runtime.writableProvider), 'firestore-write');
+  assert.deepEqual(firebase.state.appOptions, {
+    credential: { marker: 'application-default' },
+    projectId: 'oxiw-catalog-test-123',
+  });
+  assert.equal(firebase.state.appName, FIREBASE_APP_NAME);
+  assert.equal(firebase.state.firestoreArgs[1], 'catalog-db');
+  assert.deepEqual(state.googleAuthOptions, {
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+  });
+
+  const principal = await runtime.verifyAdminPrincipal({
+    headers: { authorization: 'Bearer signed-token' },
+  });
+  assert.deepEqual(principal, { authenticated: true, subjectId: 'admin-user' });
+  assert.deepEqual(firebase.state.verifyCalls, [['signed-token', true]]);
+});
+
+test('uses the compatible (default) Firestore database only when database setting is absent', async () => {
+  const firebase = makeFirebaseAdmin();
+  const runtime = await createOperationalCatalogRuntime({
+    env: env(),
+    google: makeGoogle({}),
+    firebaseAdmin: firebase.firebaseAdmin,
+  });
+  assert.equal(runtime.databaseId, DEFAULT_DATABASE_ID);
+  assert.equal(firebase.state.firestoreArgs[1], DEFAULT_DATABASE_ID);
+});
+
+test('rejects incomplete or invalid operational configuration before initialization', async () => {
+  const firebase = makeFirebaseAdmin();
+  const google = makeGoogle({});
+  for (const invalid of [
+    {},
+    env({ CATALOG_GCP_PROJECT_ID: 'Bad_Project' }),
+    env({ CATALOG_FIRESTORE_DATABASE_ID: 'bad database' }),
+    env({ CATALOG_SPREADSHEET_ID: '' }),
+    env({ GOOGLE_APPLICATION_CREDENTIALS: '' }),
+  ]) {
+    await assert.rejects(
+      createOperationalCatalogRuntime({
+        env: invalid,
+        google,
+        firebaseAdmin: firebase.firebaseAdmin,
+      }),
+      CatalogOperationalRuntimeConfigurationError,
+    );
+  }
+  assert.equal(firebase.state.credentialCalls, 0);
+});
+
+test('fails closed and sanitizes ADC initialization errors', async () => {
+  const firebase = makeFirebaseAdmin({ failCredential: true });
+  await assert.rejects(
+    createOperationalCatalogRuntime({
+      env: env(),
+      google: makeGoogle({}),
+      firebaseAdmin: firebase.firebaseAdmin,
+    }),
+    (error) => {
+      assert.ok(error instanceof CatalogOperationalRuntimeConfigurationError);
+      assert.equal(error.message.includes('private credential detail'), false);
+      assert.equal(error.cause, undefined);
+      return true;
+    },
+  );
+});
+
+test('operational runtime construction has no Firestore reads or writes', async () => {
+  const firestore = makeFirestore();
+  const firebase = makeFirebaseAdmin({ firestore });
+  const runtime = await createOperationalCatalogRuntime({
+    env: env(),
+    google: makeGoogle({}),
+    firebaseAdmin: firebase.firebaseAdmin,
+  });
+  assert.deepEqual(await runtime.readinessCheck(), {
+    sheetSource: true,
+    metadataStore: true,
+    writableStore: true,
+    auditSink: true,
+  });
+});

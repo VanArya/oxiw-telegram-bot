@@ -111,7 +111,7 @@ CatalogMetadataProvider
 
 راهکار انتخاب‌شده در نمونهٔ محلی، کلید ترکیبی namespaced از `kind` و کد سیستم trimشده است. duplicateهای هم‌نوع باعث خطای امن می‌شوند؛ رکورد مبهم حذف یا به metadata دیگری وصل نمی‌شود. کیفیت و یکتایی کدهای موجود در Sheet واقعی هنوز با دادهٔ زنده بررسی نشده است.
 
-برای مدیریت از سایت/Android، عملیات تغییر فراداده باید از مسیر جداگانهٔ `CatalogMetadataAdminStore` و سرویس مدیریتی احراز هویت‌شده اضافه شود؛ read provider عمومی به‌تنهایی مجوز نوشتن نمی‌دهد. هیچ endpoint یا store مدیریتی در این مرحله ساخته نمی‌شود.
+برای مدیریت از سایت/Android، عملیات تغییر فراداده از `CatalogMetadataAdminStore` و API مدیریتی جدا عبور می‌کند؛ read provider عمومی مجوز نوشتن نمی‌دهد. API محلی نمونه وجود دارد، اما تا انتخاب و پیاده‌سازی verifier احراز هویت مورداعتماد، عملیاتی یا قابل‌استقرار نیست.
 
 ## Mapper نمونه‌ای و محدودیت‌هایش
 
@@ -179,7 +179,34 @@ Adapter هرگز ستون `وضعیت انتشار` را از Sheet نمی‌خ�
 
 در API مدیریتی خواندن metadata محتوا، دسته‌ها و taxonomyها و نیز upsert آن‌ها وجود دارد. وضعیت تأیید با PATCH مستقل از وضعیت انتشار تغییر می‌کند. `PUT` metadata جایگزینی کامل است و هر دو status را می‌خواهد. عملیات انتشار به `published` فقط وقتی پذیرفته می‌شود که مقدار فعلی approval برابر `approved` باشد. تغییر approval به حالت غیرمجاز، publication ذخیره‌شده را بازنویسی نمی‌کند؛ شرط دوگانهٔ Core محتوای آن را از API عمومی خارج می‌کند. وضعیت‌های نامعتبر، body دارای فیلد اضافی، شناسهٔ غیرcanonical، taxonomy غیرفعال/ناموجود، slug دستهٔ تکراری و غیرفعال‌کردن taxonomy در حال استفاده رد می‌شوند.
 
-کنترل دسترسی فقط از طریق تابع تزریق‌شدهٔ `authorizeAdmin(request)` انجام می‌شود؛ فقط `true` دقیق مجوز می‌دهد. نبود تابع به معنی رد fail-closed همهٔ درخواست‌هاست. authorizer فعلی فقط fake تست است و احراز هویت واقعی، نقش‌ها، تاریخچهٔ ممیزی و ماندگاری وجود ندارد. برای staging آینده باید ابتدا هویت مدیر، اجرای backend مورداعتماد، مجوزهای حداقلی storage، audit/versioning، concurrency و rollback آماده شوند. هیچ endpoint حذف دائمی یا پاک‌کردن history وجود ندارد؛ برای این نمونه نیز تاریخچه‌ای نگهداری نمی‌شود.
+کنترل دسترسی API مدیریتی از دو seam مستقل انجام می‌شود: `verifyAdminPrincipal(request)` باید از میزبان مورداعتماد principal احرازشده بدهد؛ `authorizePermission(principal, permission)` سیاست نقش را اعمال می‌کند. شکل principal محدود به `{ authenticated: true, subjectId, roles }` با subject و نقش‌های شناخته‌شده است. API هیچ identity، role یا actor را از body، query یا header معمولی نمی‌پذیرد. نبود هر seam، principal نامعتبر یا خطای verifier/policy به رد fail-closed می‌انجامد. `src/catalog-admin-authorization.js` فقط قرارداد و policy نقش را دارد و خودش token را اعتبارسنجی نمی‌کند.
+
+نقش‌ها و مجوزهای کدشده:
+
+| نقش | مجوزهای صریح |
+|---|---|
+| `observer` | `catalog.admin.read` |
+| `editor` | `catalog.admin.read`, `catalog.metadata.write` |
+| `approver` | `catalog.admin.read`, `catalog.content.approve` |
+| `publisher` | `catalog.admin.read`, `catalog.content.publish` |
+| `taxonomy_manager` | `catalog.admin.read`, `catalog.categories.manage`, `catalog.taxonomies.manage` |
+| `administrator` | همهٔ مجوزهای فوق، فقط برای principal معتبرِ verifier مورداعتماد |
+
+تمام GETهای مدیریتی به مجوز read، PUT metadata به `catalog.metadata.write`، PATCH approval به `catalog.content.approve`، PATCH publication به `catalog.content.publish`، PUT category به `catalog.categories.manage` و PUT taxonomy به `catalog.taxonomies.manage` نیاز دارند. تغییر وضعیت approval یا publication از مسیر PUT metadata هم مجوز جداگانهٔ همان وضعیت را لازم دارد؛ editor به‌تنهایی فقط می‌تواند رکورد را با وضعیت اولیهٔ `pending`/`draft` بسازد یا وضعیت‌های فعلی را حفظ کند. role `administrator` راه دورزدن verifier نیست و بدون principal تأییدشده رد می‌شود. شناسهٔ audit/write actor فقط از `principal.subjectId` می‌آید.
+
+هیچ token verifier یا ارائه‌دهندهٔ هویت عملیاتی در این مرحله وجود ندارد. آزمون‌های fake فقط نگاشت policy و fail-closed بودن اتصال را بررسی می‌کنند و امنیت استقرار را اثبات نمی‌کنند. برای staging/production هنوز باید منبع principal معتبر، verifier امضای token یا middleware میزبان، چرخهٔ عمر نقش‌ها، backend مورداعتماد، مجوز storage، audit/versioning عملیاتی و rollback تعیین شوند. هیچ endpoint حذف دائمی یا پاک‌کردن history وجود ندارد.
+
+## Provider نوشتنی نسخه‌دار Firestore — فقط fake client
+
+`src/firestore-writable-catalog-metadata-provider.js` همان متدهای writable فعلی را با گزینهٔ اجباری `{ expectedVersion }` گسترش می‌دهد و سه متد خواندن نسخه‌دار دارد: `getContentMetadataWithVersion(contentId)`, `getCategoryWithVersion(categoryId)` و `getTaxonomyTermWithVersion(type, termId)` که `{ value, version }` یا `null` می‌دهند. هر متد نوشتن نیز `{ value, version }` برمی‌گرداند. نسخهٔ صفر فقط ایجاد می‌کند؛ update باید نسخهٔ دقیق خوانده‌شده را بفرستد. مقایسه و نوشتن در Firestore transaction انجام می‌شود و mismatch تعارض است. `_version` داخلی است و از projectionهای مدل خارج می‌شود.
+
+API مدیریتی نسخه را از طریق ETag قوی با قالب `"catalog-v1.<identity-base64url>.v<version>"` برمی‌گرداند. برای ایجاد `If-None-Match: *` و برای ویرایش `If-Match` دقیق لازم است؛ فقدان پیش‌شرط 428، قالب نادرست 400، نسخهٔ نامنطبق 412 و ایجاد روی سند موجود 409 می‌دهد. Provider حافظه‌ای و Firestore هر دو expectedVersion را دوباره بررسی می‌کنند. API درخواست stale را با نسخهٔ جدید retry نمی‌کند. این قرارداد در تست‌ها با fake client پوشش دارد، اما Firestore واقعی و staging متصل نشده‌اند.
+
+## رخدادهای مدیریتی و محدودیت‌های پایداری
+
+قرارداد جداگانهٔ `CatalogAuditEventSink` متد `appendInTransaction(transaction, event)` دارد. Provider برای ایجاد metadata، تغییر metadata، approval، publication، category و taxonomy رخداد allowlist‌شده می‌سازد؛ sink Firestore آن را در مجموعهٔ پیشنهادی `catalogAuditEvents` و در همان transaction ایجاد می‌کند. رکورد فقط نوع عملیات، نوع و شناسهٔ موجودیت، زمان، نتیجهٔ `committed`، نسخهٔ قبلی/جدید، نام فیلدهای تغییرکرده و در صورت وجود شناسهٔ opaque مدیر را نگه می‌دارد؛ عملیات وضعیت مقصد مانند `approval.rejected` را مشخص می‌کند، اما مقدارهای metadata و snapshotها وارد تاریخچه نمی‌شوند. Transaction ناموفق داده و رخداد موفق را با هم ثبت نمی‌کند. رخداد تلاش‌های ناموفق/ردشده در این نمونه ذخیره نمی‌شود.
+
+ساختار پیشنهادی Firestore از مجموعه‌های `catalogContentMetadata` (سند keyed by content ID)، `catalogCategories` (سند keyed by category ID)، `catalogTaxonomies/{country|genre}/terms` و `catalogAuditEvents` استفاده می‌کند. این‌ها فقط نام و شکل پیشنهادی‌اند؛ Provider صرفاً با mock آزمایش شده است. credential، پروژه، IAM و storage واقعی ایجاد نشده‌اند. ساعت رخداد از clock تزریق‌شده می‌آید و برای production باید timestamp مورداعتماد، retention، export/backup، احراز هویت مدیر، نقش‌ها و rollback تعیین شوند.
 
 گزینه‌های storage:
 
