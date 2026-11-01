@@ -5,6 +5,7 @@ const http = require('node:http');
 const test = require('node:test');
 
 const { createCatalogAdminApi } = require('../src/catalog-admin-api');
+const { createFirebaseAdminIdTokenVerifier } = require('../src/firebase-admin-id-token-verifier');
 const { createCatalogApi } = require('../src/catalog-api');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
 const {
@@ -147,6 +148,20 @@ test('admin API fails closed when authorization is absent or denied', async () =
     assert.equal(result.status, 503);
     assert.equal(result.body.error.code, 'AUTHENTICATION_UNAVAILABLE');
     assert.equal(JSON.stringify(result.body).includes('synthetic-private-verifier-detail'), false);
+  });
+
+  const rejectedTokens = createAdminApi(store, {
+    verifyAdminPrincipal: createFirebaseAdminIdTokenVerifier({
+      auth: { async verifyIdToken() { throw new Error('synthetic-invalid-token-detail'); } },
+    }),
+  });
+  await withServer(rejectedTokens, async (baseUrl) => {
+    for (const headers of [{}, { authorization: 'Bearer invalid-token' }]) {
+      const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories`, { headers }));
+      assert.equal(result.status, 401);
+      assert.equal(result.body.error.code, 'UNAUTHENTICATED');
+      assert.equal(JSON.stringify(result.body).includes('synthetic-invalid-token-detail'), false);
+    }
   });
 
   const throwingPolicy = createAdminApi(store, {

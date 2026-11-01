@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const { FirebaseAdminTokenVerificationError } = require('./firebase-admin-id-token-verifier');
 const {
   normalizeVerifiedCatalogPrincipal,
   normalizeVerifiedCatalogIdentity,
@@ -221,7 +222,12 @@ function createCatalogAdminApi({
         res.locals.catalogAdminPrincipal = principal;
         next();
       })
-      .catch(() => sendError(res, 503, 'AUTHENTICATION_UNAVAILABLE', 'بررسی هویت در دسترس نیست.'));
+      .catch((error) => {
+        if (error instanceof FirebaseAdminTokenVerificationError) {
+          return sendError(res, 401, 'UNAUTHENTICATED', 'هویت معتبر نیست.');
+        }
+        return sendError(res, 503, 'AUTHENTICATION_UNAVAILABLE', 'بررسی هویت در دسترس نیست.');
+      });
   });
 
   function requirePermission(permission) {
