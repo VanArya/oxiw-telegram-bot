@@ -27,16 +27,40 @@ const VALID_STAGES = new Set([
   'request_handler',
 ]);
 
+const MAPPING_SHEETS = new Set(['سینمایی', 'سریال']);
+const MAPPING_FIELDS = new Set([
+  'system_code', 'title', 'movie_year', 'series_start_year',
+  'series_end_year', 'series_year_range', 'unknown',
+]);
+
+function isValidMappingDiagnostic(stage, context) {
+  return stage === 'sheet_row_mapping' &&
+    context !== null && typeof context === 'object' && !Array.isArray(context) &&
+    MAPPING_SHEETS.has(context.sheetName) &&
+    Number.isSafeInteger(context.rowNumber) && context.rowNumber >= 2 && context.rowNumber <= 10000000 &&
+    MAPPING_FIELDS.has(context.field);
+}
+
 class CatalogDependencyError extends Error {
-  constructor({ dependency, stage, errorCode, message }) {
+  constructor({ dependency, stage, errorCode, message, diagnosticContext }) {
     if (!ERROR_CODES[dependency]?.includes(errorCode) || !VALID_STAGES.has(stage)) {
       throw new TypeError('Invalid catalog dependency error.');
+    }
+    if (diagnosticContext !== undefined && !isValidMappingDiagnostic(stage, diagnosticContext)) {
+      throw new TypeError('Invalid catalog diagnostic context.');
     }
     super(message);
     this.name = 'CatalogDependencyError';
     this.dependency = dependency;
     this.stage = stage;
     this.errorCode = errorCode;
+    if (diagnosticContext !== undefined) {
+      this.diagnosticContext = Object.freeze({
+        sheetName: diagnosticContext.sheetName,
+        rowNumber: diagnosticContext.rowNumber,
+        field: diagnosticContext.field,
+      });
+    }
   }
 }
 
@@ -81,8 +105,8 @@ function classifyGoogleApiFailure(dependency, error) {
   return `${dependency.toUpperCase()}_UNKNOWN`;
 }
 
-function createCatalogDependencyError({ dependency, stage, errorCode, message }) {
-  return new CatalogDependencyError({ dependency, stage, errorCode, message });
+function createCatalogDependencyError(options) {
+  return new CatalogDependencyError(options);
 }
 
 function classifyCatalogDependencyError(dependency, stage, error, message) {
