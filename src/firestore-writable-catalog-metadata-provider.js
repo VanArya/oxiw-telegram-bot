@@ -256,6 +256,23 @@ function createFirestoreWritableCatalogMetadataProvider({
       if (!isCanonicalContentId(contentId)) return null;
       return readVersioned(contentRef(contentId), (data) => projectContent(data, contentId));
     },
+    async listContentMetadataWithVersion() {
+      try {
+        const snapshot = await firestore.collection(collections.contentMetadata).get();
+        if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
+        return snapshot.docs.map((document) => {
+          const data = readSnapshot({ exists: true, data: () => document.data() });
+          if (!document || typeof document.id !== 'string' ||
+              !isCanonicalContentId(document.id)) throw new TypeError();
+          return Object.freeze({
+            value: projectContent(data.data, document.id),
+            version: data.version,
+          });
+        });
+      } catch {
+        throw safeStorageError();
+      }
+    },
     async listCategories() {
       const entries = await readCollection(
         collections.categories,

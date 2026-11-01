@@ -213,6 +213,14 @@ test('creates and retrieves versioned metadata, with atomic audit records and sa
   assert.equal(JSON.stringify(auditEvents).includes('Telegram'), false);
 });
 
+test('lists versioned metadata for the authenticated admin catalog reader', async () => {
+  const { provider } = setup();
+  await provider.upsertContentMetadata(contentId, metadata, { expectedVersion: 0 });
+  const listed = await provider.listContentMetadataWithVersion();
+  assert.deepEqual(listed, [{ value: { contentId, ...metadata }, version: 1 }]);
+  assert.equal(JSON.stringify(listed).includes('_version'), false);
+});
+
 test('approval and publication remain independent and publication requires approval', async () => {
   const { firestore, provider } = setup();
   const pending = { ...metadata, approvalStatus: 'pending' };

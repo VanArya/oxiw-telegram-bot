@@ -9,6 +9,7 @@ const {
 } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
+const { getCatalogFirebaseWebConfig } = require('./catalog-admin-web-config');
 const {
   createCatalogRoleAuthorizer,
 } = require('./catalog-admin-authorization');
@@ -183,6 +184,10 @@ async function createOperationalCatalogRuntime({
       roleProvider,
       authorizePermission: createCatalogRoleAuthorizer(),
       readinessCheck: operationalReadiness,
+      getAdminWebConfig: () => getCatalogFirebaseWebConfig({
+        env,
+        runtimeProjectId: configuration.projectId,
+      }),
     });
   } catch {
     throw new CatalogOperationalRuntimeConfigurationError();

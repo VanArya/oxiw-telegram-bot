@@ -6,6 +6,7 @@ const {
   normalizeVerifiedCatalogPrincipal,
   normalizeVerifiedCatalogIdentity,
   PERMISSIONS,
+  ROLES,
 } = require('./catalog-admin-authorization');
 const { normalizeCatalogAdminRoles } = require('./catalog-admin-role-provider');
 const {
@@ -164,6 +165,8 @@ function publicAdminTaxonomy(type, value) {
 
 function createCatalogAdminApi({
   writableProvider,
+  contentReader,
+  auditReader,
   verifyAdminPrincipal,
   roleProvider,
   reportRoleResolutionFailure: reportRoleFailure,
@@ -247,6 +250,53 @@ function createCatalogAdminApi({
       return false;
     }
   }
+
+  app.get(`${BASE_PATH}/me`, requirePermission(PERMISSIONS.READ), (req, res) => {
+    const principal = res.locals.catalogAdminPrincipal;
+    const permissions = [...new Set(principal.roles.flatMap((role) => ROLES[role] || []))];
+    return res.json({ data: {
+      subjectId: principal.subjectId,
+      roles: [...principal.roles],
+      permissions,
+    } });
+  });
+
+  app.get(`${BASE_PATH}/items`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!contentReader || typeof contentReader.list !== 'function') {
+      return sendError(res, 503, 'ADMIN_CONTENT_READ_NOT_CONFIGURED', 'فهرست مدیریتی محتوا پیکربندی نشده است.');
+    }
+    try {
+      return res.json(await contentReader.list(new URL(req.originalUrl, 'http://localhost').searchParams));
+    } catch (error) {
+      if (error?.name === 'CatalogAdminListInputError') {
+        return sendError(res, 400, 'INVALID_FILTER', 'فیلتر یا صفحه‌بندی معتبر نیست.');
+      }
+      return sendError(res, 500, 'INTERNAL_ERROR', 'فهرست محتوا در دسترس نیست.');
+    }
+  }));
+
+  app.get(`${BASE_PATH}/audit`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!auditReader || typeof auditReader.list !== 'function') {
+      return sendError(res, 503, 'ADMIN_AUDIT_READ_NOT_CONFIGURED', 'تاریخچهٔ مدیریتی پیکربندی نشده است.');
+    }
+    const query = new URL(req.originalUrl, 'http://localhost').searchParams;
+    for (const key of query.keys()) {
+      if (!['page', 'pageSize'].includes(key) || query.getAll(key).length !== 1) {
+        return sendError(res, 400, 'INVALID_PAGINATION', 'صفحه‌بندی معتبر نیست.');
+      }
+    }
+    try {
+      return res.json(await auditReader.list({
+        page: query.get('page') ?? undefined,
+        pageSize: query.get('pageSize') ?? undefined,
+      }));
+    } catch (error) {
+      if (error?.code === 'INVALID_PAGINATION') {
+        return sendError(res, 400, 'INVALID_PAGINATION', 'صفحه‌بندی معتبر نیست.');
+      }
+      return sendError(res, 500, 'INTERNAL_ERROR', 'تاریخچهٔ مدیریتی در دسترس نیست.');
+    }
+  }));
 
   app.get(`${BASE_PATH}/items/:contentId/metadata`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');

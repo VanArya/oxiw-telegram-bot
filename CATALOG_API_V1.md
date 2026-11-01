@@ -234,3 +234,13 @@ Provider و sink جدید فقط با fake Firestore آزمایش شده‌ان�
 - افزودن فیلد اختیاری تا وقتی معنی و nullability آن مشخص باشد می‌تواند در v1 سازگار بماند.
 - تغییر schema منبع داده نباید بی‌اعلان، شکل پاسخ v1 را عوض کند.
 - مصرف‌کنندگان: سایت Apps Script، Android WebView/کلاینت آینده، ربات اصلی و در صورت نیاز ربات دانلود.
+
+## پنل مدیریت same-origin
+
+پیاده‌سازی فعلی پنل از `/admin/` سرو می‌شود. `/admin/config.json` فقط پنج مقدار public Firebase Web App را از تنظیم runtime برمی‌گرداند و در نبود هر متغیر یا mismatch پروژه با `CATALOG_GCP_PROJECT_ID` پاسخ 503 می‌دهد؛ هیچ Admin SDK credential یا ADC به مرورگر منتقل نمی‌شود. تنظیمات: `CATALOG_FIREBASE_WEB_API_KEY`, `CATALOG_FIREBASE_WEB_AUTH_DOMAIN`, `CATALOG_FIREBASE_WEB_PROJECT_ID`, `CATALOG_FIREBASE_WEB_MESSAGING_SENDER_ID`, `CATALOG_FIREBASE_WEB_APP_ID`.
+
+`GET /api/v1/admin/catalog/me` پس از Firebase ID Token verification و role resolution فعلی، `subjectId`, roleهای allowlist و permissionهای متناظر را می‌دهد. نبود role دارای permission مشاهده به 403 می‌رسد. `GET /api/v1/admin/catalog/items` همان permission مشاهده را می‌خواهد و فهرست مدیریتی صفحه‌بندی‌شدهٔ دو Sheet را با metadata join‌شده، وضعیت‌های `unknown` برای metadata غایب، جست‌وجوی title/systemCode و فیلتر type/status برمی‌گرداند. خروجی allowlist است و شامل row خام، Telegram File ID، URLهای نامعلوم تریلر/پوستر یا credential نیست؛ Sheets فقط خوانده می‌شود.
+
+`GET /api/v1/admin/catalog/audit?page=...&pageSize=...` فقط رخدادهای `catalogAuditEvents` را با projection allowlist و صفحه‌بندی می‌خواند. رخدادهای provisioning نقش از این API جدا هستند. Endpointهای قبلی ETag، role-policy و تراکنش‌های write را حفظ می‌کنند؛ UI مجوز را فقط برای UX می‌خواند و backend همچنان روی هر درخواست آن را اعمال می‌کند.
+
+پنل از Firebase Web SDK برای ورود Google و ارسال Bearer ID Token استفاده می‌کند؛ token را برنامه در URL، log، `localStorage` یا `sessionStorage` ذخیره نمی‌کند. Bootstrap مدیر اول و اعطای نقش از UI در دسترس نیست. صفحهٔ پیکربندی ناقص را کنترل‌شده نشان می‌دهد؛ deployment و Firebase Authorized domains باید توسط مالک در میزبان واقعی تنظیم شوند. جزئیات UI و مراحل میزبانی در `docs/ADMIN_WEB_PANEL.md` است.

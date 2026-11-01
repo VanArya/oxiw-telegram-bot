@@ -4,52 +4,161 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="referrer" content="no-referrer">
-    <title>ورود آزمایشی مدیران OXIW</title>
-    <link rel="stylesheet" href="./styles.css">
+    <meta name="theme-color" content="#13243a">
+    <title>مدیریت کاتالوگ | OXIW</title>
+    <link rel="stylesheet" href="/admin/styles.css">
   </head>
   <body>
-    <main class="shell" aria-labelledby="page-title">
-      <section class="card">
-        <p class="eyebrow">پنل آزمایشی مستقل</p>
-        <h1 id="page-title">ورود مدیران OXIW</h1>
-        <p class="intro">
-          این صفحه فقط وضعیت ورود Firebase Authentication را نمایش می‌دهد.
-          ورود موفق به‌تنهایی به معنی داشتن نقش <code>administrator</code> نیست.
-        </p>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+    <main class="app-shell">
+      <section id="boot-screen" class="boot-screen panel" aria-live="polite">
+        <span class="brand-mark" aria-hidden="true">O</span>
+        <p class="eyebrow">OXIW · CATALOG CORE</p>
+        <h1>در حال آماده‌سازی پنل</h1>
+        <p id="boot-message" class="muted">پیکربندی امن و وضعیت ورود بررسی می‌شود…</p>
+        <ul id="missing-config" class="missing-config" hidden></ul>
+        <button id="boot-retry" class="button button-secondary" type="button" hidden>تلاش دوباره</button>
+      </section>
 
-        <div id="status" class="status" role="status" aria-live="polite">
-          در حال آماده‌سازی…
+      <section id="login-screen" class="login-screen panel" hidden>
+        <div class="login-art" aria-hidden="true">
+          <div class="orbit orbit-a"></div><div class="orbit orbit-b"></div>
+          <span class="art-mark">O</span><span class="art-dot dot-a"></span><span class="art-dot dot-b"></span>
         </div>
-
-        <div class="actions">
-          <button id="sign-in" type="button" disabled>ورود با Google</button>
-          <button id="sign-out" class="secondary" type="button" hidden>خروج</button>
+        <div class="login-content">
+          <p class="eyebrow">OXIW · CATALOG CORE</p>
+          <h1>پنل مدیریت کاتالوگ</h1>
+          <p class="muted">برای دسترسی، با حساب Google سازمانی وارد شوید.</p>
+          <div id="login-message" class="notice" role="status" aria-live="polite">ورود موفق به‌تنهایی دسترسی مدیریتی ایجاد نمی‌کند.</div>
+          <button id="sign-in" class="button button-primary button-wide" type="button">ورود با Google</button>
+          <p class="fine-print">هویت و مجوز در هر درخواست توسط سرور بررسی می‌شود.</p>
         </div>
+      </section>
 
-        <section id="user-panel" class="user-panel" aria-labelledby="user-title" hidden>
-          <h2 id="user-title">کاربر واردشده</h2>
-          <dl>
-            <div>
-              <dt>ایمیل</dt>
-              <dd id="user-email">—</dd>
-            </div>
-            <div>
-              <dt>UID</dt>
-              <dd id="user-uid">—</dd>
-            </div>
-          </dl>
-          <p class="role-warning">
-            نقش مدیریتی از این صفحه بررسی یا اعطا نمی‌شود. هر عملیات مدیریتی باید
-            در سمت سرور با توکن ID معتبر و منبع نقش مجاز احراز شود.
-          </p>
-        </section>
+      <section id="no-access-screen" class="no-access-screen panel" hidden>
+        <span class="brand-mark" aria-hidden="true">O</span>
+        <p class="eyebrow">OXIW · CATALOG CORE</p>
+        <h1>دسترسی مدیریتی تخصیص داده نشده</h1>
+        <p id="no-access-message" class="muted">حساب شما احراز شد، اما نقش فعال و مجاز برای پنل پیدا نشد.</p>
+        <div class="account-card"><span id="no-access-email"></span><span id="no-access-uid" class="mono"></span></div>
+        <button id="no-access-sign-out" class="button button-secondary" type="button">خروج از حساب</button>
+      </section>
 
-        <p class="footnote">
-          این نسخه هیچ API، Firestore، endpoint یا مسیر عملیاتی را فراخوانی نمی‌کند.
-        </p>
+      <section id="dashboard" class="dashboard" hidden>
+        <header class="topbar panel">
+          <a class="brand" href="/admin/" aria-label="صفحه اصلی پنل کاتالوگ">
+            <span class="brand-mark">O</span><span><strong>OXIW</strong><small>CATALOG CORE</small></span>
+          </a>
+          <div class="topbar-account">
+            <span id="top-email" class="top-email"></span>
+            <span id="top-role" class="role-pill"></span>
+            <button id="sign-out" class="button button-quiet" type="button">خروج</button>
+          </div>
+        </header>
+
+        <div class="workspace">
+          <aside class="sidebar panel" aria-label="بخش‌های پنل">
+            <p class="eyebrow">مدیریت</p>
+            <nav id="main-nav" class="main-nav">
+              <button class="nav-item active" data-view="overview" type="button"><span>01</span> نمای کلی</button>
+              <button class="nav-item" data-view="content" type="button"><span>02</span> فیلم‌ها و سریال‌ها</button>
+              <button class="nav-item" data-view="categories" data-permission="catalog.categories.manage" type="button"><span>03</span> دسته‌بندی‌ها</button>
+              <button class="nav-item" data-view="countries" data-permission="catalog.taxonomies.manage" type="button"><span>04</span> کشورها</button>
+              <button class="nav-item" data-view="genres" data-permission="catalog.taxonomies.manage" type="button"><span>05</span> ژانرها</button>
+              <button class="nav-item" data-view="audit" type="button"><span>06</span> تاریخچه عملیات</button>
+              <button class="nav-item" data-view="account" type="button"><span>07</span> حساب و دسترسی</button>
+            </nav>
+            <div class="sidebar-note"><span class="status-dot"></span><span>اتصال امن سمت سرور</span></div>
+          </aside>
+
+          <div class="main-column">
+            <div id="global-message" class="global-message" role="status" aria-live="polite" hidden></div>
+
+            <section id="view-overview" class="view active-view">
+              <div class="page-heading"><div><p class="eyebrow">خلاصهٔ وضعیت</p><h1>نمای کلی</h1><p class="muted">وضعیت کاتالوگ بر اساس داده‌های فعلی Sheets و Firestore</p></div><button class="button button-secondary refresh-button" data-refresh="overview" type="button">به‌روزرسانی</button></div>
+              <div id="stats-grid" class="stats-grid" aria-live="polite"></div>
+              <div class="overview-grid">
+                <article class="panel info-panel"><p class="eyebrow">منابع داده</p><h2>Sheets + Firestore</h2><p>اطلاعات اصلی فیلم و سریال فقط‌خواندنی از Google Sheets خوانده می‌شود. وضعیت، taxonomy و دسته‌ها از API امن Catalog Core دریافت می‌شوند.</p></article>
+                <article class="panel info-panel warning-panel"><p class="eyebrow">کنترل انتشار</p><h2>تأیید جدا از انتشار</h2><p>محتوا فقط وقتی عمومی است که هم‌زمان تأیید شده و منتشر شده باشد. هیچ انتشار خودکار یا گروهی از پنل انجام نمی‌شود.</p></article>
+              </div>
+            </section>
+
+            <section id="view-content" class="view">
+              <div class="page-heading"><div><p class="eyebrow">منبع: Sheets · وضعیت: Firestore</p><h1>فیلم‌ها و سریال‌ها</h1><p class="muted">همهٔ ردیف‌ها، از جمله پیش‌نویس‌ها و موارد فاقد metadata</p></div><button class="button button-secondary refresh-button" data-refresh="content" type="button">به‌روزرسانی</button></div>
+              <div class="panel toolbar">
+                <label class="search-control"><span>جست‌وجو</span><input id="content-search" type="search" maxlength="100" placeholder="عنوان یا کد سیستم"></label>
+                <label><span>نوع</span><select id="content-kind"><option value="">همه</option><option value="movie">سینمایی</option><option value="series">سریال</option></select></label>
+                <label><span>تأیید</span><select id="content-approval"><option value="">همه</option><option>pending</option><option>approved</option><option>rejected</option><option>unknown</option></select></label>
+                <label><span>انتشار</span><select id="content-publication"><option value="">همه</option><option>draft</option><option>published</option><option>archived</option><option>unknown</option></select></label>
+                <button id="content-search-button" class="button button-primary" type="button">اعمال فیلتر</button>
+              </div>
+              <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>عنوان</th><th>نوع</th><th>کد سیستم</th><th>سال</th><th>تأیید</th><th>انتشار</th><th>metadata</th><th></th></tr></thead><tbody id="content-rows"></tbody></table></div><div class="table-footer"><span id="content-count" class="muted"></span><div class="pager"><button id="content-prev" class="button button-small button-secondary" type="button">قبلی</button><span id="content-page"></span><button id="content-next" class="button button-small button-secondary" type="button">بعدی</button></div></div></div>
+            </section>
+
+            <section id="view-categories" class="view">
+              <div class="page-heading"><div><p class="eyebrow">taxonomy manager</p><h1>دسته‌بندی‌ها</h1><p class="muted">ساخت و ویرایش دسته‌ها با فیلترساز محدود Catalog Core</p></div><button id="category-new" class="button button-primary" type="button">دستهٔ جدید</button></div>
+              <div class="two-column">
+                <div class="panel table-panel"><div class="panel-heading"><h2>فهرست دسته‌ها</h2><button class="button button-small button-secondary refresh-button" data-refresh="categories" type="button">تازه‌سازی</button></div><div id="category-list" class="record-list"></div></div>
+                <form id="category-form" class="panel editor-form" hidden>
+                  <div class="panel-heading"><div><p class="eyebrow">تنظیمات دسته</p><h2 id="category-form-title">دستهٔ جدید</h2></div><button class="icon-button" type="button" data-close-form="category" aria-label="بستن">×</button></div>
+                  <label>شناسهٔ پایدار<input id="category-id" required maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]*"></label>
+                  <label>عنوان فارسی<input id="category-title-fa" required maxlength="160"></label>
+                  <label>عنوان انگلیسی (اختیاری)<input id="category-title-en" maxlength="160" dir="ltr"></label>
+                  <div class="localized-titles"><div class="panel-heading"><h3>عنوان زبان‌های دیگر (اختیاری)</h3><button id="add-localized-title" class="button button-small button-secondary" type="button">افزودن زبان</button></div><div id="category-other-titles"></div></div>
+                  <label>Slug<input id="category-slug" required maxlength="80" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" dir="ltr"></label>
+                  <label>ترتیب نمایش<input id="category-sort" type="number" step="1" value="0"></label>
+                  <label class="check-label"><input id="category-enabled" type="checkbox" checked> فعال</label>
+                  <div class="filter-builder"><div class="panel-heading"><h3>فیلترهای دسته</h3><button id="add-filter" class="button button-small button-secondary" type="button">افزودن شرط</button></div><div id="filter-conditions"></div><p class="fine-print">شرط‌ها با AND ترکیب می‌شوند و فقط فیلدهای مجاز Core قابل انتخاب‌اند.</p><p id="category-filter-warning" class="notice" hidden>این فیلتر از شرط‌های تو‌در‌تو استفاده می‌کند؛ ویرایش پیشرفته در سرور دوباره اعتبارسنجی می‌شود.</p><details id="category-advanced" hidden><summary>ویرایش پیشرفتهٔ فیلتر</summary><textarea id="category-filter-json" rows="8" spellcheck="false" aria-label="فیلتر JSON"></textarea></details></div>
+                  <div class="form-actions"><button class="button button-primary" type="submit">ذخیرهٔ دسته</button><button class="button button-secondary" type="button" data-close-form="category">انصراف</button></div>
+                </form>
+              </div>
+            </section>
+
+            <section id="view-countries" class="view">
+              <div class="page-heading"><div><p class="eyebrow">taxonomy</p><h1>کشورها</h1><p class="muted">شناسه‌ها مطابق قرارداد backend از دو حرف بزرگ ISO هستند.</p></div><button class="button button-primary taxonomy-new" data-type="country" type="button">کشور جدید</button></div>
+              <div class="two-column"><div class="panel table-panel"><div class="panel-heading"><h2>فهرست کشورها</h2><button class="button button-small button-secondary refresh-button" data-refresh="countries" type="button">تازه‌سازی</button></div><div id="country-list" class="record-list"></div></div><form id="country-form" class="panel editor-form" hidden><div class="panel-heading"><div><p class="eyebrow">کشور</p><h2 id="country-form-title">کشور جدید</h2></div><button class="icon-button" type="button" data-close-form="country" aria-label="بستن">×</button></div><label>شناسهٔ ISO<input id="country-id" required maxlength="2" pattern="[A-Z]{2}" dir="ltr"></label><label>عنوان فارسی<input id="country-label" required maxlength="160"></label><label>ترتیب نمایش<input id="country-sort" type="number" step="1" value="0"></label><label class="check-label"><input id="country-enabled" type="checkbox" checked> فعال</label><div class="form-actions"><button class="button button-primary" type="submit">ذخیره</button><button class="button button-secondary" type="button" data-close-form="country">انصراف</button></div></form></div>
+            </section>
+
+            <section id="view-genres" class="view">
+              <div class="page-heading"><div><p class="eyebrow">taxonomy</p><h1>ژانرها</h1><p class="muted">شناسهٔ ژانر مطابق الگوی محدود backend اعتبارسنجی می‌شود.</p></div><button class="button button-primary taxonomy-new" data-type="genre" type="button">ژانر جدید</button></div>
+              <div class="two-column"><div class="panel table-panel"><div class="panel-heading"><h2>فهرست ژانرها</h2><button class="button button-small button-secondary refresh-button" data-refresh="genres" type="button">تازه‌سازی</button></div><div id="genre-list" class="record-list"></div></div><form id="genre-form" class="panel editor-form" hidden><div class="panel-heading"><div><p class="eyebrow">ژانر</p><h2 id="genre-form-title">ژانر جدید</h2></div><button class="icon-button" type="button" data-close-form="genre" aria-label="بستن">×</button></div><label>شناسه<input id="genre-id" required maxlength="80" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" dir="ltr"></label><label>عنوان فارسی<input id="genre-label" required maxlength="160"></label><label>ترتیب نمایش<input id="genre-sort" type="number" step="1" value="0"></label><label class="check-label"><input id="genre-enabled" type="checkbox" checked> فعال</label><div class="form-actions"><button class="button button-primary" type="submit">ذخیره</button><button class="button button-secondary" type="button" data-close-form="genre">انصراف</button></div></form></div>
+            </section>
+
+            <section id="view-audit" class="view">
+              <div class="page-heading"><div><p class="eyebrow">ثبت تغییرات موفق</p><h1>تاریخچهٔ عملیات</h1><p class="muted">فقط رویدادهای metadata، دسته‌ها و taxonomy؛ تاریخچهٔ نقش‌ها جداست.</p></div><button class="button button-secondary refresh-button" data-refresh="audit" type="button">به‌روزرسانی</button></div>
+              <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>زمان</th><th>عملیات</th><th>نوع موجودیت</th><th>شناسه</th><th>عامل</th><th>نسخه</th><th>فیلدها</th></tr></thead><tbody id="audit-rows"></tbody></table></div><div class="table-footer"><span class="muted">رویدادهای نقش در این فهرست نمایش داده نمی‌شوند.</span><div class="pager"><button id="audit-prev" class="button button-small button-secondary" type="button">قبلی</button><span id="audit-page"></span><button id="audit-next" class="button button-small button-secondary" type="button">بعدی</button></div></div></div>
+            </section>
+
+            <section id="view-account" class="view">
+              <div class="page-heading"><div><p class="eyebrow">هویت تأییدشدهٔ سرور</p><h1>حساب و سطح دسترسی</h1></div></div>
+              <div class="panel account-panel"><div class="account-avatar" aria-hidden="true">O</div><div><p id="account-email" class="account-email"></p><p id="account-uid" class="mono muted"></p><p class="fine-print">UID از principal تأییدشدهٔ Firebase در backend دریافت شده است.</p></div></div>
+              <div class="panel"><div class="panel-heading"><h2>نقش‌های فعال</h2></div><div id="account-roles" class="chips"></div><h2 class="subheading">مجوزهای مؤثر</h2><div id="account-permissions" class="permission-list"></div></div>
+              <div id="bootstrap-notice" class="notice warning-panel">نقش مدیر اول از پنل ساخته نمی‌شود. provisioning مدیر نخستین تا تعریف و تأیید منشأ مستقل actor و approver غیرفعال است.</div>
+            </section>
+          </div>
+        </div>
       </section>
     </main>
 
-    <script type="module" src="./app.js"></script>
+    <dialog id="content-dialog" class="content-dialog">
+      <div class="dialog-heading"><div><p id="dialog-kind" class="eyebrow"></p><h2 id="dialog-title"></h2><p id="dialog-code" class="mono muted"></p></div><button id="dialog-close" class="icon-button" type="button" aria-label="بستن">×</button></div>
+      <div id="dialog-message" class="notice" hidden></div>
+      <div class="detail-grid"><div><span>سال</span><strong id="dialog-year">—</strong></div><div><span>وضعیت تأیید</span><strong id="dialog-approval">—</strong></div><div><span>وضعیت انتشار</span><strong id="dialog-publication">—</strong></div></div>
+      <p id="dialog-series" class="muted"></p><p id="dialog-synopsis" class="detail-copy"></p><p id="dialog-cast" class="muted"></p>
+      <form id="metadata-form" class="editor-form inline-editor">
+        <div class="panel-heading"><h3>فرادادهٔ قابل ویرایش</h3></div>
+        <label>کشورها<select id="metadata-countries" multiple size="4"></select></label>
+        <label>ژانرها<select id="metadata-genres" multiple size="4"></select></label>
+        <p class="fine-print">عنوان و اطلاعات اصلی فقط‌خواندنی از Google Sheets هستند. وضعیت تأیید و انتشار از عملیات مستقل مدیریت می‌شوند.</p>
+        <button id="metadata-save" class="button button-primary" type="submit">ذخیرهٔ فراداده</button>
+      </form>
+      <div class="operation-groups">
+        <div id="approval-actions" class="operation-group"><strong>تأیید محتوا</strong><button class="button button-small button-secondary" data-approval="approved" type="button">تأیید</button><button class="button button-small button-danger" data-approval="rejected" type="button">رد</button><button class="button button-small button-quiet" data-approval="pending" type="button">بازگشت به انتظار</button></div>
+        <div id="publication-actions" class="operation-group"><strong>انتشار</strong><button class="button button-small button-primary" data-publication="published" type="button">انتشار</button><button class="button button-small button-secondary" data-publication="draft" type="button">پیش‌نویس</button><button class="button button-small button-danger" data-publication="archived" type="button">بایگانی</button></div>
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/admin/app.js"></script>
   </body>
 </html>

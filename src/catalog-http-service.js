@@ -1,9 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const path = require('node:path');
 const express = require('express');
 const { createCatalogApi } = require('./catalog-api');
 const { createCatalogAdminApi } = require('./catalog-admin-api');
+const { createCatalogAdminContentReader } = require('./catalog-admin-content-reader');
 const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider');
 const {
   assertVersionedWritableCatalogMetadataProvider,
@@ -12,6 +14,7 @@ const {
 const DEFAULT_PORT = 8080;
 const PUBLIC_CATALOG_PATH = '/api/v1/catalog';
 const ADMIN_CATALOG_PATH = '/api/v1/admin/catalog';
+const ADMIN_WEB_STATIC_FILES = new Set(['/app.js', '/styles.css']);
 const REQUIRED_READINESS_CHECKS = Object.freeze([
   'sheetSource',
   'metadataStore',
@@ -60,6 +63,8 @@ function createCatalogHttpService({
   authorizePermission,
   readinessCheck,
   logger,
+  getAdminWebConfig,
+  auditReader,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
     throw new TypeError('Catalog HTTP service requires an injected readSheet provider.');
@@ -77,10 +82,16 @@ function createCatalogHttpService({
   }
 
   const publicApi = createCatalogApi({ provider, categories, metadataProvider, logger });
+  const adminContentReader = createCatalogAdminContentReader({
+    sheetProvider: provider,
+    writableProvider,
+  });
   // Missing verifier/policy is intentionally allowed here because the existing
   // admin API fails closed with 503. It never derives a principal from the request.
   const adminApi = createCatalogAdminApi({
     writableProvider,
+    contentReader: adminContentReader,
+    auditReader,
     verifyAdminPrincipal,
     roleProvider,
     reportRoleResolutionFailure,
@@ -89,6 +100,77 @@ function createCatalogHttpService({
 
   const app = express();
   app.disable('x-powered-by');
+
+  const adminWebRoot = path.resolve(__dirname, '..', 'admin-web');
+  const sendAdminIndex = (req, res) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Referrer-Policy', 'no-referrer');
+    res.set('Cache-Control', 'no-cache');
+    return res.sendFile(path.join(adminWebRoot, 'index.html'));
+  };
+  app.get('/admin/config.json', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (typeof getAdminWebConfig !== 'function') {
+      return res.status(503).json({
+        error: {
+          code: 'ADMIN_WEB_CONFIG_UNAVAILABLE',
+          message: 'پیکربندی Firebase پنل تنظیم نشده است.',
+          missing: [],
+        },
+      });
+    }
+    try {
+      const candidate = getAdminWebConfig();
+      const configKeys = ['apiKey', 'authDomain', 'projectId', 'messagingSenderId', 'appId'];
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate) ||
+          configKeys.some((key) => typeof candidate[key] !== 'string' || candidate[key].trim() === '')) {
+        throw new TypeError();
+      }
+      const config = Object.fromEntries(configKeys.map((key) => [key, candidate[key]]));
+      return res.status(200).json({ data: config });
+    } catch (error) {
+      const missing = Array.isArray(error?.missingVariables)
+        ? error.missingVariables.filter((name) => typeof name === 'string')
+        : [];
+      return res.status(503).json({
+        error: {
+          code: 'ADMIN_WEB_CONFIG_UNAVAILABLE',
+          message: 'پیکربندی Firebase پنل ناقص است یا با پروژهٔ سرویس مطابقت ندارد.',
+          missing,
+        },
+      });
+    }
+  });
+  app.get('/admin', (req, res) => {
+    if (req.path === '/admin/') return sendAdminIndex(req, res);
+    return res.redirect(308, '/admin/');
+  });
+  const adminStatic = express.static(adminWebRoot, {
+    dotfiles: 'deny',
+    index: false,
+    fallthrough: true,
+    setHeaders(res) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('Cache-Control', 'no-cache');
+    },
+  });
+  app.use('/admin', (req, res, next) => {
+    if (req.path.split('/').some((part) => part.startsWith('.'))) {
+      return res.status(404).end();
+    }
+    if (ADMIN_WEB_STATIC_FILES.has(req.path)) {
+      return adminStatic(req, res, next);
+    }
+    if (!path.extname(req.path)) {
+      return next();
+    }
+    return res.status(404).end();
+  });
+  app.get('/admin/*', (req, res, next) => {
+    if (path.extname(req.path)) return next();
+    return sendAdminIndex(req, res);
+  });
 
   app.get('/health/live', (req, res) => res.status(200).json({ status: 'live' }));
 

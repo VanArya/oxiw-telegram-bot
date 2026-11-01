@@ -2,6 +2,7 @@
 
 const { createCatalogHttpService } = require('./catalog-http-service');
 const { createFirestoreCatalogAuditEventSink } = require('./firestore-catalog-audit-event-sink');
+const { createFirestoreCatalogAuditReader } = require('./firestore-catalog-audit-reader');
 const { createFirestoreCatalogMetadataProvider } = require('./firestore-catalog-metadata-provider');
 const { createFirestoreWritableCatalogMetadataProvider } = require('./firestore-writable-catalog-metadata-provider');
 const { createGoogleSheetsCatalogProvider } = require('./google-sheets-catalog-provider');
@@ -65,6 +66,7 @@ async function createCatalogRuntime({
   collections,
   auditCollection,
   clock,
+  getAdminWebConfig,
 } = {}) {
   const spreadsheetId = requireEnvironment(env);
   requireDependencies({
@@ -85,12 +87,17 @@ async function createCatalogRuntime({
   let provider;
   let metadataProvider;
   let auditEventSink;
+  let auditReader;
   let writableProvider;
   try {
     assertCatalogAdminRoleProvider(roleProvider);
     provider = createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId });
     metadataProvider = createFirestoreCatalogMetadataProvider({ firestore, collections });
     auditEventSink = createFirestoreCatalogAuditEventSink({
+      firestore,
+      ...(auditCollection === undefined ? {} : { collection: auditCollection }),
+    });
+    auditReader = createFirestoreCatalogAuditReader({
       firestore,
       ...(auditCollection === undefined ? {} : { collection: auditCollection }),
     });
@@ -110,12 +117,14 @@ async function createCatalogRuntime({
       provider,
       metadataProvider,
       writableProvider,
+      auditReader,
       verifyAdminPrincipal,
       roleProvider,
       reportRoleResolutionFailure,
       authorizePermission,
       readinessCheck,
       ...(categories === undefined ? {} : { categories }),
+      ...(getAdminWebConfig === undefined ? {} : { getAdminWebConfig }),
     });
   } catch {
     throw new CatalogRuntimeConfigurationError();
@@ -127,6 +136,7 @@ async function createCatalogRuntime({
     metadataProvider,
     writableProvider,
     auditEventSink,
+    auditReader,
     verifyAdminPrincipal,
     roleProvider,
     reportRoleResolutionFailure,

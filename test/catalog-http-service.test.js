@@ -97,6 +97,89 @@ test('composes the existing public catalog API with injected dependencies', { ti
   });
 });
 
+test('serves the isolated admin shell and a controlled public Firebase config error', { timeout: 7000 }, async () => {
+  await withServer({}, async (baseUrl) => {
+    const redirect = await fetch(`${baseUrl}/admin`, { redirect: 'manual' });
+    assert.equal(redirect.status, 308);
+    assert.equal(redirect.headers.get('location'), '/admin/');
+
+    const page = await fetch(`${baseUrl}/admin/`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /lang="fa" dir="rtl"/);
+
+    const refreshedPage = await fetch(`${baseUrl}/admin/items/movie`);
+    assert.equal(refreshedPage.status, 200);
+    assert.match(await refreshedPage.text(), /مدیریت کاتالوگ/);
+
+    const config = await json(`${baseUrl}/admin/config.json`);
+    assert.equal(config.response.status, 503);
+    assert.equal(config.body.error.code, 'ADMIN_WEB_CONFIG_UNAVAILABLE');
+
+    const localConfig = await fetch(`${baseUrl}/admin/firebase-config.js`);
+    assert.equal(localConfig.status, 404);
+    const exampleConfig = await fetch(`${baseUrl}/admin/firebase-config.example.js`);
+    assert.equal(exampleConfig.status, 404);
+    const hiddenFile = await fetch(`${baseUrl}/admin/.env`);
+    assert.equal(hiddenFile.status, 404);
+  });
+
+  await withServer({
+    getAdminWebConfig: () => ({
+      apiKey: 'public-key',
+      authDomain: 'catalog.example.firebaseapp.com',
+      projectId: 'catalog-project',
+      messagingSenderId: '123456',
+      appId: '1:123456:web:abc',
+      privateKey: 'must-not-be-serialized',
+    }),
+  }, async (baseUrl) => {
+    const config = await json(`${baseUrl}/admin/config.json`);
+    assert.equal(config.response.status, 200);
+    assert.deepEqual(Object.keys(config.body.data).sort(), [
+      'apiKey', 'appId', 'authDomain', 'messagingSenderId', 'projectId',
+    ]);
+    assert.equal(JSON.stringify(config.body).includes('must-not-be-serialized'), false);
+    assert.equal(config.response.headers.get('cache-control'), 'no-store');
+  });
+});
+
+test('reports authenticated catalog roles and enforces read access for admin content listing', { timeout: 7000 }, async () => {
+  await withServer({}, async (baseUrl) => {
+    const session = await json(`${baseUrl}${ADMIN_CATALOG_PATH}/me`);
+    assert.equal(session.response.status, 200);
+    assert.deepEqual(session.body.data.roles, ['administrator']);
+    assert.ok(session.body.data.permissions.includes('catalog.metadata.write'));
+
+    const listing = await json(`${baseUrl}${ADMIN_CATALOG_PATH}/items?page=1&pageSize=100`);
+    assert.equal(listing.response.status, 200);
+    assert.ok(listing.body.meta.stats.total > 0);
+    assert.ok(listing.body.data.some((item) => item.publicationStatus === 'unknown'));
+    assert.equal(JSON.stringify(listing.body).includes('fake-file-movie'), false);
+  });
+
+  await withServer({
+    roleProvider: createInMemoryCatalogAdminRoleProvider({}),
+  }, async (baseUrl) => {
+    const result = await json(`${baseUrl}${ADMIN_CATALOG_PATH}/items`);
+    assert.equal(result.response.status, 403);
+  });
+});
+
+test('paginates the catalog audit stream through the injected read-only provider', { timeout: 7000 }, async () => {
+  await withServer({
+    auditReader: {
+      async list({ page, pageSize }) {
+        return { data: [{ eventId: 'event-1', actorId: 'fixture-admin' }], meta: { page, pageSize, hasMore: false } };
+      },
+    },
+  }, async (baseUrl) => {
+    const result = await json(`${baseUrl}${ADMIN_CATALOG_PATH}/audit?page=2&pageSize=10`);
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.meta.page, '2');
+    assert.deepEqual(result.body.data, [{ eventId: 'event-1', actorId: 'fixture-admin' }]);
+  });
+});
+
 test('keeps the integrated admin API fail-closed when verifier, role provider, or policy is absent', { timeout: 7000 }, async () => {
   await withServer({ verifyAdminPrincipal: undefined, authorizePermission: undefined }, async (baseUrl) => {
     const result = await json(`${baseUrl}${ADMIN_CATALOG_PATH}/categories`);
