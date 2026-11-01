@@ -82,7 +82,11 @@ test('sanitizes client errors and rejects malformed responses without exposing v
     sheetsClient: {
       spreadsheets: {
         values: {
-          async get() { throw new Error('synthetic private credential detail'); },
+          async get() {
+            const error = new Error('synthetic private credential detail');
+            error.response = { status: 401 };
+            throw error;
+          },
         },
       },
     },
@@ -90,7 +94,9 @@ test('sanitizes client errors and rejects malformed responses without exposing v
   });
   await assert.rejects(
     failingProvider.readSheet('سینمایی'),
-    (error) => error.message === 'Unable to read catalog sheet.' && !error.cause,
+    (error) => error.message === 'Unable to read catalog sheet.' && !error.cause &&
+      error.dependency === 'sheets' && error.stage === 'sheet_read' &&
+      error.errorCode === 'SHEETS_AUTHENTICATION',
   );
 
   const malformedProvider = createGoogleSheetsCatalogProvider({

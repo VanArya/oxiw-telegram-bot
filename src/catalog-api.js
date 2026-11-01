@@ -4,6 +4,14 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { getCategoryItems, listCategories } = require('./catalog-core');
 const { createCatalogSheetAdapter } = require('./catalog-sheet-adapter');
+const {
+  CatalogDependencyError,
+  createCatalogDependencyError,
+} = require('./catalog-operational-errors');
+const {
+  createCatalogOperationalLogger,
+  reportCatalogRequestFailure,
+} = require('./catalog-operational-logger');
 
 const BASE_PATH = '/api/v1/catalog';
 const DEFAULT_PAGE_SIZE = 20;
@@ -24,13 +32,13 @@ function requestId() {
   return crypto.randomUUID();
 }
 
-function sendError(res, error) {
+function sendError(res, error, id = requestId()) {
   const known = error instanceof ApiError;
   const status = known ? error.status : 500;
   const code = known ? error.code : 'INTERNAL_ERROR';
   const message = known ? error.message : 'در پردازش درخواست خطایی رخ داد.';
   return res.status(status).json({
-    error: { code, message, requestId: requestId() },
+    error: { code, message, requestId: id },
   });
 }
 
@@ -157,12 +165,18 @@ function publicFilter(filter) {
   return { field: filter.field, op: filter.op, value: filter.value };
 }
 
-function createCatalogApi({ provider, categories = [], metadataProvider }) {
+function createCatalogApi({
+  provider,
+  categories = [],
+  metadataProvider,
+  logger = createCatalogOperationalLogger(),
+}) {
   const adapter = createCatalogSheetAdapter(provider, { metadataProvider });
   const app = express();
   app.disable('x-powered-by');
 
   app.get(`${BASE_PATH}/items`, async (req, res) => {
+    const id = requestId();
     try {
       const [activeCategories, countryTerms, genreTerms] = await Promise.all([
         adapter.listCategories(categories),
@@ -195,7 +209,23 @@ function createCatalogApi({ provider, categories = [], metadataProvider }) {
         },
       });
     } catch (error) {
-      return sendError(res, error);
+      if (!(error instanceof ApiError)) {
+        const diagnostic = error instanceof CatalogDependencyError
+          ? error
+          : createCatalogDependencyError({
+            dependency: 'catalog',
+            stage: 'request_handler',
+            errorCode: 'CATALOG_UNEXPECTED',
+            message: 'Catalog request failed.',
+          });
+        reportCatalogRequestFailure(logger, {
+          requestId: id,
+          dependency: diagnostic.dependency,
+          stage: diagnostic.stage,
+          errorCode: diagnostic.errorCode,
+        });
+      }
+      return sendError(res, error, id);
     }
   });
 

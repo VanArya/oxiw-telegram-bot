@@ -3,6 +3,10 @@
 const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider');
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const {
+  classifyCatalogDependencyError,
+  createCatalogDataValidationError,
+} = require('./catalog-operational-errors');
+const {
   isCanonicalContentId,
   validateCatalogCategory,
   validateCatalogContentMetadata,
@@ -42,10 +46,6 @@ function readDocumentData(document) {
   return document.data();
 }
 
-function safeReadError() {
-  return new Error('Unable to read catalog metadata.');
-}
-
 function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLECTIONS } = {}) {
   if (!firestore || typeof firestore.collection !== 'function') {
     throw new TypeError('Firestore client must provide collection().');
@@ -62,18 +62,39 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
   const provider = {
     async getContentMetadata(contentId) {
       if (!isCanonicalContentId(contentId)) return null;
+      let snapshot;
       try {
-        const snapshot = await firestore.collection(collections.contentMetadata).doc(contentId).get();
-        if (!snapshot || snapshot.exists !== true) return null;
+        snapshot = await firestore.collection(collections.contentMetadata).doc(contentId).get();
+      } catch (error) {
+        throw classifyCatalogDependencyError(
+          'firestore', 'metadata_read', error, 'Unable to read catalog metadata.',
+        );
+      }
+      if (!snapshot || typeof snapshot.exists !== 'boolean') {
+        throw createCatalogDataValidationError(
+          'firestore', 'metadata_validation', 'Unable to read catalog metadata.',
+        );
+      }
+      if (!snapshot.exists) return null;
+      try {
         return projectContentMetadata(readDocumentData(snapshot), contentId);
       } catch {
-        throw safeReadError();
+        throw createCatalogDataValidationError(
+          'firestore', 'metadata_validation', 'Unable to read catalog metadata.',
+        );
       }
     },
 
     async listCategories() {
+      let snapshot;
       try {
-        const snapshot = await firestore.collection(collections.categories).get();
+        snapshot = await firestore.collection(collections.categories).get();
+      } catch (error) {
+        throw classifyCatalogDependencyError(
+          'firestore', 'category_read', error, 'Unable to read catalog metadata.',
+        );
+      }
+      try {
         if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
 
         const categories = snapshot.docs.map((document) => {
@@ -93,18 +114,27 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
         if (new Set(slugs).size !== slugs.length) throw new TypeError();
         return categories;
       } catch {
-        throw safeReadError();
+        throw createCatalogDataValidationError(
+          'firestore', 'category_validation', 'Unable to read catalog metadata.',
+        );
       }
     },
 
     async listTaxonomyTerms(type) {
       if (!TAXONOMY_TYPES.has(type)) return [];
+      let snapshot;
       try {
-        const snapshot = await firestore
+        snapshot = await firestore
           .collection(collections.taxonomies)
           .doc(type)
           .collection('terms')
           .get();
+      } catch (error) {
+        throw classifyCatalogDependencyError(
+          'firestore', 'taxonomy_read', error, 'Unable to read catalog metadata.',
+        );
+      }
+      try {
         if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
 
         return snapshot.docs.map((document) => {
@@ -119,7 +149,9 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
           });
         }).filter((term) => term.enabled);
       } catch {
-        throw safeReadError();
+        throw createCatalogDataValidationError(
+          'firestore', 'taxonomy_validation', 'Unable to read catalog metadata.',
+        );
       }
     },
   };

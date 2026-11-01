@@ -2,6 +2,10 @@
 
 const SHEETS = new Set(['سینمایی', 'سریال']);
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
+const {
+  classifyCatalogDependencyError,
+  createCatalogDataValidationError,
+} = require('./catalog-operational-errors');
 
 function assertSheetClient(sheetsClient) {
   if (
@@ -34,8 +38,10 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
           spreadsheetId,
           range: quoteSheetRange(sheetName),
         });
-      } catch {
-        throw new Error('Unable to read catalog sheet.');
+      } catch (error) {
+        throw classifyCatalogDependencyError(
+          'sheets', 'sheet_read', error, 'Unable to read catalog sheet.',
+        );
       }
 
       const values = response?.data?.values;
@@ -43,7 +49,9 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         return { headers: [], rows: [] };
       }
       if (!Array.isArray(values) || values.some((row) => !Array.isArray(row))) {
-        throw new TypeError('Invalid catalog sheet response.');
+        throw createCatalogDataValidationError(
+          'sheets', 'sheet_response_validation', 'Invalid catalog sheet response.',
+        );
       }
       if (values.length === 0) {
         return { headers: [], rows: [] };
@@ -51,7 +59,9 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
 
       const headers = values[0];
       if (headers.some((header) => typeof header !== 'string')) {
-        throw new TypeError('Invalid catalog sheet header row.');
+        throw createCatalogDataValidationError(
+          'sheets', 'sheet_response_validation', 'Invalid catalog sheet header row.',
+        );
       }
 
       return {

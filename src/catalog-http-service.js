@@ -59,6 +59,7 @@ function createCatalogHttpService({
   reportRoleResolutionFailure,
   authorizePermission,
   readinessCheck,
+  logger,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
     throw new TypeError('Catalog HTTP service requires an injected readSheet provider.');
@@ -75,7 +76,7 @@ function createCatalogHttpService({
     throw new TypeError('Catalog HTTP service requires an injected readiness check.');
   }
 
-  const publicApi = createCatalogApi({ provider, categories, metadataProvider });
+  const publicApi = createCatalogApi({ provider, categories, metadataProvider, logger });
   // Missing verifier/policy is intentionally allowed here because the existing
   // admin API fails closed with 503. It never derives a principal from the request.
   const adminApi = createCatalogAdminApi({

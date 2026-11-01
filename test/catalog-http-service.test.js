@@ -23,6 +23,9 @@ const {
   createOperationalCatalogApp,
 } = require('../src/catalog-http-entrypoint');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
+const { createGoogleSheetsCatalogProvider } = require('../src/google-sheets-catalog-provider');
+const { createFirestoreCatalogMetadataProvider } = require('../src/firestore-catalog-metadata-provider');
+const { createCatalogOperationalLogger } = require('../src/catalog-operational-logger');
 const { createCatalogRoleAuthorizer } = require('../src/catalog-admin-authorization');
 const { createInMemoryCatalogAdminRoleProvider } = require('../src/catalog-admin-role-provider');
 const {
@@ -356,4 +359,115 @@ test('maps internal failures to safe JSON and closes loopback server handles', {
     assert.equal(JSON.stringify(result.body).includes('stack'), false);
   });
   assert.equal(server.listening, false);
+});
+
+test('logs safe Sheets and Firestore diagnostics correlated with the public requestId', { timeout: 7000 }, async (t) => {
+  await t.test('Sheets permission failure', async () => {
+    const logLines = [];
+    const logger = createCatalogOperationalLogger({ write: (line) => logLines.push(line) });
+    const provider = createGoogleSheetsCatalogProvider({
+      sheetsClient: {
+        spreadsheets: { values: { async get() {
+          const error = new Error('apiKey=secret-key row=private-row header=private-header');
+          error.response = { status: 403, data: { secret: 'private-response' } };
+          throw error;
+        } } },
+      },
+      spreadsheetId: 'sensitive-spreadsheet-id',
+    });
+
+    await withServer({ provider, logger }, async (baseUrl) => {
+      const result = await json(`${baseUrl}/api/v1/catalog/items?page=1&pageSize=5`);
+      assert.equal(result.response.status, 500);
+      assert.deepEqual(result.body.error, {
+        code: 'INTERNAL_ERROR',
+        message: 'در پردازش درخواست خطایی رخ داد.',
+        requestId: JSON.parse(logLines[0]).requestId,
+      });
+    });
+
+    assert.equal(logLines.length, 1);
+    const log = JSON.parse(logLines[0]);
+    assert.deepEqual(log, {
+      event: 'catalog_request_failed',
+      requestId: log.requestId,
+      route: '/api/v1/catalog/items',
+      dependency: 'sheets',
+      stage: 'sheet_read',
+      errorCode: 'SHEETS_PERMISSION',
+    });
+    for (const secret of [
+      'secret-key', 'private-row', 'private-header', 'private-response',
+      'sensitive-spreadsheet-id', 'page=1', 'pageSize=5',
+    ]) {
+      assert.equal(logLines[0].includes(secret), false, secret);
+    }
+  });
+
+  await t.test('Firestore authentication failure', async () => {
+    const logLines = [];
+    const logger = createCatalogOperationalLogger({ write: (line) => logLines.push(line) });
+    const metadataProvider = createFirestoreCatalogMetadataProvider({
+      firestore: {
+        collection(name) {
+          if (name === 'catalogCategories') {
+            return { async get() {
+              const error = new Error('credential=secret-token document=private-doc');
+              error.code = 16;
+              throw error;
+            } };
+          }
+          if (name === 'catalogTaxonomies') {
+            return {
+              doc() {
+                return { collection() { return { async get() { return { docs: [] }; } }; } };
+              },
+            };
+          }
+          throw new Error('unexpected fake collection');
+        },
+      },
+    });
+
+    await withServer({ metadataProvider, logger }, async (baseUrl) => {
+      const result = await json(`${baseUrl}/api/v1/catalog/items?page=1&pageSize=5`);
+      assert.equal(result.response.status, 500);
+      assert.deepEqual(result.body.error, {
+        code: 'INTERNAL_ERROR',
+        message: 'در پردازش درخواست خطایی رخ داد.',
+        requestId: JSON.parse(logLines[0]).requestId,
+      });
+    });
+
+    assert.equal(logLines.length, 1);
+    const log = JSON.parse(logLines[0]);
+    assert.deepEqual(log, {
+      event: 'catalog_request_failed',
+      requestId: log.requestId,
+      route: '/api/v1/catalog/items',
+      dependency: 'firestore',
+      stage: 'category_read',
+      errorCode: 'FIRESTORE_AUTHENTICATION',
+    });
+    for (const secret of ['secret-token', 'private-doc', 'page=1', 'pageSize=5']) {
+      assert.equal(logLines[0].includes(secret), false, secret);
+    }
+  });
+
+  await t.test('a failing injected logger does not change the API error', async () => {
+    const logger = { logFailure() { throw new Error('private logger failure'); } };
+    const provider = createGoogleSheetsCatalogProvider({
+      sheetsClient: {
+        spreadsheets: { values: { async get() { throw Object.assign(new Error('private api error'), { code: 'ETIMEDOUT' }); } } },
+      },
+      spreadsheetId: 'sensitive-spreadsheet-id',
+    });
+    await withServer({ provider, logger }, async (baseUrl) => {
+      const result = await json(`${baseUrl}/api/v1/catalog/items?page=1&pageSize=5`);
+      assert.equal(result.response.status, 500);
+      assert.equal(result.body.error.code, 'INTERNAL_ERROR');
+      assert.equal(result.body.error.message, 'در پردازش درخواست خطایی رخ داد.');
+      assert.equal(JSON.stringify(result.body).includes('private'), false);
+    });
+  });
 });

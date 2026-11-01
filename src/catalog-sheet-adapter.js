@@ -9,6 +9,11 @@ const {
   toPublicCatalogDto,
 } = require('./catalog-sheet-mapper');
 const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider');
+const {
+  CatalogDependencyError,
+  classifyCatalogDependencyError,
+  createCatalogDataValidationError,
+} = require('./catalog-operational-errors');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 const REQUIRED_HEADERS = Object.freeze(['کد سیستم', 'اسم فیلم']);
@@ -102,20 +107,29 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
     const seenIds = new Set();
     snapshots.forEach((snapshot, sheetIndex) => {
       const sheetName = SHEETS[sheetIndex];
-      validateSnapshot(sheetName, snapshot);
+      try {
+        validateSnapshot(sheetName, snapshot);
+      } catch (error) {
+        throw createCatalogDataValidationError(
+          'sheets', 'sheet_snapshot_validation', error.message,
+        );
+      }
 
       snapshot.rows.forEach((row, rowIndex) => {
         const record = rowToRecord(snapshot.headers, row);
         let mapped;
         try {
           mapped = mapCatalogSheetRow(sheetName, record);
-        } catch (error) {
-          throw new TypeError(`Invalid catalog row in ${sheetName} at index ${rowIndex}.`, {
-            cause: error,
-          });
+        } catch {
+          throw createCatalogDataValidationError(
+            'sheets', 'sheet_row_mapping', `Invalid catalog row in ${sheetName} at index ${rowIndex}.`,
+          );
         }
         if (seenIds.has(mapped.content.id)) {
-          throw new TypeError(`Duplicate catalog identity in ${sheetName} at index ${rowIndex}.`);
+          throw createCatalogDataValidationError(
+            'sheets', 'sheet_identity_validation',
+            `Duplicate catalog identity in ${sheetName} at index ${rowIndex}.`,
+          );
         }
         seenIds.add(mapped.content.id);
         // Country, genre, approval, and publication are maintained only in metadata;
@@ -136,16 +150,27 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
     let genreIds;
     let countryLabels;
     let genreLabels;
+    let countryTerms;
+    let genreTerms;
     try {
-      const [countryTerms, genreTerms] = await Promise.all(
+      [countryTerms, genreTerms] = await Promise.all(
         TAXONOMY_TYPES.map((type) => metadataProvider.listTaxonomyTerms(type)),
       );
+    } catch (error) {
+      if (error instanceof CatalogDependencyError) throw error;
+      throw classifyCatalogDependencyError(
+        'firestore', 'taxonomy_read', error, 'Catalog metadata is unavailable.',
+      );
+    }
+    try {
       countryIds = validTaxonomyTerms(countryTerms, 'country');
       genreIds = validTaxonomyTerms(genreTerms, 'genre');
       countryLabels = Object.fromEntries(countryTerms.map(({ id, labelFa }) => [id, labelFa]));
       genreLabels = Object.fromEntries(genreTerms.map(({ id, labelFa }) => [id, labelFa]));
     } catch {
-      throw new Error('Catalog metadata is unavailable.');
+      throw createCatalogDataValidationError(
+        'firestore', 'taxonomy_validation', 'Catalog metadata is unavailable.',
+      );
     }
 
     const resolvedContents = await Promise.all(contents.map(async (content) => {
@@ -167,8 +192,11 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
         content.approvalStatus = metadata.approvalStatus;
         content.publicationStatus = metadata.publicationStatus;
         return content;
-      } catch {
-        throw new Error('Catalog metadata is unavailable.');
+      } catch (error) {
+        if (error instanceof CatalogDependencyError) throw error;
+        throw classifyCatalogDependencyError(
+          'firestore', 'metadata_read', error, 'Catalog metadata is unavailable.',
+        );
       }
     }));
     return { contents: resolvedContents, countryLabels, genreLabels };
@@ -195,8 +223,16 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
         const categories = await metadataProvider.listCategories();
         if (!Array.isArray(categories)) throw new TypeError();
         return categories;
-      } catch {
-        throw new Error('Catalog metadata is unavailable.');
+      } catch (error) {
+        if (error instanceof CatalogDependencyError) throw error;
+        if (error instanceof TypeError) {
+          throw createCatalogDataValidationError(
+            'firestore', 'category_validation', 'Catalog metadata is unavailable.',
+          );
+        }
+        throw classifyCatalogDependencyError(
+          'firestore', 'category_read', error, 'Catalog metadata is unavailable.',
+        );
       }
     },
 
@@ -211,12 +247,22 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
         }
         return [];
       }
+      let terms;
       try {
-        const terms = await metadataProvider.listTaxonomyTerms(type);
+        terms = await metadataProvider.listTaxonomyTerms(type);
+      } catch (error) {
+        if (error instanceof CatalogDependencyError) throw error;
+        throw classifyCatalogDependencyError(
+          'firestore', 'taxonomy_read', error, 'Catalog metadata is unavailable.',
+        );
+      }
+      try {
         validTaxonomyTerms(terms, type);
         return terms;
       } catch {
-        throw new Error('Catalog metadata is unavailable.');
+        throw createCatalogDataValidationError(
+          'firestore', 'taxonomy_validation', 'Catalog metadata is unavailable.',
+        );
       }
     },
   });

@@ -209,7 +209,9 @@ test('invalid active category or taxonomy data fails without exposing stored val
     },
   }).provider;
   await assert.rejects(badCategory.listCategories(), (error) => (
-    error.message === 'Unable to read catalog metadata.' && !error.cause
+    error.message === 'Unable to read catalog metadata.' && !error.cause &&
+    error.dependency === 'firestore' && error.stage === 'category_validation' &&
+    error.errorCode === 'FIRESTORE_DATA_VALIDATION'
   ));
 
   const badTaxonomy = createProvider({
@@ -238,7 +240,9 @@ test('Firestore errors become generic and no credential or request is needed', a
   const provider = createFirestoreCatalogMetadataProvider({ firestore });
   await assert.rejects(provider.getContentMetadata(iranianMovieId), (error) => (
     error.message === 'Unable to read catalog metadata.' &&
-    !error.message.includes('synthetic credential detail') && !error.cause
+    !error.message.includes('synthetic credential detail') && !error.cause &&
+    error.dependency === 'firestore' && error.stage === 'metadata_read' &&
+    error.errorCode === 'FIRESTORE_UNKNOWN'
   ));
 });
 
