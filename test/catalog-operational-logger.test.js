@@ -56,6 +56,26 @@ test('emits only fixed JSON fields and tolerates a failing stderr writer', () =>
   assert.equal(lines[0].includes('private'), false);
   assert.equal(lines[0].includes('query'), false);
 
+  assert.equal(logger.logFailure({
+    requestId,
+    dependency: 'sheets',
+    stage: 'sheet_row_mapping',
+    errorCode: 'SHEETS_DATA_VALIDATION',
+    diagnosticContext: {
+      sheetName: 'سینمایی',
+      rowNumber: 27,
+      field: 'movie_year',
+    },
+    title: 'must-not-be-logged',
+    systemCode: 'must-not-be-logged',
+  }), true);
+
+  const diagnosticLine = JSON.parse(lines[1]);
+  assert.equal(diagnosticLine.sheetName, 'سینمایی');
+  assert.equal(diagnosticLine.rowNumber, 27);
+  assert.equal(diagnosticLine.field, 'movie_year');
+  assert.equal(JSON.stringify(diagnosticLine).includes('must-not-be-logged'), false);
+
   const failingLogger = createCatalogOperationalLogger({ write() { throw new Error('writer failed'); } });
   assert.equal(failingLogger.logFailure({
     requestId,

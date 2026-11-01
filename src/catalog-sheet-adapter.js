@@ -51,6 +51,21 @@ function rowToRecord(headers, row) {
   return Object.fromEntries(headers.map((header, index) => [header, row[index]]));
 }
 
+function mappingDiagnosticField(error) {
+  const message = error instanceof Error ? error.message : '';
+
+  if (message.includes('Series start year cannot be after end year.')) {
+    return 'series_year_range';
+  }
+  if (message.includes('کد سیستم')) return 'system_code';
+  if (message.includes('اسم فیلم')) return 'title';
+  if (message.includes('سال شروع')) return 'series_start_year';
+  if (message.includes('سال پایان')) return 'series_end_year';
+  if (message.includes('سال')) return 'movie_year';
+
+  return 'unknown';
+}
+
 function validTaxonomyTerms(terms, type) {
   if (!Array.isArray(terms)) throw new TypeError('Invalid catalog taxonomy response.');
   const ids = new Set();
@@ -120,9 +135,16 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
         let mapped;
         try {
           mapped = mapCatalogSheetRow(sheetName, record);
-        } catch {
+        } catch (error) {
           throw createCatalogDataValidationError(
-            'sheets', 'sheet_row_mapping', `Invalid catalog row in ${sheetName} at index ${rowIndex}.`,
+            'sheets',
+            'sheet_row_mapping',
+            `Invalid catalog row in ${sheetName} at index ${rowIndex}.`,
+            {
+              sheetName,
+              rowNumber: rowIndex + 2,
+              field: mappingDiagnosticField(error),
+            },
           );
         }
         if (seenIds.has(mapped.content.id)) {

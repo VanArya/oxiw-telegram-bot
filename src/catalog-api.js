@@ -223,6 +223,7 @@ function createCatalogApi({
           dependency: diagnostic.dependency,
           stage: diagnostic.stage,
           errorCode: diagnostic.errorCode,
+          diagnosticContext: diagnostic.diagnosticContext,
         });
       }
       return sendError(res, error, id);

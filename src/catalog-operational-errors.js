@@ -119,7 +119,7 @@ function classifyCatalogDependencyError(dependency, stage, error, message) {
   });
 }
 
-function createCatalogDataValidationError(dependency, stage, message) {
+function createCatalogDataValidationError(dependency, stage, message, diagnosticContext) {
   if (dependency !== 'sheets' && dependency !== 'firestore') {
     throw new TypeError('Invalid catalog data dependency.');
   }
@@ -128,6 +128,7 @@ function createCatalogDataValidationError(dependency, stage, message) {
     stage,
     errorCode: `${dependency.toUpperCase()}_DATA_VALIDATION`,
     message,
+    diagnosticContext,
   });
 }
 

@@ -111,6 +111,28 @@ test('missing required columns and incomplete rows fail with structural errors',
   );
 });
 
+test('mapping failures carry only safe sheet, row, and field diagnostics', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': {
+      headers: movieHeaders,
+      rows: [['', 'عنوان محرمانه', '2020', 'IR', 'published', 'private-file-id']],
+    },
+    'سریال': { headers: seriesHeaders, rows: [] },
+  });
+
+  await assert.rejects(createAdapter(provider).listItems(), (error) => {
+    assert.equal(error.stage, 'sheet_row_mapping');
+    assert.deepEqual(error.diagnosticContext, {
+      sheetName: 'سینمایی',
+      rowNumber: 2,
+      field: 'system_code',
+    });
+    assert.equal(error.message.includes('عنوان محرمانه'), false);
+    assert.equal(error.message.includes('private-file-id'), false);
+    return true;
+  });
+});
+
 test('country values in Sheet rows cannot supply metadata or classify content', async () => {
   const provider = createFixtureProvider({
     'سینمایی': {
