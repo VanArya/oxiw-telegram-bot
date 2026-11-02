@@ -126,7 +126,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       snapshot.rows.forEach((row) => {
         const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index]]));
         const mapped = (() => { try { return mapCatalogSheetRow(sheetName, record); } catch (cause) { const error = new Error('Catalog sheet row mapping failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_row_mapping'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; } })();
-        if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) { const error = new Error('Catalog sheet identity validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'catalog'; error.stage = 'sheet_identity_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; throw error; }
+        if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) { const error = new TypeError('Catalog sheet identity validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'catalog'; error.stage = 'sheet_identity_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; throw error; }
         seen.add(mapped.content.id);
         sourceItems.push({ mapped, record });
       });
