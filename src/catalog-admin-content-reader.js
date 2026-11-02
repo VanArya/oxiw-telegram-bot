@@ -11,8 +11,14 @@ function atStage(stage, operation) {
     error.name = 'CatalogAdminListStageError';
     error.dependency = stage.startsWith('sheet_') ? 'sheets' :
       stage.startsWith('metadata_') ? 'firestore' : 'catalog';
-    error.stage = stage;
-    error.errorCode = cause?.dependency === 'firestore' && cause?.stage === stage && typeof cause?.errorCode === 'string' ? cause.errorCode : (stage === 'metadata_read' ? 'METADATA_READ_FAILED' : 'CATALOG_STAGE_FAILED');
+    const preservesMetadataFailure = stage.startsWith('metadata_') &&
+      cause?.dependency === 'firestore' &&
+      typeof cause?.stage === 'string' && cause.stage.startsWith('metadata_') &&
+      typeof cause?.errorCode === 'string';
+    error.stage = preservesMetadataFailure ? cause.stage : stage;
+    error.errorCode = preservesMetadataFailure
+      ? cause.errorCode
+      : (stage === 'metadata_read' ? 'METADATA_READ_FAILED' : 'CATALOG_STAGE_FAILED');
     error.cause = cause;
     throw error;
   });
