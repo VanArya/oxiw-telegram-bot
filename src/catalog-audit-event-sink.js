@@ -12,7 +12,7 @@ const OPERATIONS = new Set([
 ]);
 const ENTITY_TYPES = new Set(['content', 'category', 'taxonomy']);
 const CHANGED_FIELDS = new Set([
-  'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds',
+  'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', '_version',
   'slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder', 'labelFa',
 ]);
 
