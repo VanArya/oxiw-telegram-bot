@@ -4,6 +4,19 @@ const { mapCatalogSheetRow } = require('./catalog-sheet-mapper');
 const { isCanonicalContentId, validateCatalogContentMetadata } = require('./catalog-metadata-validation');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
+
+function atStage(stage, operation) {
+  return Promise.resolve().then(operation).catch((cause) => {
+    const error = new Error('Catalog admin list stage failed.');
+    error.name = 'CatalogAdminListStageError';
+    error.dependency = stage.startsWith('sheet_') ? 'sheets' :
+      stage.startsWith('metadata_') ? 'firestore' : 'catalog';
+    error.stage = stage;
+    error.errorCode = stage === 'metadata_read' ? 'METADATA_READ_FAILED' : 'CATALOG_STAGE_FAILED';
+    error.cause = cause;
+    throw error;
+  });
+}
 const PAGE_SIZE_DEFAULT = 20;
 const PAGE_SIZE_MAX = 100;
 const APPROVAL_STATUSES = new Set(['pending', 'approved', 'rejected', 'unknown']);
@@ -104,24 +117,24 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
   }
 
   async function readAllItems() {
-    const snapshots = await Promise.all(SHEETS.map((name) => sheetProvider.readSheet(name)));
+    const snapshots = await Promise.all(SHEETS.map((name) => atStage('sheet_read', () => sheetProvider.readSheet(name))));
     const seen = new Set();
     const sourceItems = [];
     snapshots.forEach((snapshot, sheetIndex) => {
       const sheetName = SHEETS[sheetIndex];
-      validateSnapshot(sheetName, snapshot);
+      atStage('sheet_snapshot_validation', () => validateSnapshot(sheetName, snapshot));
       snapshot.rows.forEach((row) => {
         const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index]]));
-        const mapped = mapCatalogSheetRow(sheetName, record);
-        if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) throw new TypeError();
+        const mapped = (() => { try { return mapCatalogSheetRow(sheetName, record); } catch (cause) { const error = new Error('Catalog sheet row mapping failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_row_mapping'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; } })();
+        if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) { const error = new Error('Catalog sheet identity validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'catalog'; error.stage = 'sheet_identity_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; throw error; }
         seen.add(mapped.content.id);
         sourceItems.push({ mapped, record });
       });
     });
 
     const metadataById = typeof writableProvider.listContentMetadataWithVersion === 'function'
-      ? new Map((await writableProvider.listContentMetadataWithVersion())
-        .map((entry) => [entry.value.contentId, entry]))
+      ? await atStage('metadata_read', async () => new Map((await writableProvider.listContentMetadataWithVersion())
+        .map((entry) => [entry.value.contentId, entry])))
       : null;
 
     return Promise.all(sourceItems.map(async ({ mapped, record }) => {
@@ -135,8 +148,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
             value: validateCatalogContentMetadata(mapped.content.id, versioned.value),
             version: versioned.version,
           };
-        } catch {
-          throw new TypeError('Invalid catalog metadata.');
+        } catch (cause) {
+          const error = new Error('Catalog metadata validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'firestore'; error.stage = 'metadata_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error;
         }
       }
       return projectAdminItem(mapped, record, metadataRecord);
