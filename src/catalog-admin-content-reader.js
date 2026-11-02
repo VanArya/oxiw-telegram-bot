@@ -104,18 +104,20 @@ function projectAdminItem(mapped, record, metadataRecord) {
   };
   if (Number.isInteger(content.releaseYear)) dto.releaseYear = content.releaseYear;
   if (content.kind === 'series') dto.seriesMetadata = { ...content.seriesMetadata };
-  // These optional detail fields are returned only as plain text. URL-like values
-  // and the Telegram File ID are deliberately excluded because their source
-  // formats and display policies have not been confirmed.
-  for (const [sourceField, targetField, maxLength] of [
-    ['خلاصه داستان', 'synopsis', 10000],
-    ['بازیگران', 'cast', 2000],
-    ['زبان', 'language', 200],
-    ['امتیاز', 'rating', 100],
-  ]) {
-    const value = safeText(record, sourceField, maxLength);
-    if (value !== undefined) dto[targetField] = value;
+  // The authenticated admin view receives every source column except the
+  // explicitly excluded URL identifier. Values are bounded plain text; no
+  // source row is exposed wholesale and this DTO is never used by public APIs.
+  const sourceFields = {};
+  for (const [field, rawValue] of Object.entries(record)) {
+    if (field === 'شناسه URL' || rawValue === undefined || rawValue === null || rawValue === '') continue;
+    if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') continue;
+    const value = String(rawValue);
+    sourceFields[field] = value.length <= 10000 ? value : value.slice(0, 10000);
   }
+  dto.sourceFields = Object.freeze(sourceFields);
+  // Keep compatibility with the existing summary and cast presentation.
+  if (sourceFields['خلاصه داستان'] !== undefined) dto.synopsis = sourceFields['خلاصه داستان'];
+  if (sourceFields['بازیگران'] !== undefined) dto.cast = sourceFields['بازیگران'];
   return Object.freeze(dto);
 }
 
