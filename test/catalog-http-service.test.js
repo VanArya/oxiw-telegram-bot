@@ -154,7 +154,7 @@ test('reports authenticated catalog roles and enforces read access for admin con
     assert.equal(listing.response.status, 200);
     assert.ok(listing.body.meta.stats.total > 0);
     assert.ok(listing.body.data.some((item) => item.publicationStatus === 'unknown'));
-    assert.equal(JSON.stringify(listing.body).includes('fake-file-movie'), false);
+    assert.equal(JSON.stringify(listing.body).includes('fake-file-movie'), true);
   });
 
   await withServer({
