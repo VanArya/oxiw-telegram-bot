@@ -95,9 +95,13 @@
 
             <section id="view-content" class="view">
               <div class="page-heading"><div><p class="eyebrow">منبع: Sheets · وضعیت: Firestore</p><h1>فیلم‌ها و سریال‌ها</h1><p class="muted">همهٔ ردیف‌ها، از جمله پیش‌نویس‌ها و موارد فاقد metadata</p></div><button class="button button-secondary refresh-button" data-refresh="content" type="button">به‌روزرسانی</button></div>
+              <div class="content-kind-tabs" role="group" aria-label="نوع محتوا">
+                <button class="button button-primary" type="button" data-content-kind="movie" aria-pressed="true">فیلم‌ها</button>
+                <button class="button button-secondary" type="button" data-content-kind="series" aria-pressed="false">سریال‌ها</button>
+              </div>
               <div class="panel toolbar">
                 <label class="search-control"><span>جست‌وجو</span><input id="content-search" type="search" maxlength="100" placeholder="عنوان یا کد سیستم"></label>
-                <label><span>نوع</span><select id="content-kind"><option value="">همه</option><option value="movie">سینمایی</option><option value="series">سریال</option></select></label>
+                <label hidden><span>نوع</span><select id="content-kind"><option value="">همه</option><option value="movie" selected>سینمایی</option><option value="series">سریال</option></select></label>
                 <label><span>تأیید</span><select id="content-approval"><option value="">همه</option><option>pending</option><option>approved</option><option>rejected</option><option>unknown</option></select></label>
                 <label><span>انتشار</span><select id="content-publication"><option value="">همه</option><option>draft</option><option>published</option><option>archived</option><option>unknown</option></select></label>
                 <button id="content-search-button" class="button button-primary" type="button">اعمال فیلتر</button>
@@ -156,6 +160,7 @@
       <div id="dialog-message" class="notice" hidden></div>
       <div class="detail-grid"><div><span>سال</span><strong id="dialog-year">—</strong></div><div><span>وضعیت تأیید</span><strong id="dialog-approval">—</strong></div><div><span>وضعیت انتشار</span><strong id="dialog-publication">—</strong></div></div>
       <p id="dialog-series" class="muted"></p><p id="dialog-synopsis" class="detail-copy"></p><p id="dialog-cast" class="muted"></p>
+      <section class="source-fields-section"><h3>اطلاعات کامل شیت</h3><div id="dialog-source-fields" class="source-fields-grid"></div></section>
       <form id="metadata-form" class="editor-form inline-editor">
         <div class="panel-heading"><h3>فرادادهٔ قابل ویرایش</h3></div>
         <label>کشورها<select id="metadata-countries" multiple size="4"></select></label>

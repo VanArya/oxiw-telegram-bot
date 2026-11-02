@@ -162,3 +162,15 @@ tbody tr:hover { background: #fbfdfd; }
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Separate movie/series workspaces and readable source-sheet details. */
+.content-kind-tabs { display: flex; gap: .55rem; margin: 0 0 .8rem; }
+.content-kind-tabs button { min-width: 7rem; }
+.source-fields-section { margin: 1.1rem 0; }
+.source-fields-section h3 { margin: 0 0 .7rem; font-size: .95rem; }
+.source-fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+.source-field { min-width: 0; padding: .7rem .8rem; background: #f5f8f8; border: 1px solid var(--line); border-radius: .65rem; }
+.source-field span, .source-field strong { display: block; overflow-wrap: anywhere; white-space: pre-wrap; }
+.source-field span { margin-bottom: .25rem; color: var(--muted); font-size: .75rem; }
+.source-field strong { color: var(--ink); font-size: .88rem; font-weight: 600; line-height: 1.7; }
+@media (max-width: 640px) { .source-fields-grid { grid-template-columns: 1fr; } }

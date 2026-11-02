@@ -402,6 +402,20 @@ function renderSelectedContent() {
     : '');
   setText($('#dialog-synopsis'), selectedItem.synopsis || 'خلاصه‌ای ثبت نشده است.');
   setText($('#dialog-cast'), selectedItem.cast ? `بازیگران: ${selectedItem.cast}` : '');
+  const sourceFields = $('#dialog-source-fields');
+  sourceFields.replaceChildren();
+  const excludedFields = new Set(['شناسه URL']);
+  for (const [field, value] of Object.entries(selectedItem.sourceFields || {})) {
+    if (excludedFields.has(field)) continue;
+    const cell = document.createElement('div');
+    cell.className = 'source-field';
+    const label = document.createElement('span');
+    label.textContent = field;
+    const content = document.createElement('strong');
+    content.textContent = value;
+    cell.append(label, content);
+    sourceFields.append(cell);
+  }
   populateMultiSelect(elements.metadataCountries, countryTerms, selectedMetadata?.countryIds || []);
   populateMultiSelect(elements.metadataGenres, genreTerms, selectedMetadata?.genreIds || []);
   permissionControls();
@@ -1067,7 +1081,18 @@ function wireUi() {
     else if (action === 'genres') void loadTaxonomy('genre');
     else if (action === 'audit') void loadAudit();
   }));
-  $('#content-search-button').addEventListener('click', () => { contentPage = 1; void loadContent(); });
+  $('[data-content-kind]').forEach((button) => button.addEventListener('click', () => {
+  elements.contentKind.value = button.dataset.contentKind;
+  $('[data-content-kind]').forEach((tab) => {
+    const active = tab === button;
+    tab.classList.toggle('button-primary', active);
+    tab.classList.toggle('button-secondary', !active);
+    tab.setAttribute('aria-pressed', String(active));
+  });
+  contentPage = 1;
+  void loadContent();
+}));
+$('#content-search-button').addEventListener('click', () => { contentPage = 1; void loadContent(); });
   elements.contentSearch.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { contentPage = 1; void loadContent(); }
   });
