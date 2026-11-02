@@ -329,6 +329,10 @@ function createCatalogAdminApi({
         dependency: typeof error?.dependency === 'string' ? error.dependency : undefined,
         stage: typeof error?.stage === 'string' ? error.stage : undefined,
         errorCode: typeof error?.errorCode === 'string' ? error.errorCode : undefined,
+        validationIssue: ['snapshot_shape', 'document_id_invalid', 'document_data_unavailable',
+          'document_data_unreadable', 'document_data_not_object', 'version_invalid',
+          'content_id_mismatch', 'metadata_fields_invalid'].includes(error?.validationIssue)
+          ? error.validationIssue : undefined,
         status: Number.isInteger(error?.status) ? error.status : undefined,
         code: typeof error?.code === 'string' || typeof error?.code === 'number'
           ? String(error.code).slice(0, 40)
