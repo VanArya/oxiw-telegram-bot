@@ -7,6 +7,7 @@ const { createFirestoreCatalogMetadataProvider } = require('./firestore-catalog-
 const { createFirestoreWritableCatalogMetadataProvider } = require('./firestore-writable-catalog-metadata-provider');
 const { createGoogleSheetsCatalogProvider } = require('./google-sheets-catalog-provider');
 const { assertCatalogAdminRoleProvider } = require('./catalog-admin-role-provider');
+const { repairInvalidMetadataVersions } = require('./firestore-metadata-version-migration');
 
 const GOOGLE_SHEETS_READONLY_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
 const SPREADSHEET_ID_ENV = 'CATALOG_SPREADSHEET_ID';
@@ -129,6 +130,9 @@ async function createCatalogRuntime({
       ...(getAdminWebConfig === undefined ? {} : { getAdminWebConfig }),
       bootstrapSecret,
       bootstrapOwnerSubjectId,
+      metadataVersionMigration: (options) => repairInvalidMetadataVersions({
+        firestore, auditEventSink, actorId: options.actorId, dryRun: options.dryRun,
+      }),
     });
   } catch {
     throw new CatalogRuntimeConfigurationError();

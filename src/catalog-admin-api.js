@@ -182,6 +182,7 @@ function createCatalogAdminApi({
   authorizePermission,
   bootstrapSecret,
   bootstrapOwnerSubjectId,
+  metadataVersionMigration,
 } = {}) {
   const provider = assertVersionedWritableCatalogMetadataProvider(writableProvider);
   const app = express();
@@ -310,6 +311,40 @@ function createCatalogAdminApi({
       permissions,
     } });
   });
+
+  app.post(`${BASE_PATH}/metadata-version-migration`, parseJson, asyncRoute(async (req, res) => {
+    const principal = res.locals.catalogAdminPrincipal;
+    if (!principal.roles.includes('administrator')) {
+      return sendError(res, 403, 'FORBIDDEN', 'این عملیات فقط برای مدیر سامانه مجاز است.');
+    }
+    if (typeof metadataVersionMigration !== 'function') {
+      return sendError(res, 503, 'MIGRATION_NOT_CONFIGURED', 'عملیات اصلاح داده پیکربندی نشده است.');
+    }
+    if (!await requirePermissionForCurrentRequest(res, PERMISSIONS.METADATA_WRITE)) return;
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return sendError(res, 400, 'INVALID_MIGRATION_REQUEST', 'درخواست اصلاح معتبر نیست.');
+    }
+    const keys = Object.keys(req.body);
+    const action = req.body.action;
+    if (action === 'preview' && keys.length === 1) {
+      try {
+        const result = await metadataVersionMigration({ actorId: principal.subjectId, dryRun: true });
+        return res.json({ data: result });
+      } catch {
+        return sendError(res, 503, 'MIGRATION_UNAVAILABLE', 'بررسی داده‌ها در دسترس نیست.');
+      }
+    }
+    if (action === 'repair' && keys.length === 2 &&
+        req.body.confirmation === 'REPAIR_INVALID_METADATA_VERSIONS') {
+      try {
+        const result = await metadataVersionMigration({ actorId: principal.subjectId, dryRun: false });
+        return res.json({ data: result });
+      } catch {
+        return sendError(res, 503, 'MIGRATION_UNAVAILABLE', 'اصلاح داده‌ها انجام نشد؛ وضعیت Firestore را بررسی کنید.');
+      }
+    }
+    return sendError(res, 400, 'INVALID_MIGRATION_REQUEST', 'درخواست اصلاح معتبر نیست.');
+  }));
 
   app.get(`${BASE_PATH}/items`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!contentReader || typeof contentReader.list !== 'function') {

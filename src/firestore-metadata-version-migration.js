@@ -104,7 +104,7 @@ async function repairInvalidMetadataVersions({
       const event = validateCatalogAuditEvent({
         eventId: createEventId(), operation: 'metadata.updated', entityType: 'content', entityId: candidate.id,
         occurredAt: occurredAt.toISOString(), outcome: 'committed', previousVersion: 0, version: 1,
-        changedFields: [], actorId,
+        changedFields: ['_version'], actorId,
       });
       transaction.set(reference, { ...data, [INTERNAL_VERSION]: 1 });
       await auditEventSink.appendInTransaction(transaction, event);

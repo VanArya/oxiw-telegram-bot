@@ -22,7 +22,7 @@ const elements = Object.fromEntries([
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
-  'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
+  'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext', 'metadataMigrationButton', 'metadataMigrationMessage',
 ].map((name) => [
   name,
   document.getElementById(name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)),
@@ -108,6 +108,7 @@ function showDashboard() {
   setText($('#account-uid'), session?.subjectId || '');
   renderPermissionAccess();
   renderAccountAccess();
+  elements.metadataMigrationButton.hidden = !session?.roles?.includes('administrator');
 }
 
 function roleLabel(role) {
@@ -900,6 +901,44 @@ async function loadAudit() {
   } catch (error) { reportApiError(error); }
 }
 
+async function runMetadataMigration(action) {
+  const button = elements.metadataMigrationButton;
+  if (!session?.roles?.includes('administrator')) return;
+  if (action === 'repair' && !window.confirm('اصلاح فقط فیلد نسخهٔ داخلی رکوردهای دارای فرادادهٔ معتبر انجام می‌شود. این عملیات قابل بازگشت خودکار نیست. ادامه می‌دهید؟')) return;
+  setBusy(button, true);
+  setText(elements.metadataMigrationMessage, action === 'preview' ? 'در حال بررسی Firestore…' : 'در حال اصلاح رکوردها و ثبت گزارش…');
+  try {
+    const { body } = await api(`${API_ROOT}/metadata-version-migration`, {
+      method: 'POST',
+      body: JSON.stringify(action === 'preview' ? { action: 'preview' } : { action: 'repair', confirmation: 'REPAIR_INVALID_METADATA_VERSIONS' }),
+    });
+    const result = body.data;
+    const summary = result.summary || {};
+    const lines = [
+      `کل رکوردها: ${Number(summary.total || 0).toLocaleString('fa-IR')}`,
+      `نسخهٔ نامعتبر: ${Number(summary.versionInvalid || 0).toLocaleString('fa-IR')}`,
+      `فرادادهٔ تجاری نامعتبر: ${Number(summary.businessDataInvalid || 0).toLocaleString('fa-IR')}`,
+      `ساختار سند نامعتبر: ${Number(summary.documentInvalid || 0).toLocaleString('fa-IR')}`,
+    ];
+    if (action === 'repair') lines.push(`اصلاح‌شده: ${Number(result.repaired || 0).toLocaleString('fa-IR')}`, `ردشده/تغییرکرده حین عملیات: ${Number(result.skipped || 0).toLocaleString('fa-IR')}`);
+    setText(elements.metadataMigrationMessage, lines.join(' · '));
+    showToast(action === 'preview' ? 'بررسی اولیه تمام شد.' : 'عملیات اصلاح تمام شد.');
+    if (action === 'repair') {
+      button.hidden = true;
+      await loadOverview();
+    } else {
+      button.dataset.action = Number(summary.versionInvalid || 0) > 0 ? 'repair' : 'preview';
+      button.textContent = Number(summary.versionInvalid || 0) > 0 ? 'اصلاح نسخه‌های نامعتبر' : 'نیازی به اصلاح نیست';
+      button.disabled = Number(summary.versionInvalid || 0) === 0;
+    }
+  } catch (error) {
+    reportApiError(error);
+    setText(elements.metadataMigrationMessage, error.message || 'عملیات انجام نشد.');
+  } finally {
+    if (!button.hidden) button.disabled = button.dataset.action === 'preview' && button.textContent === 'نیازی به اصلاح نیست';
+  }
+}
+
 function renderSession(user, data) {
   currentUser = user;
   session = data;
@@ -1058,6 +1097,7 @@ function wireUi() {
   }));
   elements.auditPrev.addEventListener('click', () => { if (auditPage > 1) { auditPage -= 1; void loadAudit(); } });
   elements.auditNext.addEventListener('click', () => { if (auditHasMore) { auditPage += 1; void loadAudit(); } });
+  elements.metadataMigrationButton.addEventListener('click', () => void runMetadataMigration(elements.metadataMigrationButton.dataset.action || 'preview'));
 }
 
 wireUi();

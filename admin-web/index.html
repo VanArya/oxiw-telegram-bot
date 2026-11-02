@@ -143,6 +143,7 @@
               <div class="page-heading"><div><p class="eyebrow">هویت تأییدشدهٔ سرور</p><h1>حساب و سطح دسترسی</h1></div></div>
               <div class="panel account-panel"><div class="account-avatar" aria-hidden="true">O</div><div><p id="account-email" class="account-email"></p><p id="account-uid" class="mono muted"></p><p class="fine-print">UID از principal تأییدشدهٔ Firebase در backend دریافت شده است.</p></div></div>
               <div class="panel"><div class="panel-heading"><h2>نقش‌های فعال</h2></div><div id="account-roles" class="chips"></div><h2 class="subheading">مجوزهای مؤثر</h2><div id="account-permissions" class="permission-list"></div></div>
+              <div class="panel" data-permission="catalog.metadata.write"><div class="panel-heading"><h2>تعمیر داده‌های سیستمی</h2></div><p class="muted">فقط مدیر سامانه می‌تواند نسخه‌های داخلی نامعتبر Firestore را بررسی و اصلاح کند. ابتدا پیش‌نمایش بگیرید؛ محتوای Google Sheets تغییر نمی‌کند.</p><button id="metadata-migration-button" class="button button-secondary" type="button" hidden>بررسی رکوردهای Firestore</button><p id="metadata-migration-message" class="fine-print" role="status" aria-live="polite"></p></div>
               <div id="bootstrap-notice" class="notice warning-panel">نقش مدیر اول از پنل ساخته نمی‌شود. provisioning مدیر نخستین تا تعریف و تأیید منشأ مستقل actor و approver غیرفعال است.</div>
             </section>
           </div>
