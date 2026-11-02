@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { assertVersionedWritableCatalogMetadataProvider } = require('./catalog-writable-metadata-provider');
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const { assertCatalogAuditEventSink } = require('./catalog-audit-event-sink');
+const { classifyCatalogDependencyError, createCatalogDataValidationError } = require('./catalog-operational-errors');
 const {
   CatalogConflictError,
   CatalogInputError,
@@ -257,8 +258,15 @@ function createFirestoreWritableCatalogMetadataProvider({
       return readVersioned(contentRef(contentId), (data) => projectContent(data, contentId));
     },
     async listContentMetadataWithVersion() {
+      let snapshot;
       try {
-        const snapshot = await firestore.collection(collections.contentMetadata).get();
+        snapshot = await firestore.collection(collections.contentMetadata).get();
+      } catch (error) {
+        throw classifyCatalogDependencyError(
+          'firestore', 'metadata_read', error, 'Unable to read catalog metadata.',
+        );
+      }
+      try {
         if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
         return snapshot.docs.map((document) => {
           const data = readSnapshot({ exists: true, data: () => document.data() });
@@ -270,7 +278,9 @@ function createFirestoreWritableCatalogMetadataProvider({
           });
         });
       } catch {
-        throw safeStorageError();
+        throw createCatalogDataValidationError(
+          'firestore', 'metadata_validation', 'Unable to read catalog metadata.',
+        );
       }
     },
     async listCategories() {
