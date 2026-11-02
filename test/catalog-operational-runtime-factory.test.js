@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const http = require('node:http');
 const test = require('node:test');
 const {
   CatalogOperationalRuntimeConfigurationError,
@@ -8,6 +9,10 @@ const {
   FIREBASE_APP_NAME,
   createOperationalCatalogRuntime,
 } = require('../src/catalog-operational-runtime-factory');
+const {
+  CatalogEntrypointError,
+  createOperationalCatalogApp,
+} = require('../src/catalog-http-entrypoint');
 const { getCatalogProviderKind } = require('../src/catalog-provider-kind');
 
 function makeFirestore() {
@@ -219,4 +224,58 @@ test('operational runtime construction has no Firestore reads or writes', async 
     writableStore: true,
     auditSink: true,
   });
+});
+
+test('operational entrypoint preserves the prebuilt app and its public Firebase web config', async () => {
+  const operationalEnv = env({
+    CATALOG_FIREBASE_WEB_API_KEY: 'public-web-key',
+    CATALOG_FIREBASE_WEB_AUTH_DOMAIN: 'oxiw-catalog-test-123.firebaseapp.com',
+    CATALOG_FIREBASE_WEB_PROJECT_ID: 'oxiw-catalog-test-123',
+    CATALOG_FIREBASE_WEB_MESSAGING_SENDER_ID: '123456789',
+    CATALOG_FIREBASE_WEB_APP_ID: '1:123456789:web:fixture',
+  });
+  const runtime = await createOperationalCatalogRuntime({
+    env: operationalEnv,
+    google: makeGoogle({}),
+    firebaseAdmin: makeFirebaseAdmin().firebaseAdmin,
+  });
+
+  assert.equal(getCatalogProviderKind(runtime.provider), 'google-sheets');
+  assert.equal(getCatalogProviderKind(runtime.metadataProvider), 'firestore-read');
+  assert.equal(getCatalogProviderKind(runtime.writableProvider), 'firestore-write');
+
+  const app = await createOperationalCatalogApp({
+    env: operationalEnv,
+    runtimeFactory: async () => runtime,
+  });
+  assert.strictEqual(app, runtime.app);
+
+  const server = http.createServer(app);
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const response = await fetch(`http://127.0.0.1:${server.address().port}/admin/config.json`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      data: {
+        apiKey: operationalEnv.CATALOG_FIREBASE_WEB_API_KEY,
+        authDomain: operationalEnv.CATALOG_FIREBASE_WEB_AUTH_DOMAIN,
+        projectId: operationalEnv.CATALOG_FIREBASE_WEB_PROJECT_ID,
+        messagingSenderId: operationalEnv.CATALOG_FIREBASE_WEB_MESSAGING_SENDER_ID,
+        appId: operationalEnv.CATALOG_FIREBASE_WEB_APP_ID,
+      },
+    });
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+
+  await assert.rejects(
+    createOperationalCatalogApp({
+      env: operationalEnv,
+      runtimeFactory: async () => ({ ...runtime, app: undefined }),
+    }),
+    (error) => error instanceof CatalogEntrypointError && /HTTP app is invalid/.test(error.message),
+  );
 });

@@ -41,15 +41,13 @@ async function createOperationalCatalogApp({
       'Catalog API startup blocked: runtime providers are not approved operational adapters.',
     );
   }
-
-  try {
-    const { createCatalogHttpService } = require('./catalog-http-service');
-    return createCatalogHttpService(runtime);
-  } catch {
+  if (typeof runtime.app !== 'function') {
     throw new CatalogEntrypointError(
-      'Catalog API startup blocked: required operational dependencies are incomplete.',
+      'Catalog API startup blocked: operational runtime HTTP app is invalid.',
     );
   }
+
+  return runtime.app;
 }
 
 async function startCatalogEntrypoint({ env = process.env, runtimeFactory, serverFactory } = {}) {
