@@ -197,6 +197,86 @@ function createFirestoreCatalogAdminRoleProvider({
     // The caller must supply an actor from verified ADC impersonation and an
     // approval from a separately trusted provider. This adapter validates shape,
     // not the provenance of either injected dependency.
+    async bootstrapFirstAdministrator({ subjectId } = {}) {
+      if (!isStableSubjectId(subjectId)) {
+        throw new TypeError('Invalid Firebase owner subject.');
+      }
+      const occurredAt = clock();
+      const occurredAtIso = occurredAt instanceof Date ? occurredAt.toISOString() : '';
+      if (!isIsoTimestamp(occurredAtIso)) throw new TypeError('Invalid role bootstrap clock.');
+
+      try {
+        return await firestore.runTransaction(async (transaction) => {
+          const state = await readRoleState(
+            transaction,
+            firestore,
+            assignmentsCollection,
+            controlReference(),
+            assignmentReference(subjectId),
+          );
+          if (state.control || state.assignments.length > 0) {
+            throw makeResolutionError(state.control ? 'BOOTSTRAP_ALREADY_COMPLETED' : 'ROLE_CONTROL_MISSING');
+          }
+          const event = validateCatalogAdminRoleAuditEvent({
+            schemaVersion: 3,
+            eventId: createEventId(),
+            operation: 'bootstrap.completed',
+            occurredAt: occurredAtIso,
+            outcome: 'committed',
+            actorId: subjectId,
+            actorType: 'firebase_user',
+            identitySource: 'firebase_admin_id_token',
+            ownerId: subjectId,
+            targetSubjectId: subjectId,
+            rolesBefore: [],
+            rolesAfter: ['administrator'],
+            activeBefore: false,
+            activeAfter: true,
+            previousVersion: 0,
+            version: 1,
+          });
+          transaction.create(assignmentReference(subjectId), {
+            subjectId,
+            roles: ['administrator'],
+            active: true,
+            version: 1,
+            createdAt: occurredAtIso,
+            createdBy: subjectId,
+            updatedAt: occurredAtIso,
+            updatedBy: subjectId,
+          });
+          transaction.create(controlReference(), {
+            bootstrapState: 'completed',
+            version: 1,
+            activeAdministratorCount: 1,
+            completedAt: occurredAtIso,
+            completedBy: subjectId,
+            actorType: 'firebase_user',
+            identitySource: 'firebase_admin_id_token',
+            ownerId: subjectId,
+            updatedAt: occurredAtIso,
+            updatedBy: subjectId,
+          });
+          await auditSink.appendInTransaction(transaction, event);
+          return Object.freeze({ version: 1, eventId: event.eventId });
+        });
+      } catch (error) {
+        if (error instanceof CatalogAdminRoleResolutionError) throw error;
+        // Log only safe error metadata; never log request bodies, credentials, or raw messages.
+        console.error('[catalog-admin-bootstrap] Firestore bootstrap failed', {
+          errorName: typeof error?.name === 'string' ? error.name : 'UnknownError',
+          errorCode: typeof error?.code === 'string' || typeof error?.code === 'number'
+            ? String(error.code).slice(0, 64)
+            : undefined,
+          errorStatus: typeof error?.status === 'string' || typeof error?.status === 'number'
+            ? String(error.status).slice(0, 32)
+            : undefined,
+        });
+        if (error instanceof TypeError) throw error;
+        throw makeResolutionError('ROLE_SOURCE_UNAVAILABLE');
+      }
+    },
+
     async bootstrapAdministrator({ actor, approval, targetSubjectId } = {}) {
       validateBootstrapIdentity(actor, approval);
       const { actorId } = actor;

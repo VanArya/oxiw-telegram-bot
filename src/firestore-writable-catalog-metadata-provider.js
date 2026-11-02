@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { assertVersionedWritableCatalogMetadataProvider } = require('./catalog-writable-metadata-provider');
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const { assertCatalogAuditEventSink } = require('./catalog-audit-event-sink');
+const { classifyCatalogDependencyError, createCatalogDataValidationError } = require('./catalog-operational-errors');
 const {
   CatalogConflictError,
   CatalogInputError,
@@ -257,21 +258,48 @@ function createFirestoreWritableCatalogMetadataProvider({
       return readVersioned(contentRef(contentId), (data) => projectContent(data, contentId));
     },
     async listContentMetadataWithVersion() {
+      let snapshot;
       try {
-        const snapshot = await firestore.collection(collections.contentMetadata).get();
-        if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
-        return snapshot.docs.map((document) => {
-          const data = readSnapshot({ exists: true, data: () => document.data() });
-          if (!document || typeof document.id !== 'string' ||
-              !isCanonicalContentId(document.id)) throw new TypeError();
-          return Object.freeze({
-            value: projectContent(data.data, document.id),
-            version: data.version,
-          });
-        });
-      } catch {
-        throw safeStorageError();
+        snapshot = await firestore.collection(collections.contentMetadata).get();
+      } catch (error) {
+        throw classifyCatalogDependencyError(
+          'firestore', 'metadata_read', error, 'Unable to read catalog metadata.',
+        );
       }
+      const failValidation = (validationIssue) => {
+        const error = createCatalogDataValidationError(
+          'firestore', 'metadata_validation', 'Unable to read catalog metadata.',
+        );
+        error.validationIssue = validationIssue;
+        throw error;
+      };
+      if (!snapshot || !Array.isArray(snapshot.docs)) failValidation('snapshot_shape');
+      const results = [];
+      for (const document of snapshot.docs) {
+        if (!document || typeof document.id !== 'string' ||
+            !isCanonicalContentId(document.id)) failValidation('document_id_invalid');
+        let raw;
+        try {
+          if (typeof document.data !== 'function') failValidation('document_data_unavailable');
+          raw = document.data();
+        } catch (error) {
+          if (error?.validationIssue) throw error;
+          failValidation('document_data_unreadable');
+        }
+        if (!isRecord(raw)) failValidation('document_data_not_object');
+        if (!Number.isSafeInteger(raw[INTERNAL_VERSION]) || raw[INTERNAL_VERSION] < 1) {
+          failValidation('version_invalid');
+        }
+        if (raw.contentId !== document.id) failValidation('content_id_mismatch');
+        let value;
+        try {
+          value = projectContent(raw, document.id);
+        } catch {
+          failValidation('metadata_fields_invalid');
+        }
+        results.push(Object.freeze({ value, version: raw[INTERNAL_VERSION] }));
+      }
+      return results;
     },
     async listCategories() {
       const entries = await readCollection(

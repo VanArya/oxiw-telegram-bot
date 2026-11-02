@@ -17,7 +17,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const elements = Object.fromEntries([
   'bootScreen', 'bootMessage', 'missingConfig', 'bootRetry', 'loginScreen', 'loginMessage',
-  'noAccessScreen', 'noAccessMessage', 'noAccessEmail', 'noAccessUid', 'dashboard',
+  'noAccessScreen', 'noAccessMessage', 'noAccessEmail', 'noAccessUid', 'bootstrapForm', 'bootstrapSecret', 'bootstrapMessage', 'bootstrapButton', 'dashboard',
   'globalMessage', 'contentRows', 'contentCount', 'contentPage', 'contentPrev', 'contentNext',
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
@@ -135,6 +135,13 @@ function messageForError(error) {
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
     INTERNAL_ERROR: 'سرویس نتوانست درخواست را انجام دهد.',
+    BOOTSTRAP_NOT_CONFIGURED: 'راه‌اندازی اولیه مدیر هنوز در تنظیمات سرور فعال نشده است.',
+    BOOTSTRAP_OWNER_MISMATCH: 'این حساب مالک مجاز راه‌اندازی اولیه نیست.',
+    BOOTSTRAP_SECRET_INVALID: 'رمز راه‌اندازی اشتباه است.',
+    BOOTSTRAP_ALREADY_COMPLETED: 'راه‌اندازی اولیه قبلاً انجام شده است.',
+    BOOTSTRAP_STATE_INVALID: 'وضعیت نقش‌های مدیریتی نیازمند بررسی است.',
+    BOOTSTRAP_UNAVAILABLE: 'راه‌اندازی اولیه موقتاً در دسترس نیست.',
+    INVALID_BOOTSTRAP_REQUEST: 'درخواست راه‌اندازی معتبر نیست.',
   };
   return messages[error?.body?.error?.code] || 'درخواست انجام نشد؛ وضعیت سرویس را دوباره بررسی کنید.';
 }
@@ -900,6 +907,28 @@ function renderSession(user, data) {
   selectView('overview');
 }
 
+async function bootstrapFirstAdmin(event) {
+  event.preventDefault();
+  if (!currentUser || !elements.bootstrapSecret.value) return;
+  const button = elements.bootstrapButton;
+  const secret = elements.bootstrapSecret.value;
+  setBusy(button, true);
+  setText(elements.bootstrapMessage, 'در حال بررسی هویت و راه‌اندازی مدیر…');
+  try {
+    await api(`${API_ROOT}/bootstrap`, {
+      method: 'POST',
+      body: JSON.stringify({ secret }),
+    });
+    elements.bootstrapSecret.value = '';
+    setText(elements.bootstrapMessage, 'دسترسی مدیر فعال شد؛ در حال بارگذاری پنل…');
+    await handleAuthState(currentUser);
+  } catch (error) {
+    setText(elements.bootstrapMessage, error.message || 'راه‌اندازی انجام نشد.');
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function handleAuthState(user) {
   currentUser = user;
   session = null;
@@ -987,6 +1016,7 @@ async function startFirebase() {
 }
 
 function wireUi() {
+  elements.bootstrapForm.addEventListener('submit', (event) => void bootstrapFirstAdmin(event));
   elements.bootRetry.addEventListener('click', () => void startFirebase());
   $$('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
   $$('.refresh-button').forEach((button) => button.addEventListener('click', () => {

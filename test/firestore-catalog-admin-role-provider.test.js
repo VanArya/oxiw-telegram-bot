@@ -181,6 +181,28 @@ test('Firestore resolver fails closed on invalid subjects, malformed assignments
   ));
 });
 
+test('Firebase owner bootstrap is atomic, one-time, and writes schema v3 audit', async () => {
+  const { firestore, provider } = setup();
+  const result = await provider.bootstrapFirstAdministrator({ subjectId: 'KJN9jIBKCEUqzfRN3lTktcv3Z9b2' });
+  assert.equal(result.version, 1);
+  assert.deepEqual(await provider.resolveRoles('KJN9jIBKCEUqzfRN3lTktcv3Z9b2'), ['administrator']);
+  const event = firestore.documents.get(`catalogAdminRoleAuditEvents/${result.eventId}`);
+  assert.equal(event.schemaVersion, 3);
+  assert.equal(event.actorType, 'firebase_user');
+  assert.equal(event.identitySource, 'firebase_admin_id_token');
+  assert.equal(event.actorId, 'KJN9jIBKCEUqzfRN3lTktcv3Z9b2');
+  assert.equal(event.ownerId, event.actorId);
+  assert.equal(firestore.documents.get('catalogAdminControl/bootstrap').activeAdministratorCount, 1);
+  await assert.rejects(
+    provider.bootstrapFirstAdministrator({ subjectId: 'another-user' }),
+    { code: 'BOOTSTRAP_ALREADY_COMPLETED' },
+  );
+  assert.equal(firestore.documents.has('catalogAdminRoleAssignments/another-user'), false);
+  const invalid = setup();
+  await assert.rejects(invalid.provider.bootstrapFirstAdministrator({ subjectId: 'bad subject' }), TypeError);
+  assert.equal(invalid.firestore.transactionCalls, 0);
+});
+
 test('role assignment creation and changes write assignment plus role audit in one transaction', async () => {
   const { firestore, provider } = setup();
   const bootstrap = await provider.bootstrapAdministrator(bootstrapRequest('bootstrap-admin'));

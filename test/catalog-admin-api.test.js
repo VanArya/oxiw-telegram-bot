@@ -764,3 +764,45 @@ test('in-memory writer rejects duplicate keys, invalid metadata and disabling re
     /Catalog update conflicts/,
   );
 });
+
+test('one-time bootstrap requires the verified owner identity and configured secret', async () => {
+  const store = createStore();
+  const calls = [];
+  const ownerId = 'KJN9jIBKCEUqzfRN3lTktcv3Z9b2';
+  const secret = 'test-only-bootstrap-secret-value-1234567890';
+  const roleProvider = {
+    async resolveRoles() { return []; },
+    async bootstrapFirstAdministrator({ subjectId }) {
+      calls.push(subjectId);
+      return { version: 1, eventId: 'bootstrap-event' };
+    },
+  };
+  const app = createCatalogAdminApi({
+    writableProvider: store,
+    verifyAdminPrincipal: async () => ({ authenticated: true, subjectId: ownerId }),
+    roleProvider,
+    authorizePermission: roleAuthorizer,
+    bootstrapSecret: secret,
+    bootstrapOwnerSubjectId: ownerId,
+  });
+  await withServer(app, async (baseUrl) => {
+    const wrongSecret = await json(await fetch(`${baseUrl}${ADMIN_PATH}/bootstrap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ secret: 'wrong-secret-value' }),
+    }));
+    assert.equal(wrongSecret.status, 403);
+    assert.equal(wrongSecret.body.error.code, 'BOOTSTRAP_SECRET_INVALID');
+    assert.deepEqual(calls, []);
+
+    const success = await json(await fetch(`${baseUrl}${ADMIN_PATH}/bootstrap`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    }));
+    assert.equal(success.status, 201);
+    assert.deepEqual(success.body.data, { version: 1 });
+    assert.deepEqual(calls, [ownerId]);
+    assert.equal(JSON.stringify(success.body).includes(secret), false);
+  });
+});

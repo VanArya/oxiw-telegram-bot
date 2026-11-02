@@ -42,6 +42,15 @@
         <h1>دسترسی مدیریتی تخصیص داده نشده</h1>
         <p id="no-access-message" class="muted">حساب شما احراز شد، اما نقش فعال و مجاز برای پنل پیدا نشد.</p>
         <div class="account-card"><span id="no-access-email"></span><span id="no-access-uid" class="mono"></span></div>
+        <form id="bootstrap-form" class="bootstrap-form">
+          <label for="bootstrap-secret">رمز راه‌اندازی اولیه مدیر</label>
+          <input id="bootstrap-secret" name="secret" type="password" autocomplete="one-time-code"
+            minlength="32" required placeholder="رمز محرمانه‌ای که در تنظیمات سرور ثبت شده است">
+          <p id="bootstrap-message" class="muted" role="status" aria-live="polite">
+            اگر این حساب مالک پنل است و راه‌اندازی اولیه هنوز انجام نشده، رمز راه‌اندازی را وارد کنید.
+          </p>
+          <button id="bootstrap-button" class="button button-primary" type="submit">فعال‌سازی دسترسی مدیر</button>
+        </form>
         <button id="no-access-sign-out" class="button button-secondary" type="button">خروج از حساب</button>
       </section>
 

@@ -26,6 +26,14 @@ const {
 
 const BASE_PATH = '/api/v1/admin/catalog';
 
+function constantTimeSecretMatches(candidate, expected) {
+  if (typeof candidate !== 'string' || typeof expected !== 'string' ||
+      candidate.length === 0 || expected.length < 32) return false;
+  const left = Buffer.from(candidate, 'utf8');
+  const right = Buffer.from(expected, 'utf8');
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
 function requestId() {
   return crypto.randomUUID();
 }
@@ -172,6 +180,8 @@ function createCatalogAdminApi({
   roleProvider,
   reportRoleResolutionFailure: reportRoleFailure,
   authorizePermission,
+  bootstrapSecret,
+  bootstrapOwnerSubjectId,
 } = {}) {
   const provider = assertVersionedWritableCatalogMetadataProvider(writableProvider);
   const app = express();
@@ -230,6 +240,40 @@ function createCatalogAdminApi({
       });
   });
 
+  app.post(`${BASE_PATH}/bootstrap`, parseJson, asyncRoute(async (req, res) => {
+    if (typeof roleProvider?.bootstrapFirstAdministrator !== 'function' ||
+        typeof bootstrapSecret !== 'string' || bootstrapSecret.length < 32 ||
+        typeof bootstrapOwnerSubjectId !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(bootstrapOwnerSubjectId)) {
+      return sendError(res, 503, 'BOOTSTRAP_NOT_CONFIGURED', 'راه‌اندازی اولیه مدیر پیکربندی نشده است.');
+    }
+    if (res.locals.catalogAdminPrincipal.subjectId !== bootstrapOwnerSubjectId) {
+      return sendError(res, 403, 'BOOTSTRAP_OWNER_MISMATCH', 'این حساب مالک مجاز راه‌اندازی اولیه نیست.');
+    }
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) ||
+        Object.keys(req.body).length !== 1 || !Object.hasOwn(req.body, 'secret')) {
+      return sendError(res, 400, 'INVALID_BOOTSTRAP_REQUEST', 'درخواست راه‌اندازی معتبر نیست.');
+    }
+    if (!constantTimeSecretMatches(req.body.secret, bootstrapSecret)) {
+      return sendError(res, 403, 'BOOTSTRAP_SECRET_INVALID', 'رمز راه‌اندازی معتبر نیست.');
+    }
+    try {
+      const result = await roleProvider.bootstrapFirstAdministrator({
+        subjectId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.status(201).json({ data: { version: result.version } });
+    } catch (error) {
+      if (error?.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
+        return sendError(res, 409, 'BOOTSTRAP_ALREADY_COMPLETED', 'راه‌اندازی اولیه قبلاً انجام شده است.');
+      }
+      if (error?.code === 'ROLE_CONTROL_MISSING' || error?.code === 'ROLE_CONTROL_INVALID' ||
+          error?.code === 'ROLE_CONTROL_INCONSISTENT') {
+        return sendError(res, 409, 'BOOTSTRAP_STATE_INVALID', 'وضعیت نقش‌های مدیریتی نیازمند بررسی است.');
+      }
+      return sendError(res, 503, 'BOOTSTRAP_UNAVAILABLE', 'راه‌اندازی اولیه موقتاً در دسترس نیست.');
+    }
+  }));
+
   function requirePermission(permission) {
     return (req, res, next) => {
       Promise.resolve()
@@ -277,7 +321,33 @@ function createCatalogAdminApi({
       if (error?.name === 'CatalogAdminListInputError') {
         return sendError(res, 400, 'INVALID_FILTER', 'فیلتر یا صفحه‌بندی معتبر نیست.');
       }
-      return sendError(res, 500, 'INTERNAL_ERROR', 'فهرست محتوا در دسترس نیست.');
+      const diagnosticRequestId = requestId();
+      const diagnostic = {
+        event: 'catalog_admin_items_read_failed',
+        requestId: diagnosticRequestId,
+        errorName: typeof error?.name === 'string' ? error.name.slice(0, 80) : 'UnknownError',
+        dependency: typeof error?.dependency === 'string' ? error.dependency : undefined,
+        stage: typeof error?.stage === 'string' ? error.stage : undefined,
+        errorCode: typeof error?.errorCode === 'string' ? error.errorCode : undefined,
+        validationIssue: ['snapshot_shape', 'document_id_invalid', 'document_data_unavailable',
+          'document_data_unreadable', 'document_data_not_object', 'version_invalid',
+          'content_id_mismatch', 'metadata_fields_invalid'].includes(error?.validationIssue)
+          ? error.validationIssue : undefined,
+        status: Number.isInteger(error?.status) ? error.status : undefined,
+        code: typeof error?.code === 'string' || typeof error?.code === 'number'
+          ? String(error.code).slice(0, 40)
+          : undefined,
+      };
+      // Log only bounded diagnostic metadata; never log messages, tokens, headers,
+      // spreadsheet contents, user identifiers, or raw provider errors.
+      console.error('[catalog-admin-diagnostic]', JSON.stringify(diagnostic));
+      return res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'فهرست محتوا در دسترس نیست.',
+          requestId: diagnosticRequestId,
+        },
+      });
     }
   }));
 

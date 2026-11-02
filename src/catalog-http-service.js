@@ -65,6 +65,8 @@ function createCatalogHttpService({
   logger,
   getAdminWebConfig,
   auditReader,
+  bootstrapSecret,
+  bootstrapOwnerSubjectId,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
     throw new TypeError('Catalog HTTP service requires an injected readSheet provider.');
@@ -96,6 +98,8 @@ function createCatalogHttpService({
     roleProvider,
     reportRoleResolutionFailure,
     authorizePermission,
+    bootstrapSecret,
+    bootstrapOwnerSubjectId,
   });
 
   const app = express();

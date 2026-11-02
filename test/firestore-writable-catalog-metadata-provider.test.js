@@ -221,6 +221,35 @@ test('lists versioned metadata for the authenticated admin catalog reader', asyn
   assert.equal(JSON.stringify(listed).includes('_version'), false);
 });
 
+test('metadata collection read failures expose only safe Firestore classification', async () => {
+  const { firestore, provider } = setup();
+  firestore.failReads = true;
+  await assert.rejects(
+    provider.listContentMetadataWithVersion(),
+    (error) => error.dependency === 'firestore' &&
+      error.stage === 'metadata_read' &&
+      error.errorCode === 'FIRESTORE_UNKNOWN' &&
+      error.message === 'Unable to read catalog metadata.' &&
+      !error.message.includes('synthetic-private-read-error'),
+  );
+});
+
+test('invalid stored metadata documents are classified separately from Firestore read failures', async () => {
+  const { firestore, provider } = setup();
+  firestore.seed(`catalogContentMetadata/${contentId}`, {
+    contentId,
+    approvalStatus: 'approved',
+    publicationStatus: 'draft',
+    // Deliberately omit the required internal version.
+  });
+  await assert.rejects(
+    provider.listContentMetadataWithVersion(),
+    (error) => error.dependency === 'firestore' &&
+      error.stage === 'metadata_validation' &&
+      error.errorCode === 'FIRESTORE_DATA_VALIDATION',
+  );
+});
+
 test('approval and publication remain independent and publication requires approval', async () => {
   const { firestore, provider } = setup();
   const pending = { ...metadata, approvalStatus: 'pending' };
