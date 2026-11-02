@@ -44,8 +44,9 @@ test('admin content reader lists unpublished Sheet rows with metadata status and
   assert.deepEqual(item.countryIds, ['IR']);
   assert.equal(item.systemCode, 'fixture-movie-ir');
   assert.ok(result.data.some((entry) => entry.publicationStatus === 'unknown'));
-  assert.equal(JSON.stringify(result).includes('fake-file-movie'), false);
-  assert.equal(JSON.stringify(result).includes('Telegram File ID'), false);
+  assert.equal(item.sourceFields['Telegram File ID'], 'fake-file-movie');
+  assert.equal(Object.hasOwn(item.sourceFields, 'شناسه URL'), false);
+  assert.equal(item.sourceFields['ژانر'], 'درام');
   assert.equal(JSON.stringify(item).includes('sourceRecord'), false);
 });
 
