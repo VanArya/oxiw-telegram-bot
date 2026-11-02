@@ -46,7 +46,7 @@ test('admin content reader lists unpublished Sheet rows with metadata status and
   assert.ok(result.data.some((entry) => entry.publicationStatus === 'unknown'));
   assert.equal(item.sourceFields['Telegram File ID'], 'fake-file-movie');
   assert.equal(Object.hasOwn(item.sourceFields, 'شناسه URL'), false);
-  assert.equal(item.sourceFields['ژانر'], 'درام');
+  assert.equal(item.sourceFields['سال'], '2020');
   assert.equal(JSON.stringify(item).includes('sourceRecord'), false);
 });
 
