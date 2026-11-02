@@ -12,7 +12,7 @@ function atStage(stage, operation) {
     error.dependency = stage.startsWith('sheet_') ? 'sheets' :
       stage.startsWith('metadata_') ? 'firestore' : 'catalog';
     error.stage = stage;
-    error.errorCode = stage === 'metadata_read' ? 'METADATA_READ_FAILED' : 'CATALOG_STAGE_FAILED';
+    error.errorCode = cause?.dependency === 'firestore' && cause?.stage === stage && typeof cause?.errorCode === 'string' ? cause.errorCode : (stage === 'metadata_read' ? 'METADATA_READ_FAILED' : 'CATALOG_STAGE_FAILED');
     error.cause = cause;
     throw error;
   });
