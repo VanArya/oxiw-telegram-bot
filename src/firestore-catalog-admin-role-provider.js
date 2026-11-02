@@ -261,7 +261,18 @@ function createFirestoreCatalogAdminRoleProvider({
           return Object.freeze({ version: 1, eventId: event.eventId });
         });
       } catch (error) {
-        if (error instanceof CatalogAdminRoleResolutionError || error instanceof TypeError) throw error;
+        if (error instanceof CatalogAdminRoleResolutionError) throw error;
+        // Log only safe error metadata; never log request bodies, credentials, or raw messages.
+        console.error('[catalog-admin-bootstrap] Firestore bootstrap failed', {
+          errorName: typeof error?.name === 'string' ? error.name : 'UnknownError',
+          errorCode: typeof error?.code === 'string' || typeof error?.code === 'number'
+            ? String(error.code).slice(0, 64)
+            : undefined,
+          errorStatus: typeof error?.status === 'string' || typeof error?.status === 'number'
+            ? String(error.status).slice(0, 32)
+            : undefined,
+        });
+        if (error instanceof TypeError) throw error;
         throw makeResolutionError('ROLE_SOURCE_UNAVAILABLE');
       }
     },
