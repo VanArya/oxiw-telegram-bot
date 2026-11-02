@@ -321,7 +321,29 @@ function createCatalogAdminApi({
       if (error?.name === 'CatalogAdminListInputError') {
         return sendError(res, 400, 'INVALID_FILTER', 'فیلتر یا صفحه‌بندی معتبر نیست.');
       }
-      return sendError(res, 500, 'INTERNAL_ERROR', 'فهرست محتوا در دسترس نیست.');
+      const diagnosticRequestId = requestId();
+      const diagnostic = {
+        event: 'catalog_admin_items_read_failed',
+        requestId: diagnosticRequestId,
+        errorName: typeof error?.name === 'string' ? error.name.slice(0, 80) : 'UnknownError',
+        dependency: typeof error?.dependency === 'string' ? error.dependency : undefined,
+        stage: typeof error?.stage === 'string' ? error.stage : undefined,
+        errorCode: typeof error?.errorCode === 'string' ? error.errorCode : undefined,
+        status: Number.isInteger(error?.status) ? error.status : undefined,
+        code: typeof error?.code === 'string' || typeof error?.code === 'number'
+          ? String(error.code).slice(0, 40)
+          : undefined,
+      };
+      // Log only bounded diagnostic metadata; never log messages, tokens, headers,
+      // spreadsheet contents, user identifiers, or raw provider errors.
+      console.error('[catalog-admin-diagnostic]', JSON.stringify(diagnostic));
+      return res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'فهرست محتوا در دسترس نیست.',
+          requestId: diagnosticRequestId,
+        },
+      });
     }
   }));
 
