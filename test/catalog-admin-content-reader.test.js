@@ -71,3 +71,27 @@ test('admin content reader rejects invalid query and ambiguous source identities
   const duplicateReader = makeReader({ source: duplicateSource });
   await assert.rejects(duplicateReader.list(new URLSearchParams()), TypeError);
 });
+
+test('admin content reader preserves a Firestore metadata validation diagnostic stage and code', async () => {
+  const writableProvider = {
+    getContentMetadataWithVersion: async () => null,
+    listContentMetadataWithVersion: async () => {
+      const error = new Error('safe validation failure');
+      error.dependency = 'firestore';
+      error.stage = 'metadata_validation';
+      error.errorCode = 'FIRESTORE_DATA_VALIDATION';
+      throw error;
+    },
+  };
+  const reader = createCatalogAdminContentReader({
+    sheetProvider: createFixtureProvider(sheets),
+    writableProvider,
+  });
+  await assert.rejects(
+    reader.list(new URLSearchParams()),
+    (error) => error.name === 'CatalogAdminListStageError' &&
+      error.dependency === 'firestore' &&
+      error.stage === 'metadata_validation' &&
+      error.errorCode === 'FIRESTORE_DATA_VALIDATION',
+  );
+});
