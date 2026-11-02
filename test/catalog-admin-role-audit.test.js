@@ -111,6 +111,30 @@ test('accepts version 2 bootstrap audit with service-account identity and separa
   assert.equal(event.approvalReference, 'CHG-2026-1042');
 });
 
+test('accepts Firebase owner bootstrap schema v3 and rejects mismatched owner identity', () => {
+  const event = validateCatalogAdminRoleAuditEvent({
+    ...validEvent({
+      operation: 'bootstrap.completed',
+      actorId: 'firebase-owner',
+      targetSubjectId: 'firebase-owner',
+      rolesBefore: [], rolesAfter: ['administrator'],
+      activeBefore: false, activeAfter: true,
+      previousVersion: 0, version: 1,
+    }),
+    schemaVersion: 3,
+    actorType: 'firebase_user',
+    identitySource: 'firebase_admin_id_token',
+    ownerId: 'firebase-owner',
+  });
+  assert.equal(event.schemaVersion, 3);
+  assert.throws(() => validateCatalogAdminRoleAuditEvent({
+    ...event, ownerId: 'different-owner',
+  }), TypeError);
+  assert.throws(() => validateCatalogAdminRoleAuditEvent({
+    ...event, actorType: 'service_account',
+  }), TypeError);
+});
+
 test('rejects untrusted or incomplete version 2 identity and approval fields', () => {
   const v2 = {
     ...validEvent({
