@@ -1081,9 +1081,9 @@ function wireUi() {
     else if (action === 'genres') void loadTaxonomy('genre');
     else if (action === 'audit') void loadAudit();
   }));
-  $('[data-content-kind]').forEach((button) => button.addEventListener('click', () => {
+  $$('[data-content-kind]').forEach((button) => button.addEventListener('click', () => {
     elements.contentKind.value = button.dataset.contentKind;
-    $('[data-content-kind]').forEach((tab) => {
+    $$('[data-content-kind]').forEach((tab) => {
       const active = tab === button;
       tab.classList.toggle('button-primary', active);
       tab.classList.toggle('button-secondary', !active);
