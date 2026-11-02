@@ -122,7 +122,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     const sourceItems = [];
     snapshots.forEach((snapshot, sheetIndex) => {
       const sheetName = SHEETS[sheetIndex];
-      atStage('sheet_snapshot_validation', () => validateSnapshot(sheetName, snapshot));
+      try { validateSnapshot(sheetName, snapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
       snapshot.rows.forEach((row) => {
         const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index]]));
         const mapped = (() => { try { return mapCatalogSheetRow(sheetName, record); } catch (cause) { const error = new Error('Catalog sheet row mapping failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_row_mapping'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; } })();
