@@ -51,6 +51,7 @@ test('repair is idempotent, preserves business fields, and audits atomically', a
   assert.equal(firestore.documents.get(`catalogContentMetadata/${contentId}`)._version, 1);
   assert.equal(firestore.documents.get(`catalogContentMetadata/${contentId}`).customLegacyField, 'preserve');
   assert.equal(firestore.documents.has('catalogAuditEvents/11111111-1111-4111-8111-111111111111'), true);
+  assert.deepEqual(firestore.documents.get('catalogAuditEvents/11111111-1111-4111-8111-111111111111').changedFields, ['_version']);
   const second = await repairInvalidMetadataVersions(options);
   assert.equal(second.repaired, 0);
   assert.equal([...firestore.documents.keys()].filter((key) => key.startsWith('catalogAuditEvents/')).length, 1);
