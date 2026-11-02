@@ -109,7 +109,11 @@ function projectAdminItem(mapped, record, metadataRecord) {
   // source row is exposed wholesale and this DTO is never used by public APIs.
   const sourceFields = {};
   for (const [field, rawValue] of Object.entries(record)) {
-    if (field === 'شناسه URL' || rawValue === undefined || rawValue === null || rawValue === '') continue;
+    if (field === 'شناسه URL') continue;
+    if (rawValue === undefined || rawValue === null) {
+      sourceFields[field] = '';
+      continue;
+    }
     if (typeof rawValue !== 'string' && typeof rawValue !== 'number' && typeof rawValue !== 'boolean') continue;
     const value = String(rawValue);
     sourceFields[field] = value.length <= 10000 ? value : value.slice(0, 10000);
