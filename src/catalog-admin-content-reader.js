@@ -19,6 +19,9 @@ function atStage(stage, operation) {
     error.errorCode = preservesMetadataFailure
       ? cause.errorCode
       : (stage === 'metadata_read' ? 'METADATA_READ_FAILED' : 'CATALOG_STAGE_FAILED');
+    if (preservesMetadataFailure && typeof cause.validationIssue === 'string') {
+      error.validationIssue = cause.validationIssue;
+    }
     error.cause = cause;
     throw error;
   });
