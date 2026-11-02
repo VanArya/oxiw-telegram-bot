@@ -188,6 +188,8 @@ async function createOperationalCatalogRuntime({
         env,
         runtimeProjectId: configuration.projectId,
       }),
+      bootstrapSecret: env.CATALOG_ADMIN_BOOTSTRAP_SECRET,
+      bootstrapOwnerSubjectId: env.CATALOG_ADMIN_BOOTSTRAP_UID,
     });
   } catch {
     throw new CatalogOperationalRuntimeConfigurationError();
