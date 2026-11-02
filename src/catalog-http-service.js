@@ -67,6 +67,7 @@ function createCatalogHttpService({
   auditReader,
   bootstrapSecret,
   bootstrapOwnerSubjectId,
+  metadataVersionMigration,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
     throw new TypeError('Catalog HTTP service requires an injected readSheet provider.');
@@ -100,6 +101,7 @@ function createCatalogHttpService({
     authorizePermission,
     bootstrapSecret,
     bootstrapOwnerSubjectId,
+    metadataVersionMigration,
   });
 
   const app = express();
