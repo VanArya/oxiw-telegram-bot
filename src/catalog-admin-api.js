@@ -241,7 +241,7 @@ function createCatalogAdminApi({
   });
 
   app.post(`${BASE_PATH}/bootstrap`, parseJson, asyncRoute(async (req, res) => {
-    if (typeof provider.bootstrapFirstAdministrator !== 'function' ||
+    if (typeof roleProvider?.bootstrapFirstAdministrator !== 'function' ||
         typeof bootstrapSecret !== 'string' || bootstrapSecret.length < 32 ||
         typeof bootstrapOwnerSubjectId !== 'string' ||
         !/^[A-Za-z0-9_-]{1,128}$/.test(bootstrapOwnerSubjectId)) {
@@ -258,7 +258,7 @@ function createCatalogAdminApi({
       return sendError(res, 403, 'BOOTSTRAP_SECRET_INVALID', 'رمز راه‌اندازی معتبر نیست.');
     }
     try {
-      const result = await provider.bootstrapFirstAdministrator({
+      const result = await roleProvider.bootstrapFirstAdministrator({
         subjectId: res.locals.catalogAdminPrincipal.subjectId,
       });
       return res.status(201).json({ data: { version: result.version } });
