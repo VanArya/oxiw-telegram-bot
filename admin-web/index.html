@@ -77,6 +77,7 @@
               <button class="nav-item" data-view="genres" data-permission="catalog.taxonomies.manage" type="button"><span>05</span> ژانرها</button>
               <button class="nav-item" data-view="audit" type="button"><span>06</span> تاریخچه عملیات</button>
               <button class="nav-item" data-view="account" type="button"><span>07</span> حساب و دسترسی</button>
+              <button class="nav-item" data-view="managers" type="button"><span>08</span> مدیریت مدیران</button>
             </nav>
             <div class="sidebar-note"><span class="status-dot"></span><span>اتصال امن سمت سرور</span></div>
           </aside>
@@ -149,6 +150,18 @@
               <div class="panel"><div class="panel-heading"><h2>نقش‌های فعال</h2></div><div id="account-roles" class="chips"></div><h2 class="subheading">مجوزهای مؤثر</h2><div id="account-permissions" class="permission-list"></div></div>
               <div class="panel" data-permission="catalog.metadata.write"><div class="panel-heading"><h2>تعمیر داده‌های سیستمی</h2></div><p class="muted">فقط مدیر سامانه می‌تواند نسخه‌های داخلی نامعتبر Firestore را بررسی و اصلاح کند. ابتدا پیش‌نمایش بگیرید؛ محتوای Google Sheets تغییر نمی‌کند.</p><button id="metadata-migration-button" class="button button-secondary" type="button" hidden>بررسی رکوردهای Firestore</button><p id="metadata-migration-message" class="fine-print" role="status" aria-live="polite"></p></div>
               <div id="bootstrap-notice" class="notice warning-panel">نقش مدیر اول از پنل ساخته نمی‌شود. provisioning مدیر نخستین تا تعریف و تأیید منشأ مستقل actor و approver غیرفعال است.</div>
+            </section>
+
+            <section id="view-managers" class="view">
+              <div class="page-heading"><div><p class="eyebrow">دسترسی مالک</p><h1>مدیریت مدیران</h1><p class="muted">این بخش برای آماده‌سازی رابط کاربری فعال شده است؛ افزودن و لغو دسترسی تا تأیید مالک در سمت سرور غیرفعال می‌ماند.</p></div><button id="manager-new" class="button button-primary" type="button">افزودن مدیر</button></div>
+              <div id="manager-message" class="notice warning-panel" role="status" aria-live="polite">فرم آماده است؛ ثبت مدیر پس از تکمیل و تأیید احراز مالک فعال خواهد شد.</div>
+              <form id="manager-form" class="panel editor-form" hidden>
+                <div class="panel-heading"><div><p class="eyebrow">مدیر جدید</p><h2>افزودن با ایمیل</h2></div><button id="manager-cancel" class="icon-button" type="button" aria-label="بستن">×</button></div>
+                <label for="manager-email">ایمیل حساب Firebase<input id="manager-email" type="email" maxlength="320" autocomplete="off" required dir="ltr" placeholder="name@example.com"></label>
+                <p class="fine-print">UID حساب در Backend و از Firebase Admin استخراج می‌شود؛ ایمیل به‌تنهایی هویت یا مجوز ایجاد نمی‌کند.</p>
+                <div class="form-actions"><button id="manager-save" class="button button-primary" type="submit" disabled>افزودن مدیر</button><button id="manager-cancel-secondary" class="button button-secondary" type="button">انصراف</button></div>
+              </form>
+              <div class="panel table-panel"><div class="panel-heading"><h2>مدیران فعال</h2></div><div class="table-wrap"><table><thead><tr><th>ایمیل</th><th>شناسه</th><th>نقش</th><th>وضعیت</th></tr></thead><tbody><tr><td colspan="4" class="empty-message">فهرست مدیران پس از اتصال امن سرویس در دسترس خواهد بود.</td></tr></tbody></table></div></div>
             </section>
           </div>
         </div>

@@ -1071,7 +1071,18 @@ async function startFirebase() {
 function wireUi() {
   elements.bootstrapForm.addEventListener('submit', (event) => void bootstrapFirstAdmin(event));
   elements.bootRetry.addEventListener('click', () => void startFirebase());
-  $$('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
+  document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
+  $('#manager-new').addEventListener('click', () => {
+    $('#manager-form').hidden = false;
+    $('#manager-email').focus();
+  });
+  ['#manager-cancel', '#manager-cancel-secondary'].forEach((selector) => {
+    $(selector).addEventListener('click', () => { $('#manager-form').hidden = true; });
+  });
+  $('#manager-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    $('#manager-message').textContent = 'ثبت مدیر تا تأیید احراز مالک در سمت سرور غیرفعال است.';
+  });
   $$('.refresh-button').forEach((button) => button.addEventListener('click', () => {
     const action = button.dataset.refresh;
     if (action === 'overview') void loadOverview();
