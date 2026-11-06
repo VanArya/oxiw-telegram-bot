@@ -1,6 +1,6 @@
 # ADR-0003: چرخهٔ عمر و تأمین نقش‌های مدیر کاتالوگ
 
-- وضعیت: **پیشنهاد معماری برای بررسی مالک؛ provider/bootstrap آفلاین و runtime wiring آماده، تأیید عملیاتی نشده است**
+- وضعیت: **پیشنهاد معماری برای بررسی مالک؛ provider/bootstrap آفلاین و runtime wiring آماده، تأیید عملیاتی نشده است؛ مسیر HTTP bootstrap حذف شده است**
 - تاریخ: 2026-10-26
 - مرتبط: ADR-0001، ADR-0002، `src/catalog-admin-role-provider.js`، `src/catalog-admin-authorization.js`، `CATALOG_API_V1.md`
 
@@ -14,7 +14,7 @@ API مدیریتی قراردادهای مستقلی برای تأیید هوی�
 
 **پیشنهاد مشروط: assignment نقش در یک منبع backend-only و قابل‌تغییر نگهداری شود؛ Firestore نامزد پیشنهادی فعلی است.** در هر درخواست مدیریتی، backend پس از verify شدن هویت، نقش‌ها را از `CatalogAdminRoleProvider` می‌خواند و فقط roleهای allowlist فعلی را به policy می‌دهد. تا روشن‌شدن مالک پروژه، IAM، هزینه، نیازهای دسترس‌پذیری و فرایند عملیات، این انتخاب تصمیم اجرایی نهایی نیست.
 
-هیچ endpoint عمومی یا مدیریتی برای self-registration، ارتقای نقش، bootstrap یا لغو نقش اضافه نمی‌شود. تغییر assignment در آینده باید از فرایند provisioning مورداعتمادِ جدا از API عمومی انجام شود و همراه audit اتمیک باشد. Firebase Authentication به‌عنوان نامزد هویت در ADR-0002 باقی می‌ماند؛ این ADR IdP را انتخاب یا راه‌اندازی نمی‌کند.
+هیچ endpoint عمومی یا مدیریتی برای self-registration، ارتقای نقش، bootstrap یا لغو نقش اضافه نمی‌شود. مسیر قدیمی `POST /api/v1/admin/catalog/bootstrap` نیز در API ثبت نشده است. تغییر assignment در آینده باید از فرایند provisioning مورداعتمادِ جدا از API عمومی انجام شود و همراه audit اتمیک باشد. Firebase Authentication به‌عنوان نامزد هویت در ADR-0002 باقی می‌ماند؛ این ADR IdP را انتخاب یا راه‌اندازی نمی‌کند.
 
 ## مقایسهٔ گزینه‌های نقش
 
@@ -148,5 +148,6 @@ Firestore حداقلی و جداگانه؛ ثبت دو تأییدکنندهٔ م
 - **پیشنهاد:** نقش‌های server-side در Firestore، lookup تازه پس از verify هویت، تغییر فقط از مسیر provisioning کنترل‌شده و audit اتمیک.
 - **پیاده‌سازی آفلاین موجود:** provider تزریقی Firestore، bootstrap اتمیک، شمارندهٔ مدیران فعال و حفاظت از آخرین administrator با fake محلی آزموده شده‌اند؛ این‌ها اتصال عملیاتی یا تصویب schema نیستند.
 - **ابزار مستقل آفلاین:** `src/catalog-admin-bootstrap-entrypoint.js` تأیید هدف/intent، actor ADC تزریقی و seam `bootstrapAdministrator()` را آماده می‌کند. اجرای CLI همچنان fail-closed است چون actor و به‌خصوص approval provider سازمانی به executable وصل نیستند؛ actor/owner/approver از argv/env پذیرفته نمی‌شوند.
+- **مرز HTTP:** پنل و API هیچ مسیر Bootstrap ندارند؛ Firebase authenticated user، owner UID یا secret پنل نمی‌توانند نقش اول را ایجاد کنند.
 - **انجام‌نشده:** حساب مدیر، Firestore/IAM واقعی، schema مصوب، migration/reconciliation، bootstrap کنترل‌شدهٔ production، revoke/recovery عملیاتی و استقرار؛ verifier و runtime wiring موجود فقط کد قابل‌آزمایش‌اند.
 - **نتیجه:** دسترسی مدیریتی واقعی تا تکمیل و تأیید مراحل بالا فعال‌شدنی تلقی نمی‌شود. آزمون‌های fake اثبات امنیت عملیاتی نیستند.

@@ -26,14 +26,6 @@ const {
 
 const BASE_PATH = '/api/v1/admin/catalog';
 
-function constantTimeSecretMatches(candidate, expected) {
-  if (typeof candidate !== 'string' || typeof expected !== 'string' ||
-      candidate.length === 0 || expected.length < 32) return false;
-  const left = Buffer.from(candidate, 'utf8');
-  const right = Buffer.from(expected, 'utf8');
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
-}
-
 function requestId() {
   return crypto.randomUUID();
 }
@@ -180,8 +172,6 @@ function createCatalogAdminApi({
   roleProvider,
   reportRoleResolutionFailure: reportRoleFailure,
   authorizePermission,
-  bootstrapSecret,
-  bootstrapOwnerSubjectId,
 } = {}) {
   const provider = assertVersionedWritableCatalogMetadataProvider(writableProvider);
   const app = express();
@@ -239,40 +229,6 @@ function createCatalogAdminApi({
         return sendError(res, 503, 'AUTHENTICATION_UNAVAILABLE', 'بررسی هویت در دسترس نیست.');
       });
   });
-
-  app.post(`${BASE_PATH}/bootstrap`, parseJson, asyncRoute(async (req, res) => {
-    if (typeof roleProvider?.bootstrapFirstAdministrator !== 'function' ||
-        typeof bootstrapSecret !== 'string' || bootstrapSecret.length < 32 ||
-        typeof bootstrapOwnerSubjectId !== 'string' ||
-        !/^[A-Za-z0-9_-]{1,128}$/.test(bootstrapOwnerSubjectId)) {
-      return sendError(res, 503, 'BOOTSTRAP_NOT_CONFIGURED', 'راه‌اندازی اولیه مدیر پیکربندی نشده است.');
-    }
-    if (res.locals.catalogAdminPrincipal.subjectId !== bootstrapOwnerSubjectId) {
-      return sendError(res, 403, 'BOOTSTRAP_OWNER_MISMATCH', 'این حساب مالک مجاز راه‌اندازی اولیه نیست.');
-    }
-    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body) ||
-        Object.keys(req.body).length !== 1 || !Object.hasOwn(req.body, 'secret')) {
-      return sendError(res, 400, 'INVALID_BOOTSTRAP_REQUEST', 'درخواست راه‌اندازی معتبر نیست.');
-    }
-    if (!constantTimeSecretMatches(req.body.secret, bootstrapSecret)) {
-      return sendError(res, 403, 'BOOTSTRAP_SECRET_INVALID', 'رمز راه‌اندازی معتبر نیست.');
-    }
-    try {
-      const result = await roleProvider.bootstrapFirstAdministrator({
-        subjectId: res.locals.catalogAdminPrincipal.subjectId,
-      });
-      return res.status(201).json({ data: { version: result.version } });
-    } catch (error) {
-      if (error?.code === 'BOOTSTRAP_ALREADY_COMPLETED') {
-        return sendError(res, 409, 'BOOTSTRAP_ALREADY_COMPLETED', 'راه‌اندازی اولیه قبلاً انجام شده است.');
-      }
-      if (error?.code === 'ROLE_CONTROL_MISSING' || error?.code === 'ROLE_CONTROL_INVALID' ||
-          error?.code === 'ROLE_CONTROL_INCONSISTENT') {
-        return sendError(res, 409, 'BOOTSTRAP_STATE_INVALID', 'وضعیت نقش‌های مدیریتی نیازمند بررسی است.');
-      }
-      return sendError(res, 503, 'BOOTSTRAP_UNAVAILABLE', 'راه‌اندازی اولیه موقتاً در دسترس نیست.');
-    }
-  }));
 
   function requirePermission(permission) {
     return (req, res, next) => {

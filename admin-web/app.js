@@ -1,5 +1,6 @@
 const FIREBASE_SDK_VERSION = '13.1.0';
 const API_ROOT = '/api/v1/admin/catalog';
+const { createAuthSessionCoordinator } = globalThis.OXIWAuthSessionCoordinator;
 const PERMISSION_LABELS = Object.freeze({
   'catalog.admin.read': 'مشاهدهٔ مدیریتی',
   'catalog.metadata.write': 'ویرایش فراداده',
@@ -17,7 +18,7 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const elements = Object.fromEntries([
   'bootScreen', 'bootMessage', 'missingConfig', 'bootRetry', 'loginScreen', 'loginMessage',
-  'noAccessScreen', 'noAccessMessage', 'noAccessEmail', 'noAccessUid', 'bootstrapForm', 'bootstrapSecret', 'bootstrapMessage', 'bootstrapButton', 'dashboard',
+  'noAccessScreen', 'noAccessMessage', 'noAccessEmail', 'noAccessUid', 'dashboard',
   'globalMessage', 'contentRows', 'contentCount', 'contentPage', 'contentPrev', 'contentNext',
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
@@ -47,6 +48,7 @@ let genreTerms = [];
 let selectedTaxonomy = { type: null, id: null, etag: null };
 let selectedCategory = { id: null, etag: null };
 let toastTimer;
+let authSessionCoordinator;
 
 function setText(element, value) {
   if (element) element.textContent = value == null ? '' : String(value);
@@ -135,13 +137,6 @@ function messageForError(error) {
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
     INTERNAL_ERROR: 'سرویس نتوانست درخواست را انجام دهد.',
-    BOOTSTRAP_NOT_CONFIGURED: 'راه‌اندازی اولیه مدیر هنوز در تنظیمات سرور فعال نشده است.',
-    BOOTSTRAP_OWNER_MISMATCH: 'این حساب مالک مجاز راه‌اندازی اولیه نیست.',
-    BOOTSTRAP_SECRET_INVALID: 'رمز راه‌اندازی اشتباه است.',
-    BOOTSTRAP_ALREADY_COMPLETED: 'راه‌اندازی اولیه قبلاً انجام شده است.',
-    BOOTSTRAP_STATE_INVALID: 'وضعیت نقش‌های مدیریتی نیازمند بررسی است.',
-    BOOTSTRAP_UNAVAILABLE: 'راه‌اندازی اولیه موقتاً در دسترس نیست.',
-    INVALID_BOOTSTRAP_REQUEST: 'درخواست راه‌اندازی معتبر نیست.',
   };
   return messages[error?.body?.error?.code] || 'درخواست انجام نشد؛ وضعیت سرویس را دوباره بررسی کنید.';
 }
@@ -907,40 +902,26 @@ function renderSession(user, data) {
   selectView('overview');
 }
 
-async function bootstrapFirstAdmin(event) {
-  event.preventDefault();
-  if (!currentUser || !elements.bootstrapSecret.value) return;
-  const button = elements.bootstrapButton;
-  const secret = elements.bootstrapSecret.value;
-  setBusy(button, true);
-  setText(elements.bootstrapMessage, 'در حال بررسی هویت و راه‌اندازی مدیر…');
-  try {
-    await api(`${API_ROOT}/bootstrap`, {
-      method: 'POST',
-      body: JSON.stringify({ secret }),
-    });
-    elements.bootstrapSecret.value = '';
-    setText(elements.bootstrapMessage, 'دسترسی مدیر فعال شد؛ در حال بارگذاری پنل…');
-    await handleAuthState(currentUser);
-  } catch (error) {
-    setText(elements.bootstrapMessage, error.message || 'راه‌اندازی انجام نشد.');
-  } finally {
-    setBusy(button, false);
-  }
+async function handleAuthState(user) {
+  authSessionCoordinator.transition(user);
 }
 
-async function handleAuthState(user) {
-  currentUser = user;
-  session = null;
-  if (!user) {
+authSessionCoordinator = createAuthSessionCoordinator({
+  loadSession: async ({ signal }) => {
+    const { body } = await api(`${API_ROOT}/me`, { signal });
+    return body.data;
+  },
+  onAuthenticated: (user) => {
+    currentUser = user;
+    session = null;
+  },
+  onUnauthenticated: () => {
+    currentUser = null;
     session = null;
     showLogin();
-    return;
-  }
-  try {
-    const { body } = await api(`${API_ROOT}/me`);
-    renderSession(user, body.data);
-  } catch (error) {
+  },
+  onSession: (user, data) => renderSession(user, data),
+  onError: (error, user) => {
     if (error.status === 403) {
       session = null;
       showNoAccess(user);
@@ -959,8 +940,8 @@ async function handleAuthState(user) {
     setGlobalMessage(error.message || 'بررسی دسترسی در دسترس نیست.', { requestId: error.requestId });
     setText($('#top-email'), user.email || 'ایمیل در دسترس نیست');
     $$('.nav-item').forEach((item) => { item.hidden = true; });
-  }
-}
+  },
+});
 
 async function startFirebase() {
   elements.bootMessage.textContent = 'پیکربندی Firebase دریافت می‌شود…';
@@ -988,8 +969,15 @@ async function startFirebase() {
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`),
     ]);
     const app = appModule.initializeApp(firebaseConfig);
-    auth = authModule.getAuth(app);
-    signOutCurrentUser = () => authModule.signOut(auth);
+    // Do not restore a browser-persistent Firebase session. Auth state is kept
+    // only in memory and must be re-established after a page reload.
+    auth = authModule.initializeAuth(app, {
+      persistence: authModule.inMemoryPersistence,
+    });
+    signOutCurrentUser = () => {
+      authSessionCoordinator.invalidate();
+      return authModule.signOut(auth);
+    };
     authModule.onAuthStateChanged(auth, (user) => { void handleAuthState(user); });
     $('#sign-in').addEventListener('click', async (event) => {
       const button = event.currentTarget;
@@ -1007,8 +995,8 @@ async function startFirebase() {
         setText(elements.loginMessage, messages[error?.code] || 'ورود انجام نشد؛ تنظیمات Authentication را بررسی کنید.');
       } finally { setBusy(button, false); }
     });
-    $('#sign-out').addEventListener('click', () => void authModule.signOut(auth));
-    $('#no-access-sign-out').addEventListener('click', () => void authModule.signOut(auth));
+    $('#sign-out').addEventListener('click', () => void signOutCurrentUser());
+    $('#no-access-sign-out').addEventListener('click', () => void signOutCurrentUser());
   } catch {
     elements.bootMessage.textContent = 'راه‌اندازی Firebase انجام نشد؛ تنظیمات Web App و دسترسی مرورگر را بررسی کنید.';
     elements.bootRetry.hidden = false;
@@ -1016,7 +1004,6 @@ async function startFirebase() {
 }
 
 function wireUi() {
-  elements.bootstrapForm.addEventListener('submit', (event) => void bootstrapFirstAdmin(event));
   elements.bootRetry.addEventListener('click', () => void startFirebase());
   $$('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
   $$('.refresh-button').forEach((button) => button.addEventListener('click', () => {

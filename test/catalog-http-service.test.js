@@ -117,6 +117,9 @@ test('serves the isolated admin shell and a controlled public Firebase config er
 
     const localConfig = await fetch(`${baseUrl}/admin/firebase-config.js`);
     assert.equal(localConfig.status, 404);
+    const authCoordinator = await fetch(`${baseUrl}/admin/auth-session-coordinator.js`);
+    assert.equal(authCoordinator.status, 200);
+    assert.match(await authCoordinator.text(), /createAuthSessionCoordinator/);
     const exampleConfig = await fetch(`${baseUrl}/admin/firebase-config.example.js`);
     assert.equal(exampleConfig.status, 404);
     const hiddenFile = await fetch(`${baseUrl}/admin/.env`);

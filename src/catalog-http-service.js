@@ -14,7 +14,7 @@ const {
 const DEFAULT_PORT = 8080;
 const PUBLIC_CATALOG_PATH = '/api/v1/catalog';
 const ADMIN_CATALOG_PATH = '/api/v1/admin/catalog';
-const ADMIN_WEB_STATIC_FILES = new Set(['/app.js', '/styles.css']);
+const ADMIN_WEB_STATIC_FILES = new Set(['/app.js', '/auth-session-coordinator.js', '/styles.css']);
 const REQUIRED_READINESS_CHECKS = Object.freeze([
   'sheetSource',
   'metadataStore',
@@ -65,8 +65,6 @@ function createCatalogHttpService({
   logger,
   getAdminWebConfig,
   auditReader,
-  bootstrapSecret,
-  bootstrapOwnerSubjectId,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
     throw new TypeError('Catalog HTTP service requires an injected readSheet provider.');
@@ -98,8 +96,6 @@ function createCatalogHttpService({
     roleProvider,
     reportRoleResolutionFailure,
     authorizePermission,
-    bootstrapSecret,
-    bootstrapOwnerSubjectId,
   });
 
   const app = express();

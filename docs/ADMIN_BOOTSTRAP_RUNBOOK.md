@@ -1,42 +1,62 @@
 # Runbook راه‌اندازی اولیه مدیر Catalog
 
-وضعیت: **Bootstrap تک‌مالک با Firebase Authentication و رمز یک‌بارمصرف سرور**.
+وضعیت: **ابزار مستقل provisioning؛ بدون endpoint HTTP و بدون فعال‌سازی عملیاتی**.
 
-## سازوکار
+## سیاست
 
-راه‌اندازی اولیه از مسیر محافظت‌شدهٔ `POST /api/v1/admin/catalog/bootstrap` انجام می‌شود.
-ابتدا Firebase ID Token با Firebase Admin اعتبارسنجی می‌شود؛ سپس UID باید دقیقاً با
-`CATALOG_ADMIN_BOOTSTRAP_UID` برابر باشد و رمز محرمانهٔ
-`CATALOG_ADMIN_BOOTSTRAP_SECRET` نیز صحیح باشد.
+راه‌اندازی اولین مدیر از مسیر عمومی یا پنل انجام نمی‌شود. مسیر
+`POST /api/v1/admin/catalog/bootstrap` عمداً وجود ندارد. Firebase Authentication
+فقط برای احراز هویت کاربران عادی پنل است و به‌تنهایی مجوز ساخت نقش مدیر ایجاد
+نمی‌کند.
 
-سرور فقط UID استخراج‌شده از توکن معتبر را به `bootstrapFirstAdministrator()` می‌دهد.
-UID یا نقش از بدنهٔ درخواست پذیرفته نمی‌شود. تخصیص مدیر، سند کنترل و رخداد audit
-با schema v3 در یک تراکنش Firestore ساخته می‌شوند. اگر کنترل یا هر assignment قدیمی
-وجود داشته باشد، bootstrap متوقف می‌شود؛ اجرای مجدد نیز رد خواهد شد.
+ابزار مستقل `catalog:bootstrap-admin` تنها از طریق `bootstrapAdministrator()` در
+Role Provider کار می‌کند. این ابزار تا زمانی که trusted actor مبتنی بر ADC و
+Service Account Impersonation و همچنین منبع مستقل تأیید مالک/نفر دوم به آن تزریق
+نشوند، fail-closed و غیرقابل‌اجرا است.
 
-## تنظیمات Render
+## پیش‌نیازهای تصمیم و دسترسی
 
-در Environment (ترجیحاً Linked Environment Group متصل به سرویس) دو متغیر اضافه شود:
+- تصویب مالک پروژه برای حساب هدف؛
+- Service Account اختصاصی provisioning، جدا از حساب runtime، با مجوز موقت و محدود؛
+- اثبات هویت مؤثر از ADC impersonation، نه مقدار argv یا environment؛
+- تأیید مستقل owner و approver با مرجع قابل ممیزی؛
+- تأیید پروژه، دیتابیس، schema پیشنهادی، backup و روش rollback؛
+- اجرای ابزار در محیط مورداعتماد و خارج از مسیر عمومی HTTP.
 
-- `CATALOG_ADMIN_BOOTSTRAP_UID`: UID حساب Firebase مالک.
-- `CATALOG_ADMIN_BOOTSTRAP_SECRET`: رمز تصادفی حداقل ۳۲ کاراکتری.
+هیچ‌یک از این منابع سازمانی در این مخزن به‌صورت عملیاتی متصل نیستند. بنابراین
+وجود کد و تست fake به‌معنای آمادگی اجرای Production نیست.
 
-رمز را با password manager تولید کن. آن را در گفتگو، Git، URL یا log قرار نده.
-این متغیرها فقط برای راه‌اندازی اولیه‌اند.
+## اجرای کنترل‌شده پس از تصویب
 
-## اجرای اولیه
+پس از اتصال و بازبینی منابع trusted، ابزار فقط با تأیید صریح اجرا می‌شود:
 
-1. دو متغیر بالا را در Render تنظیم و deploy کن.
-2. با همان حساب Google مالک وارد `/admin/` شو.
-3. در صفحهٔ «دسترسی مدیریتی تخصیص داده نشده»، رمز راه‌اندازی را وارد و فعال‌سازی را اجرا کن.
-4. پس از نمایش داشبورد، هر دو متغیر Bootstrap را از Render حذف کن و deploy مجدد انجام بده.
-5. در تاریخچهٔ پنل و Firestore بررسی کن که رخداد `bootstrap.completed` ثبت شده و شمارندهٔ مدیران فعال برابر یک است.
+```text
+npm run catalog:bootstrap-admin -- --target-subject-id <approved-subject> --confirm BOOTSTRAP_FIRST_ADMIN
+```
 
-حذف رمز پس از موفقیت، مسیر Bootstrap را غیرفعال می‌کند؛ نقش ثبت‌شده باقی می‌ماند.
+`<approved-subject>` باید از منبع هویتی مورداعتماد بیاید؛ مقدار آزاد CLI مدرک
+هویت نیست. ابزار باید پیش از mutation تنظیمات، actor، approval و وضعیت خالی
+سیستم را بررسی کند.
 
-## توقف امن
+عملیات موفق در یک تراکنش مشترک assignment اولیه با نقش `administrator`، control
+marker/count و audit event را ثبت می‌کند. وجود هر assignment قبلی، marker نامعتبر
+یا شمارندهٔ ناسازگار باید عملیات را متوقف کند.
 
-- هیچ assignment یا نقش را دستی در Firestore ایجاد یا اصلاح نکن.
-- اگر marker، assignment قدیمی یا شمارنده ناسازگار وجود دارد، مسیر را متوقف کن؛ reset یا پاک‌سازی خودکار وجود ندارد.
-- رمز Bootstrap را بعد از موفقیت نگه ندار.
-- این روش برای راه‌اندازی یک مالک مشخص طراحی شده است. اعطای نقش‌های دیگر باید از مسیر مدیریتی مورداعتماد و audit‌شده انجام شود.
+## بررسی پس از اجرا
+
+فقط از کانال read-only موردتأیید بررسی کنید که:
+
+1. رخداد `bootstrap.completed` ثبت شده است؛
+2. assignment هدف فعال و دارای نقش `administrator` است؛
+3. شمارندهٔ مدیران فعال با assignmentها سازگار است؛
+4. هیچ token، credential یا secret در audit/log ثبت نشده است.
+
+## توقف امن و rollback
+
+- در وضعیت مبهم یا خطای audit، عملیات را تکرار یا marker را دستی reset نکنید.
+- ابزار را پس از استفاده غیرفعال و مجوز موقت Service Account را لغو کنید.
+- recovery یا rollback فقط با approval مستقل، backup معتبر و runbook جداگانه انجام شود.
+- تغییر دستی assignment یا audit در Firestore مجاز نیست.
+
+نام collectionها و schemaهای Role/Audit در ADR همچنان پیشنهادی‌اند و تا تصویب
+مالک، قرارداد عملیاتی محسوب نمی‌شوند.

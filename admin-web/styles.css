@@ -142,23 +142,3 @@ tbody tr:hover { background: #fbfdfd; }
 @media (max-width: 420px) {
   .stats-grid { gap: .45rem; }.stat-card { min-height: 6.2rem; padding: .8rem; }.stat-card strong { font-size: 1.4rem; }.toolbar { grid-template-columns: 1fr; }.toolbar .search-control, .toolbar > button { grid-column: auto; }.topbar-account { gap: .2rem; }.brand small { display: none; }
 }
-
-
-.bootstrap-form {
-  display: grid;
-  gap: 0.7rem;
-  width: min(100%, 28rem);
-  margin: 1.25rem auto;
-  padding: 1rem;
-  border: 1px solid var(--border, #d9dee8);
-  border-radius: 1rem;
-  text-align: right;
-}
-.bootstrap-form input {
-  width: 100%;
-  min-width: 0;
-}
-.bootstrap-form [role="status"] {
-  margin: 0;
-  overflow-wrap: anywhere;
-}

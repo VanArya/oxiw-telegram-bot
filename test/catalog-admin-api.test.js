@@ -765,44 +765,24 @@ test('in-memory writer rejects duplicate keys, invalid metadata and disabling re
   );
 });
 
-test('one-time bootstrap requires the verified owner identity and configured secret', async () => {
+test('legacy HTTP bootstrap route is not exposed', async () => {
   const store = createStore();
-  const calls = [];
-  const ownerId = 'KJN9jIBKCEUqzfRN3lTktcv3Z9b2';
-  const secret = 'test-only-bootstrap-secret-value-1234567890';
   const roleProvider = {
     async resolveRoles() { return []; },
-    async bootstrapFirstAdministrator({ subjectId }) {
-      calls.push(subjectId);
-      return { version: 1, eventId: 'bootstrap-event' };
-    },
   };
   const app = createCatalogAdminApi({
     writableProvider: store,
-    verifyAdminPrincipal: async () => ({ authenticated: true, subjectId: ownerId }),
+    verifyAdminPrincipal: async () => ({ authenticated: true, subjectId: 'fixture-admin' }),
     roleProvider,
     authorizePermission: roleAuthorizer,
-    bootstrapSecret: secret,
-    bootstrapOwnerSubjectId: ownerId,
   });
   await withServer(app, async (baseUrl) => {
-    const wrongSecret = await json(await fetch(`${baseUrl}${ADMIN_PATH}/bootstrap`, {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/bootstrap`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ secret: 'wrong-secret-value' }),
+      body: JSON.stringify({ secret: 'not-used' }),
     }));
-    assert.equal(wrongSecret.status, 403);
-    assert.equal(wrongSecret.body.error.code, 'BOOTSTRAP_SECRET_INVALID');
-    assert.deepEqual(calls, []);
-
-    const success = await json(await fetch(`${baseUrl}${ADMIN_PATH}/bootstrap`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ secret }),
-    }));
-    assert.equal(success.status, 201);
-    assert.deepEqual(success.body.data, { version: 1 });
-    assert.deepEqual(calls, [ownerId]);
-    assert.equal(JSON.stringify(success.body).includes(secret), false);
+    assert.equal(result.status, 404);
+    assert.equal(result.body.error.code, 'NOT_FOUND');
   });
 });

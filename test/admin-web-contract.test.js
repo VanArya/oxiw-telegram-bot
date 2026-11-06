@@ -23,3 +23,11 @@ test('Firebase browser configuration comes from the same-origin runtime endpoint
   assert.doesNotMatch(appSource, /from ['"].*firebase-config\.js/);
   assert.match(html, /\/admin\/app\.js/);
 });
+
+test('Firebase Auth explicitly uses in-memory persistence before auth listeners or sign-in', () => {
+  assert.match(appSource, /initializeAuth\(app,\s*\{\s*persistence:\s*authModule\.inMemoryPersistence/s);
+  assert.doesNotMatch(appSource, /authModule\.getAuth\(/);
+  assert.doesNotMatch(appSource, /browserLocalPersistence|browserSessionPersistence/);
+  assert.ok(appSource.indexOf('initializeAuth(app') < appSource.indexOf('onAuthStateChanged'));
+  assert.ok(appSource.indexOf('initializeAuth(app') < appSource.indexOf('signInWithPopup'));
+});

@@ -67,8 +67,6 @@ async function createCatalogRuntime({
   auditCollection,
   clock,
   getAdminWebConfig,
-  bootstrapSecret,
-  bootstrapOwnerSubjectId,
 } = {}) {
   const spreadsheetId = requireEnvironment(env);
   requireDependencies({
@@ -127,8 +125,6 @@ async function createCatalogRuntime({
       readinessCheck,
       ...(categories === undefined ? {} : { categories }),
       ...(getAdminWebConfig === undefined ? {} : { getAdminWebConfig }),
-      bootstrapSecret,
-      bootstrapOwnerSubjectId,
     });
   } catch {
     throw new CatalogRuntimeConfigurationError();
