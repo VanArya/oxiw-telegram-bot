@@ -1071,7 +1071,7 @@ async function startFirebase() {
 function wireUi() {
   elements.bootstrapForm.addEventListener('submit', (event) => void bootstrapFirstAdmin(event));
   elements.bootRetry.addEventListener('click', () => void startFirebase());
-  $('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
+  document.querySelectorAll('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
   $('#manager-new').addEventListener('click', () => {
     $('#manager-form').hidden = false;
     $('#manager-email').focus();
