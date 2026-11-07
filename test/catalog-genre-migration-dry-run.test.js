@@ -200,6 +200,8 @@ test('unmapped genres are discovered even when every content metadata document i
   });
   const labels = report['migration-preview'].newGenres.map((item) => item.label);
   assert.deepEqual(labels.sort(), ['کمدی', 'معمایی'].sort());
-  assert.equal(report.summary.metadataCreateCandidates, 0);
-  assert.equal(report.summary.needsReview, 3);
+  assert.equal(report.summary.metadataCreateCandidates, 1);
+  assert.equal(report.summary.needsReview, 2);
+  const candidate = report['migration-preview'].assignments.find((entry) => entry.contentId.endsWith(':two'));
+  assert.equal(candidate.status, 'create_metadata');
 });
