@@ -10,7 +10,7 @@ async function main() {
     metadataProvider: runtime.writableProvider,
     taxonomyProvider: runtime.writableProvider,
   });
-  process.stdout.write(\`${JSON.stringify(report, null, 2)}\n\`);
+  process.stdout.write(JSON.stringify(report, null, 2) + '\n');
 }
 
 if (require.main === module) {
