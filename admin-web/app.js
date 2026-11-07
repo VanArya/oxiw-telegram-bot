@@ -41,6 +41,7 @@ let auditPage = 1;
 let contentTotal = 0;
 let auditHasMore = false;
 let contentStats = null;
+let contentFilterOptionsLoaded = false;
 let currentItems = [];
 let selectedItem = null;
 let selectedMetadata = null;
@@ -523,8 +524,9 @@ async function loadContent() {
   const button = $('#content-search-button');
   setBusy(button, true);
   try {
-    if (!elements.contentCountry.options.length || !elements.contentGenre.options.length || !elements.contentCategory.options.length) {
+    if (!contentFilterOptionsLoaded) {
       await loadContentFilterOptions();
+      contentFilterOptionsLoaded = true;
     }
     const { body } = await api(`${API_ROOT}/items?${contentQuery()}`);
     currentItems = body.data;
