@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { GENRE_TERMS, normalizeLabel, planGenreTaxonomySeed, applyGenreTaxonomySeed } = require('../src/catalog-genre-taxonomy-seed');
 
-test('genre seed contains exactly 27 approved new genres and excludes Korean', () => {
-  assert.equal(GENRE_TERMS.length, 27);
-  assert.equal(GENRE_TERMS.some((term) => term.labelFa === 'کره ای'), false);
-  assert.equal(new Set(GENRE_TERMS.map((term) => term.id)).size, 27);
-  assert.equal(new Set(GENRE_TERMS.map((term) => normalizeLabel(term.labelFa))).size, 27);
+test('genre seed contains exactly 28 approved new genres including Korean', () => {
+  assert.equal(GENRE_TERMS.length, 28);
+  assert.equal(GENRE_TERMS.some((term) => term.id === 'Korean' && term.labelFa === 'کره ای'), true);
+  assert.equal(new Set(GENRE_TERMS.map((term) => term.id)).size, 28);
+  assert.equal(new Set(GENRE_TERMS.map((term) => normalizeLabel(term.labelFa))).size, 28);
 });
 
 test('Persian label normalization removes ZWNJ and whitespace differences', () => {
@@ -17,14 +17,14 @@ test('Persian label normalization removes ZWNJ and whitespace differences', () =
 
 test('seed plan creates only missing terms and preserves existing Dream drama term', () => {
   const plan = planGenreTaxonomySeed([{ id: 'Dream', labelFa: 'درام', enabled: true }]);
-  assert.equal(plan.create.length, 27);
+  assert.equal(plan.create.length, 28);
   assert.deepEqual(plan.alreadyPresent, []);
   assert.deepEqual(plan.conflicts, []);
 });
 
 test('seed plan treats matching Persian label as already present without changing its ID', () => {
   const plan = planGenreTaxonomySeed([{ id: 'existing-action', labelFa: 'اکشن', enabled: true }]);
-  assert.equal(plan.create.length, 26);
+  assert.equal(plan.create.length, 27);
   assert.deepEqual(plan.alreadyPresent, [{ id: 'existing-action', labelFa: 'اکشن' }]);
 });
 
@@ -57,7 +57,7 @@ test('apply uses create-only expectedVersion zero and preserves existing terms',
       async upsertTaxonomyTerm(...args) { writes.push(args); },
     },
   });
-  assert.equal(result.created.length, 27);
-  assert.equal(writes.length, 27);
+  assert.equal(result.created.length, 28);
+  assert.equal(writes.length, 28);
   assert.ok(writes.every(([, , , options]) => options.expectedVersion === 0));
 });
