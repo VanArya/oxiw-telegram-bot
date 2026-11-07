@@ -1148,6 +1148,7 @@ async function startFirebase() {
     // only in memory and must be re-established after a page reload.
     auth = authModule.initializeAuth(app, {
       persistence: authModule.inMemoryPersistence,
+      popupRedirectResolver: authModule.browserPopupRedirectResolver,
     });
     signOutCurrentUser = () => {
       authSessionCoordinator.invalidate();
