@@ -20,7 +20,7 @@ const elements = Object.fromEntries([
   'bootScreen', 'bootMessage', 'missingConfig', 'bootRetry', 'loginScreen', 'loginMessage',
   'noAccessScreen', 'noAccessMessage', 'noAccessEmail', 'noAccessUid', 'dashboard',
   'globalMessage', 'contentRows', 'contentCount', 'contentPage', 'contentPrev', 'contentNext',
-  'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'statsGrid',
+  'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'contentCountry', 'contentGenre', 'contentCategory', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
@@ -489,13 +489,43 @@ function contentQuery() {
   if (elements.contentKind.value) params.set('kind', elements.contentKind.value);
   if (elements.contentApproval.value) params.set('approvalStatus', elements.contentApproval.value);
   if (elements.contentPublication.value) params.set('publicationStatus', elements.contentPublication.value);
+  if (elements.contentCountry.value) params.set('countryId', elements.contentCountry.value);
+  if (elements.contentGenre.value) params.set('genreId', elements.contentGenre.value);
+  if (elements.contentCategory.value) params.set('categoryId', elements.contentCategory.value);
   return params;
+}
+
+function populateFilterSelect(select, terms, labelFor) {
+  const current = select.value;
+  select.replaceChildren(new Option('همه', ''));
+  terms.filter((term) => term.enabled).forEach((term) => {
+    select.append(new Option(labelFor(term), term.id));
+  });
+  if ([...select.options].some((option) => option.value === current)) select.value = current;
+}
+
+async function loadContentFilterOptions() {
+  const [countriesResult, genresResult, categoriesResult] = await Promise.all([
+    api(`${API_ROOT}/taxonomies/country`),
+    api(`${API_ROOT}/taxonomies/genre`),
+    api(`${API_ROOT}/categories`),
+  ]);
+  countryTerms = countriesResult.body.data;
+  genreTerms = genresResult.body.data;
+  categoryTerms = categoriesResult.body.data;
+  populateFilterSelect(elements.contentCountry, countryTerms, (term) => term.labelFa);
+  populateFilterSelect(elements.contentGenre, genreTerms, (term) => term.labelFa);
+  populateFilterSelect(elements.contentCategory, categoryTerms, (term) =>
+    term.localizedTitle?.fa || term.slug || term.id);
 }
 
 async function loadContent() {
   const button = $('#content-search-button');
   setBusy(button, true);
   try {
+    if (!elements.contentCountry.options.length || !elements.contentGenre.options.length || !elements.contentCategory.options.length) {
+      await loadContentFilterOptions();
+    }
     const { body } = await api(`${API_ROOT}/items?${contentQuery()}`);
     currentItems = body.data;
     contentTotal = body.meta.total;
@@ -1213,10 +1243,15 @@ function wireUi() {
   }));
   elements.managerForm.addEventListener('submit', (event) => void addManager(event));
   $('#content-search-button').addEventListener('click', () => { contentPage = 1; void loadContent(); });
+  $('#content-filter-reset').addEventListener('click', () => {
+    [elements.contentSearch, elements.contentApproval, elements.contentPublication, elements.contentCountry, elements.contentGenre, elements.contentCategory].forEach((control) => { control.value = ''; });
+    contentPage = 1;
+    void loadContent();
+  });
   elements.contentSearch.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { contentPage = 1; void loadContent(); }
   });
-  [elements.contentKind, elements.contentApproval, elements.contentPublication].forEach((select) => {
+  [elements.contentKind, elements.contentApproval, elements.contentPublication, elements.contentCountry, elements.contentGenre, elements.contentCategory].forEach((select) => {
     select.addEventListener('change', () => { contentPage = 1; void loadContent(); });
   });
   elements.contentPrev.addEventListener('click', () => { if (contentPage > 1) { contentPage -= 1; void loadContent(); } });
