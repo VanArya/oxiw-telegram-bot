@@ -5,10 +5,16 @@ const { runGenreMigrationDryRun } = require('../src/catalog-genre-migration-dry-
 
 async function main() {
   const runtime = await createOperationalCatalogRuntime();
+  const readOnlyMetadataProvider = Object.freeze({
+    listContentMetadataWithVersion: runtime.writableProvider.listContentMetadataWithVersion.bind(runtime.writableProvider),
+  });
+  const readOnlyTaxonomyProvider = Object.freeze({
+    listAllTaxonomyTerms: runtime.writableProvider.listAllTaxonomyTerms.bind(runtime.writableProvider),
+  });
   const report = await runGenreMigrationDryRun({
     sheetProvider: runtime.provider,
-    metadataProvider: runtime.writableProvider,
-    taxonomyProvider: runtime.writableProvider,
+    metadataProvider: readOnlyMetadataProvider,
+    taxonomyProvider: readOnlyTaxonomyProvider,
   });
   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
 }
