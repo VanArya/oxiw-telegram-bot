@@ -61,6 +61,23 @@ test('admin content reader searches title or system code and applies filters bef
   assert.equal(page.data.length, 3);
 });
 
+test('admin content reader combines taxonomy and category filters before pagination', async () => {
+  const movieId = createCatalogContentId('movie', 'fixture-movie-ir');
+  const reader = makeReader({
+    contentMetadata: [{
+      contentId: movieId, approvalStatus: 'approved', publicationStatus: 'draft',
+      countryIds: ['IR'], genreIds: ['drama'],
+    }],
+  });
+  const country = await reader.list(new URLSearchParams('countryId=IR&pageSize=100'));
+  assert.equal(country.meta.total, 1);
+  assert.equal(country.data[0].id, movieId);
+  const genre = await reader.list(new URLSearchParams('genreId=drama&pageSize=100'));
+  assert.equal(genre.meta.total, 1);
+  const invalid = await reader.list(new URLSearchParams('countryId=US'));
+  assert.equal(invalid.meta.total, 0);
+});
+
 test('admin content reader rejects invalid query and ambiguous source identities', async () => {
   const reader = makeReader();
   await assert.rejects(reader.list(new URLSearchParams('pageSize=101')),
