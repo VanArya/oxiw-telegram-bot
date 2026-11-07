@@ -82,3 +82,80 @@ test('ambiguous normalized taxonomy labels are never auto-mapped', async () => {
   assert.deepEqual(first.ambiguousGenres, ['درام']);
   assert.equal(report['normalization-report'].duplicateTaxonomyLabels.length, 1);
 });
+
+
+test('duplicate source content IDs are marked for manual review', async () => {
+  const duplicateSheetProvider = {
+    async readSheet(name) {
+      return name === 'سینمایی'
+        ? { headers: ['کد سیستم', 'اسم فیلم', 'سال', 'ژانر'], rows: [
+          ['duplicate', 'عنوان اول', '2020', 'درام'],
+          ['duplicate', 'عنوان دوم', '2021', 'کمدی'],
+        ] }
+        : { headers: ['کد سیستم', 'اسم فیلم', 'سال شروع', 'سال پایان', 'ژانر'], rows: [] };
+    },
+  };
+  const metadataProvider = {
+    async listContentMetadataWithVersion() {
+      return [{ value: {
+        contentId: createCatalogContentId('movie', 'duplicate'),
+        approvalStatus: 'approved', publicationStatus: 'draft', genreIds: [],
+      } }];
+    },
+  };
+  const taxonomyProvider = {
+    async listAllTaxonomyTerms() {
+      return [
+        { id: 'drama', labelFa: 'درام', enabled: true },
+        { id: 'comedy', labelFa: 'کمدی', enabled: true },
+      ];
+    },
+  };
+  const report = await runGenreMigrationDryRun({
+    sheetProvider: duplicateSheetProvider,
+    metadataProvider,
+    taxonomyProvider,
+  });
+  const item = report['migration-preview'].assignments.find((entry) => entry.contentId.endsWith(':duplicate'));
+  assert.equal(item.status, 'needs_review');
+  assert.equal(item.reason, 'CONTENT_ID_DUPLICATE');
+  assert.equal(report.summary.duplicateContentIds, 1);
+});
+
+test('missing or empty source genre data never proposes clearing existing metadata', async () => {
+  const incompleteSheetProvider = {
+    async readSheet(name) {
+      return name === 'سینمایی'
+        ? { headers: ['کد سیستم', 'اسم فیلم', 'سال'], rows: [['movie-empty', 'فیلم بدون ژانر', '2020']] }
+        : { headers: ['کد سیستم', 'اسم فیلم', 'سال شروع', 'سال پایان', 'ژانر'], rows: [
+          ['series-empty', 'سریال بدون ژانر', '2020', '2021', ''],
+        ] };
+    },
+  };
+  const metadataProvider = {
+    async listContentMetadataWithVersion() {
+      return [
+        { value: { contentId: createCatalogContentId('movie', 'movie-empty'), approvalStatus: 'approved', publicationStatus: 'draft', genreIds: ['drama'] } },
+        { value: { contentId: createCatalogContentId('series', 'series-empty'), approvalStatus: 'approved', publicationStatus: 'draft', genreIds: ['comedy'] } },
+      ];
+    },
+  };
+  const taxonomyProvider = {
+    async listAllTaxonomyTerms() {
+      return [
+        { id: 'drama', labelFa: 'درام', enabled: true },
+        { id: 'comedy', labelFa: 'کمدی', enabled: true },
+      ];
+    },
+  };
+  const report = await runGenreMigrationDryRun({
+    sheetProvider: incompleteSheetProvider,
+    metadataProvider,
+    taxonomyProvider,
+  });
+  const movie = report['migration-preview'].assignments.find((entry) => entry.contentId.endsWith(':movie-empty'));
+  const series = report['migration-preview'].assignments.find((entry) => entry.contentId.endsWith(':series-empty'));
+  assert.equal(movie.reason, 'GENRE_COLUMN_MISSING');
+  assert.equal(series.reason, 'GENRE_SOURCE_EMPTY');
+  assert.equal(report.summary.transferableAssignments, 0);
+});
