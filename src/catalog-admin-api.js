@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const express = require('express');
+const { getCategoryItems } = require('./catalog-core');
 const { FirebaseAdminTokenVerificationError } = require('./firebase-admin-id-token-verifier');
 const {
   normalizeVerifiedCatalogPrincipal,
@@ -25,6 +26,8 @@ const {
 } = require('./catalog-metadata-validation');
 
 const BASE_PATH = '/api/v1/admin/catalog';
+const SUBJECT_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function requestId() {
   return crypto.randomUUID();
@@ -116,7 +119,9 @@ function sendKnownError(res, error) {
     }
     const code = error.code === 'PUBLICATION_REQUIRES_APPROVAL'
       ? 'APPROVAL_REQUIRED'
-      : 'CONFLICT';
+      : ['CATEGORY_IN_USE', 'CATEGORY_REFERENCE_INVALID', 'TAXONOMY_REFERENCE_INVALID'].includes(error.code)
+        ? error.code
+        : 'CONFLICT';
     const message = code === 'APPROVAL_REQUIRED'
       ? 'پیش از انتشار عمومی، محتوا باید تأیید شده باشد.'
       : 'درخواست با داده‌های موجود سازگار نیست.';
@@ -132,6 +137,31 @@ function asyncRoute(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 }
 
+function isStableSubjectId(value) {
+  return typeof value === 'string' && SUBJECT_ID_PATTERN.test(value);
+}
+
+function publicManagerAssignment(value, email) {
+  if (!value || typeof value !== 'object' || !isStableSubjectId(value.subjectId) ||
+      !Array.isArray(value.roles) || typeof value.active !== 'boolean' ||
+      !Number.isSafeInteger(value.version) || value.version < 1) {
+    throw new CatalogInputError();
+  }
+  if (email !== undefined &&
+      (typeof email !== 'string' || email.length === 0 || email.length > 320)) {
+    throw new CatalogInputError();
+  }
+  return {
+    subjectId: value.subjectId,
+    roles: [...normalizeCatalogAdminRoles(value.roles)],
+    active: value.active,
+    version: value.version,
+    ...(value.createdAt === undefined ? {} : { createdAt: value.createdAt }),
+    ...(value.updatedAt === undefined ? {} : { updatedAt: value.updatedAt }),
+    ...(email === undefined ? {} : { email }),
+  };
+}
+
 function requireBodyKeys(body, required, allowed = required) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new CatalogInputError();
   const keys = Object.keys(body);
@@ -142,7 +172,11 @@ function requireBodyKeys(body, required, allowed = required) {
 
 function publicAdminMetadata(contentId, value) {
   try {
-    return validateCatalogContentMetadata(contentId, value);
+    const { directCategoryIds, computedCategoryIds, ...stored } = value || {};
+    const metadata = validateCatalogContentMetadata(contentId, stored);
+    if (Array.isArray(directCategoryIds)) metadata.directCategoryIds = [...directCategoryIds];
+    if (Array.isArray(computedCategoryIds)) metadata.computedCategoryIds = [...computedCategoryIds];
+    return metadata;
   } catch {
     throw new Error('Invalid stored catalog metadata.');
   }
@@ -172,11 +206,16 @@ function createCatalogAdminApi({
   roleProvider,
   reportRoleResolutionFailure: reportRoleFailure,
   authorizePermission,
+  authorizeOwner,
+  targetResolver,
+  resolveManagerEmail,
+  directCategoryWritesEnabled = false,
 } = {}) {
   const provider = assertVersionedWritableCatalogMetadataProvider(writableProvider);
   const app = express();
   app.disable('x-powered-by');
   const parseJson = express.json({ limit: '32kb', strict: true });
+  if (typeof directCategoryWritesEnabled !== 'boolean') throw new TypeError('Invalid direct category write flag.');
 
   // The host supplies a trusted verifier. Request fields and ordinary headers
   // are never used to construct the principal in this module.
@@ -257,6 +296,57 @@ function createCatalogAdminApi({
     }
   }
 
+  function requireOwner(req, res, next) {
+    if (typeof authorizeOwner !== 'function') {
+      return sendError(res, 503, 'OWNER_AUTH_NOT_CONFIGURED', 'دسترسی مالک پیکربندی نشده است.');
+    }
+    Promise.resolve()
+      .then(() => authorizeOwner(res.locals.catalogAdminPrincipal))
+      .then((allowed) => {
+        if (allowed !== true) {
+          sendError(res, 403, 'OWNER_REQUIRED', 'این عملیات فقط برای مالک مجاز است.');
+          return;
+        }
+        next();
+      })
+      .catch(() => sendError(res, 503, 'OWNER_AUTH_UNAVAILABLE', 'بررسی مالک در دسترس نیست.'));
+  }
+
+  async function readManagerAssignment(subjectId) {
+    if (typeof roleProvider?.getAssignment === 'function') {
+      return roleProvider.getAssignment(subjectId);
+    }
+    if (typeof roleProvider?.listAssignments !== 'function') return null;
+    const assignments = await roleProvider.listAssignments({ activeOnly: false });
+    return Array.isArray(assignments)
+      ? assignments.find((assignment) => assignment?.subjectId === subjectId) || null
+      : null;
+  }
+
+  function handleManagerError(error, res) {
+    if (error?.code === 'VERSION_CONFLICT') {
+      return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
+    }
+    if (error?.code === 'LAST_ADMINISTRATOR') {
+      return sendError(res, 409, 'LAST_ADMINISTRATOR', 'آخرین مدیر فعال قابل لغو نیست.');
+    }
+    if (error?.code === 'ALREADY_EXISTS') {
+      return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل وجود دارد.');
+    }
+    if (error?.code === 'ROLE_CONTROL_MISSING' || error?.code === 'ROLE_CONTROL_INCONSISTENT' ||
+        error?.code === 'ROLE_CONTROL_INVALID' || error?.code === 'ROLE_SOURCE_UNAVAILABLE') {
+      return sendError(res, 503, 'ROLE_SOURCE_UNAVAILABLE', 'منبع نقش‌ها در دسترس نیست.');
+    }
+    if (error?.code === 'MANAGER_EMAIL_LOOKUP_FAILED' || error?.code === 'MANAGER_EMAIL_UNAVAILABLE') {
+      return sendError(res, 503, 'MANAGER_EMAIL_UNAVAILABLE', 'ایمیل مدیر در دسترس نیست.');
+    }
+    if (error instanceof CatalogInputError || error?.code === 'INVALID_SUBJECT' ||
+        error?.code === 'INVALID_ASSIGNMENT') {
+      return sendError(res, 400, 'INVALID_INPUT', 'دادهٔ مدیر معتبر نیست.');
+    }
+    return sendError(res, 500, 'INTERNAL_ERROR', 'عملیات مدیریت مدیران انجام نشد.');
+  }
+
   app.get(`${BASE_PATH}/me`, requirePermission(PERMISSIONS.READ), (req, res) => {
     const principal = res.locals.catalogAdminPrincipal;
     const permissions = [...new Set(principal.roles.flatMap((role) => ROLES[role] || []))];
@@ -266,6 +356,88 @@ function createCatalogAdminApi({
       permissions,
     } });
   });
+
+  app.get(`${BASE_PATH}/managers`, requireOwner, asyncRoute(async (req, res) => {
+    if (typeof roleProvider?.listAssignments !== 'function') {
+      return sendError(res, 503, 'ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED', 'مدیریت مدیران پیکربندی نشده است.');
+    }
+    try {
+      const assignments = await roleProvider.listAssignments({ activeOnly: true });
+      if (!Array.isArray(assignments)) throw new Error();
+      if (typeof resolveManagerEmail !== 'function') {
+        return res.json({ data: assignments.map(publicManagerAssignment) });
+      }
+      const resolved = await Promise.all(assignments.map(async (assignment) => ({
+        assignment,
+        email: await resolveManagerEmail(assignment.subjectId),
+      })));
+      return res.json({ data: resolved.map(({ assignment, email }) =>
+        publicManagerAssignment(assignment, email)) });
+    } catch (error) {
+      return handleManagerError(error, res);
+    }
+  }));
+
+  app.post(`${BASE_PATH}/managers`, requireOwner, parseJson, asyncRoute(async (req, res) => {
+    try {
+      requireBodyKeys(req.body, ['email']);
+      if (typeof req.body.email !== 'string' || !EMAIL_PATTERN.test(req.body.email) ||
+          req.body.email.length > 320) throw new CatalogInputError();
+      if (typeof targetResolver !== 'function' || typeof roleProvider?.changeAssignment !== 'function') {
+        return sendError(res, 503, 'ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED', 'مدیریت مدیران پیکربندی نشده است.');
+      }
+      const targetSubjectId = await targetResolver(req.body.email);
+      if (!isStableSubjectId(targetSubjectId)) throw new CatalogInputError();
+      const current = await readManagerAssignment(targetSubjectId);
+      if (current) return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل وجود دارد.');
+      const result = await roleProvider.changeAssignment({
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+        targetSubjectId,
+        roles: ['administrator'],
+        active: true,
+        expectedVersion: 0,
+      });
+      return res.status(201).json({ data: {
+        subjectId: targetSubjectId,
+        roles: ['administrator'],
+        active: true,
+        version: result.version,
+        eventId: result.eventId,
+      } });
+    } catch (error) {
+      return handleManagerError(error, res);
+    }
+  }));
+
+  app.delete(`${BASE_PATH}/managers/:subjectId`, requireOwner, asyncRoute(async (req, res) => {
+    if (!isStableSubjectId(req.params.subjectId)) return sendError(res, 400, 'INVALID_INPUT', 'شناسهٔ مدیر معتبر نیست.');
+    const precondition = readIfMatch(req, res, 'manager', req.params.subjectId);
+    if (!precondition || res.headersSent) return;
+    if (typeof roleProvider?.changeAssignment !== 'function') {
+      return sendError(res, 503, 'ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED', 'مدیریت مدیران پیکربندی نشده است.');
+    }
+    try {
+      const current = await readManagerAssignment(req.params.subjectId);
+      if (!current || current.active !== true) return sendError(res, 404, 'NOT_FOUND', 'مدیر پیدا نشد.');
+      const result = await roleProvider.changeAssignment({
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+        targetSubjectId: req.params.subjectId,
+        roles: current.roles,
+        active: false,
+        expectedVersion: precondition.expectedVersion,
+      });
+      res.set('ETag', makeEtag('manager', req.params.subjectId, result.version));
+      return res.json({ data: {
+        subjectId: req.params.subjectId,
+        roles: [...current.roles],
+        active: false,
+        version: result.version,
+        eventId: result.eventId,
+      } });
+    } catch (error) {
+      return handleManagerError(error, res);
+    }
+  }));
 
   app.get(`${BASE_PATH}/items`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!contentReader || typeof contentReader.list !== 'function') {
@@ -334,15 +506,29 @@ function createCatalogAdminApi({
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
     const metadata = await provider.getContentMetadataWithVersion(req.params.contentId);
     if (!metadata) return sendError(res, 404, 'NOT_FOUND', 'فرادادهٔ محتوا پیدا نشد.');
-    return sendVersioned(res, 200, 'content', req.params.contentId, metadata,
-      (value) => publicAdminMetadata(req.params.contentId, value));
+    let value = metadata.value;
+    if (typeof contentReader?.getItem === 'function' && typeof provider.listCategories === 'function') {
+      const item = await contentReader.getItem(req.params.contentId);
+      if (item) {
+        const categories = await provider.listCategories();
+        const computedCategoryIds = categories
+          .filter((category) => category.enabled && category.mode !== 'manual' &&
+            getCategoryItems([item], category).length > 0)
+          .map((category) => category.id);
+        value = { ...value, directCategoryIds: value.categoryIds || [], computedCategoryIds };
+      }
+    }
+    return sendVersioned(res, 200, 'content', req.params.contentId, { ...metadata, value },
+      (result) => publicAdminMetadata(req.params.contentId, result));
   }));
 
   app.put(`${BASE_PATH}/items/:contentId/metadata`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
     const precondition = readMutationPrecondition(req, res, 'content', req.params.contentId);
     if (!precondition || res.headersSent) return;
-    const body = validateCatalogContentMetadata(req.params.contentId, req.body);
+    if (!directCategoryWritesEnabled && Object.hasOwn(req.body || {}, 'categoryIds')) {
+      return sendError(res, 409, 'FEATURE_DISABLED', 'تخصیص مستقیم دسته‌بندی هنوز فعال نیست.');
+    }
     let current = null;
     if (!precondition.isCreate) {
       current = await provider.getContentMetadataWithVersion(req.params.contentId);
@@ -351,6 +537,10 @@ function createCatalogAdminApi({
         return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
       }
     }
+    const requestBody = current && !Object.hasOwn(req.body || {}, 'categoryIds')
+      ? { ...req.body, categoryIds: current.value.categoryIds || [] }
+      : req.body;
+    const body = validateCatalogContentMetadata(req.params.contentId, requestBody);
     const approvalChanged = current
       ? body.approvalStatus !== current.value.approvalStatus
       : body.approvalStatus !== 'pending';
@@ -411,6 +601,15 @@ function createCatalogAdminApi({
   app.put(`${BASE_PATH}/categories/:categoryId`, requirePermission(PERMISSIONS.CATEGORIES_MANAGE), parseJson, asyncRoute(async (req, res) => {
     const precondition = readMutationPrecondition(req, res, 'category', req.params.categoryId);
     if (!precondition || res.headersSent) return;
+    if (!directCategoryWritesEnabled && Object.hasOwn(req.body || {}, 'mode') && req.body.mode !== 'dynamic') {
+      return sendError(res, 409, 'FEATURE_DISABLED', 'حالت‌های جدید دسته‌بندی هنوز فعال نیستند.');
+    }
+    if (!directCategoryWritesEnabled && !precondition.isCreate) {
+      const current = await provider.getCategoryWithVersion(req.params.categoryId);
+      if (current?.value?.mode && current.value.mode !== 'dynamic') {
+        return sendError(res, 409, 'FEATURE_DISABLED', 'ویرایش این حالت دسته‌بندی هنوز فعال نیست.');
+      }
+    }
     const body = validateCatalogCategory(req.params.categoryId, req.body);
     const saved = await provider.upsertCategory(req.params.categoryId, body, {
       expectedVersion: precondition.expectedVersion,

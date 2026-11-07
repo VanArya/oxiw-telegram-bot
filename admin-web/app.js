@@ -22,8 +22,10 @@ const elements = Object.fromEntries([
   'globalMessage', 'contentRows', 'contentCount', 'contentPage', 'contentPrev', 'contentNext',
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
-  'metadataGenres', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
+  'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
+  'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
+  'managerCancel', 'managerEmail', 'managerSave', 'managerRows',
 ].map((name) => [
   name,
   document.getElementById(name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)),
@@ -45,10 +47,13 @@ let selectedMetadata = null;
 let selectedEtag = null;
 let countryTerms = [];
 let genreTerms = [];
+let categoryTerms = [];
 let selectedTaxonomy = { type: null, id: null, etag: null };
 let selectedCategory = { id: null, etag: null };
 let toastTimer;
 let authSessionCoordinator;
+let managerAccessAllowed = false;
+const managerEmailById = new Map();
 
 function setText(element, value) {
   if (element) element.textContent = value == null ? '' : String(value);
@@ -86,6 +91,7 @@ function showLogin(message = 'ورود موفق به‌تنهایی دسترسی
   elements.noAccessScreen.hidden = true;
   elements.dashboard.hidden = true;
   elements.loginScreen.hidden = false;
+  setManagerAccessVisible(false);
   setText(elements.loginMessage, message);
 }
 
@@ -94,6 +100,7 @@ function showNoAccess(user, message) {
   elements.loginScreen.hidden = true;
   elements.dashboard.hidden = true;
   elements.noAccessScreen.hidden = false;
+  setManagerAccessVisible(false);
   setText(elements.noAccessMessage, message || 'حساب شما احراز شد، اما نقش فعال و مجاز برای پنل پیدا نشد.');
   setText(elements.noAccessEmail, user?.email || 'ایمیل در دسترس نیست');
   setText(elements.noAccessUid, user?.uid || '');
@@ -104,12 +111,25 @@ function showDashboard() {
   elements.loginScreen.hidden = true;
   elements.noAccessScreen.hidden = true;
   elements.dashboard.hidden = false;
+  setManagerAccessVisible(false);
   setText($('#top-email'), currentUser?.email || 'ایمیل در دسترس نیست');
   setText($('#top-role'), session?.roles?.map(roleLabel).join('، ') || 'بدون نقش');
   setText($('#account-email'), currentUser?.email || 'ایمیل در دسترس نیست');
   setText($('#account-uid'), session?.subjectId || '');
   renderPermissionAccess();
   renderAccountAccess();
+}
+
+function setManagerAccessVisible(visible) {
+  managerAccessAllowed = Boolean(visible);
+  if (elements.managerNav) elements.managerNav.hidden = false;
+  if (elements.managerSave) elements.managerSave.disabled = !managerAccessAllowed;
+  $$('.button-danger', elements.managerRows).forEach((button) => {
+    button.disabled = !managerAccessAllowed;
+  });
+  if (!managerAccessAllowed && elements.managerMessage) {
+    setManagerMessage('ثبت و لغو دسترسی تا تأیید مالک در سمت سرور غیرفعال است.');
+  }
 }
 
 function roleLabel(role) {
@@ -136,6 +156,13 @@ function messageForError(error) {
     AUTHENTICATION_UNAVAILABLE: 'بررسی هویت موقتاً در دسترس نیست.',
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
+    OWNER_REQUIRED: 'این بخش فقط برای مالک مجاز است.',
+    OWNER_AUTH_NOT_CONFIGURED: 'احراز هویت مالک برای این بخش پیکربندی نشده است.',
+    OWNER_AUTH_UNAVAILABLE: 'احراز هویت مالک موقتاً در دسترس نیست.',
+    ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED: 'مدیریت مدیران هنوز به منبع مورداعتماد متصل نشده است.',
+    TARGET_INVALID: 'حساب هدف معتبر نیست.',
+    INVALID_TARGET: 'حساب هدف معتبر نیست.',
+    LAST_ADMINISTRATOR: 'لغو این دسترسی آخرین مدیر فعال را حذف می‌کند.',
     INTERNAL_ERROR: 'سرویس نتوانست درخواست را انجام دهد.',
   };
   return messages[error?.body?.error?.code] || 'درخواست انجام نشد؛ وضعیت سرویس را دوباره بررسی کنید.';
@@ -236,8 +263,134 @@ function selectView(view) {
     countries: () => loadTaxonomy('country'),
     genres: () => loadTaxonomy('genre'),
     audit: loadAudit,
+    managers: loadManagers,
   };
   if (loaders[view]) void loaders[view]();
+}
+
+function setManagerMessage(message, tone = 'error') {
+  if (!elements.managerMessage) return;
+  setText(elements.managerMessage, message);
+  elements.managerMessage.dataset.tone = tone;
+  elements.managerMessage.hidden = false;
+}
+
+function clearManagerMessage() {
+  if (!elements.managerMessage) return;
+  elements.managerMessage.hidden = true;
+  elements.managerMessage.replaceChildren();
+}
+
+function managerEtag(subjectId, version) {
+  const encoded = btoa(`manager:${subjectId}`)
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `"catalog-v1.${encoded}.v${version}"`;
+}
+
+function renderManagers(assignments) {
+  elements.managerRows.replaceChildren();
+  if (!assignments.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 6;
+    cell.className = 'empty-message';
+    cell.textContent = 'مدیر فعالی ثبت نشده است.';
+    row.append(cell);
+    elements.managerRows.append(row);
+    return;
+  }
+  assignments.forEach((assignment) => {
+    const row = document.createElement('tr');
+    const email = document.createElement('td');
+    email.textContent = assignment.email || managerEmailById.get(assignment.subjectId) || 'ایمیل در دسترس نیست';
+    const subject = document.createElement('td');
+    subject.className = 'mono';
+    subject.textContent = assignment.subjectId;
+    const roles = document.createElement('td');
+    roles.textContent = (assignment.roles || []).map(roleLabel).join('، ') || '—';
+    const status = document.createElement('td');
+    status.textContent = assignment.active ? 'فعال' : 'غیرفعال';
+    const version = document.createElement('td');
+    version.textContent = String(assignment.version ?? '—');
+    const action = document.createElement('td');
+    const revoke = document.createElement('button');
+    revoke.type = 'button';
+    revoke.className = 'button button-small button-danger';
+    revoke.textContent = 'لغو دسترسی';
+    revoke.disabled = !managerAccessAllowed;
+    revoke.addEventListener('click', () => void revokeManager(assignment));
+    action.append(revoke);
+    row.append(email, subject, roles, status, version, action);
+    elements.managerRows.append(row);
+  });
+}
+
+async function loadManagers({ probe = false } = {}) {
+  try {
+    const { body } = await api(`${API_ROOT}/managers`);
+    if (!currentUser || !session) return;
+    const assignments = Array.isArray(body?.data) ? body.data : [];
+    setManagerAccessVisible(true);
+    renderManagers(assignments);
+    if (!probe) clearManagerMessage();
+  } catch (error) {
+    setManagerAccessVisible(false);
+    if (error.status === 403 || error.code === 'OWNER_REQUIRED') {
+      if (!probe) setManagerMessage('این بخش فقط برای مالک مجاز است.');
+      return;
+    }
+    if (!probe) {
+      setManagerMessage(error.message || 'فهرست مدیران در دسترس نیست.');
+      if (error.status === 401) reportApiError(error);
+    }
+  }
+}
+
+async function addManager(event) {
+  event.preventDefault();
+  if (!managerAccessAllowed) {
+    setManagerMessage('ثبت مدیر تا تأیید مالک در سمت سرور غیرفعال است.');
+    return;
+  }
+  if (!elements.managerForm.checkValidity()) return;
+  const email = elements.managerEmail.value.trim();
+  if (!window.confirm('این حساب به‌عنوان مدیر سامانه اضافه شود؟')) return;
+  setBusy(elements.managerSave, true);
+  clearManagerMessage();
+  try {
+    const { body } = await api(`${API_ROOT}/managers`, {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+    const assignment = body?.data;
+    if (assignment?.subjectId) managerEmailById.set(assignment.subjectId, email);
+    elements.managerForm.reset();
+    elements.managerForm.hidden = true;
+    showToast('مدیر با موفقیت اضافه شد.');
+    await loadManagers();
+  } catch (error) {
+    if (error.status === 403) setManagerAccessVisible(false);
+    setManagerMessage(error.message || 'افزودن مدیر انجام نشد.');
+    if (error.status === 401) reportApiError(error);
+  } finally { setBusy(elements.managerSave, false); }
+}
+
+async function revokeManager(assignment) {
+  if (!managerAccessAllowed || !window.confirm('دسترسی این مدیر لغو شود؟')) return;
+  const subjectId = assignment.subjectId;
+  setManagerMessage('در حال لغو دسترسی…', 'neutral');
+  try {
+    await api(`${API_ROOT}/managers/${encodeURIComponent(subjectId)}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': managerEtag(subjectId, assignment.version) },
+    });
+    showToast('دسترسی مدیر لغو شد.');
+    await loadManagers();
+  } catch (error) {
+    if (error.status === 403) setManagerAccessVisible(false);
+    setManagerMessage(error.message || 'لغو دسترسی انجام نشد.');
+    if (error.status === 401) reportApiError(error);
+  }
 }
 
 function setBusy(button, busy) {
@@ -398,6 +551,7 @@ function renderSelectedContent() {
   setText($('#dialog-cast'), selectedItem.cast ? `بازیگران: ${selectedItem.cast}` : '');
   populateMultiSelect(elements.metadataCountries, countryTerms, selectedMetadata?.countryIds || []);
   populateMultiSelect(elements.metadataGenres, genreTerms, selectedMetadata?.genreIds || []);
+  populateMultiSelect(elements.metadataCategories, categoryTerms, selectedMetadata?.categoryIds || []);
   permissionControls();
 }
 
@@ -413,23 +567,27 @@ async function openContent(item, notice) {
   selectedEtag = null;
   elements.dialogMessage.hidden = true;
   try {
-    const [metadataResult, countriesResult, genresResult] = await Promise.all([
+    const [metadataResult, countriesResult, genresResult, categoriesResult] = await Promise.all([
       api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`),
       api(`${API_ROOT}/taxonomies/country`),
       api(`${API_ROOT}/taxonomies/genre`),
+      api(`${API_ROOT}/categories`),
     ]);
     selectedMetadata = metadataResult.body.data;
     selectedEtag = metadataResult.etag;
     countryTerms = countriesResult.body.data;
     genreTerms = genresResult.body.data;
+    categoryTerms = categoriesResult.body.data;
   } catch (error) {
     if (error.status === 404) {
       try {
-        const [countriesResult, genresResult] = await Promise.all([
+        const [countriesResult, genresResult, categoriesResult] = await Promise.all([
           api(`${API_ROOT}/taxonomies/country`), api(`${API_ROOT}/taxonomies/genre`),
+          api(`${API_ROOT}/categories`),
         ]);
         countryTerms = countriesResult.body.data;
         genreTerms = genresResult.body.data;
+        categoryTerms = categoriesResult.body.data;
       } catch (taxonomyError) { reportApiError(taxonomyError); return; }
       if (notice) setDialogMessage(notice, 'warning');
     } else { reportApiError(error); return; }
@@ -448,14 +606,19 @@ async function saveContentMetadata(event) {
   event.preventDefault();
   if (!selectedItem || !hasPermission('catalog.metadata.write')) return;
   const button = elements.metadataSave;
-  setBusy(button, true);
   const body = {
     contentId: selectedItem.id,
     approvalStatus: selectedMetadata.approvalStatus || 'pending',
     publicationStatus: selectedMetadata.publicationStatus || 'draft',
     countryIds: selectedValues(elements.metadataCountries),
     genreIds: selectedValues(elements.metadataGenres),
+    categoryIds: selectedValues(elements.metadataCategories),
   };
+  if (body.categoryIds.length > 20) {
+    setDialogMessage('حداکثر ۲۰ دسته‌بندی مستقیم قابل انتخاب است.', 'error');
+    return;
+  }
+  setBusy(button, true);
   try {
     const result = await api(`${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/metadata`, {
       method: 'PUT',
@@ -521,6 +684,7 @@ function makeRecordButton(primary, secondary, onClick) {
 async function loadCategories() {
   try {
     const { body } = await api(`${API_ROOT}/categories`);
+    categoryTerms = Array.isArray(body.data) ? body.data : [];
     const list = elements.categoryList;
     list.replaceChildren();
     if (!body.data.length) {
@@ -552,6 +716,7 @@ function clearCategoryForm() {
   $('#category-form-title').textContent = 'دستهٔ جدید';
   $('#category-enabled').checked = true;
   $('#category-sort').value = '0';
+  $('#category-mode').value = 'dynamic';
   $('#filter-conditions').replaceChildren();
   $('#category-other-titles').replaceChildren();
   $('#category-filter-json').value = '';
@@ -608,6 +773,7 @@ async function editCategory(id) {
       .forEach(([locale, title]) => addLocalizedTitle(locale, title));
     $('#category-slug').value = category.slug;
     $('#category-sort').value = String(category.sortOrder ?? 0);
+    $('#category-mode').value = category.mode || 'dynamic';
     $('#category-enabled').checked = category.enabled;
     $('#category-form-title').textContent = `ویرایش ${category.localizedTitle.fa || category.slug}`;
     await loadTaxonomyOptions();
@@ -737,6 +903,7 @@ async function saveCategory(event) {
     localizedTitle,
     enabled: $('#category-enabled').checked,
     sortOrder: Number($('#category-sort').value),
+    mode: $('#category-mode').value,
   };
   try {
     const filters = categoryFilters();
@@ -900,6 +1067,7 @@ function renderSession(user, data) {
   session = data;
   showDashboard();
   selectView('overview');
+  void loadManagers({ probe: true });
 }
 
 async function handleAuthState(user) {
@@ -914,21 +1082,28 @@ authSessionCoordinator = createAuthSessionCoordinator({
   onAuthenticated: (user) => {
     currentUser = user;
     session = null;
+    managerEmailById.clear();
   },
   onUnauthenticated: () => {
     currentUser = null;
     session = null;
+    managerEmailById.clear();
+    setManagerAccessVisible(false);
     showLogin();
   },
   onSession: (user, data) => renderSession(user, data),
   onError: (error, user) => {
     if (error.status === 403) {
       session = null;
+      managerEmailById.clear();
+      setManagerAccessVisible(false);
       showNoAccess(user);
       return;
     }
     if (error.status === 401) {
       session = null;
+      managerEmailById.clear();
+      setManagerAccessVisible(false);
       void signOutCurrentUser?.();
       showLogin('نشست Firebase معتبر نیست؛ دوباره وارد شوید.');
       return;
@@ -1014,7 +1189,19 @@ function wireUi() {
     else if (action === 'countries') void loadTaxonomy('country');
     else if (action === 'genres') void loadTaxonomy('genre');
     else if (action === 'audit') void loadAudit();
+    else if (action === 'managers') void loadManagers();
   }));
+  elements.managerNew.addEventListener('click', () => {
+    elements.managerForm.hidden = false;
+    if (!managerAccessAllowed) setManagerMessage('فرم آماده است؛ ثبت مدیر پس از تأیید مالک فعال می‌شود.');
+    elements.managerEmail.focus();
+  });
+  elements.managerRefresh.addEventListener('click', () => void loadManagers());
+  elements.managerCancel.addEventListener('click', () => { elements.managerForm.hidden = true; });
+  $$('[data-manager-cancel]').forEach((button) => button.addEventListener('click', () => {
+    elements.managerForm.hidden = true;
+  }));
+  elements.managerForm.addEventListener('submit', (event) => void addManager(event));
   $('#content-search-button').addEventListener('click', () => { contentPage = 1; void loadContent(); });
   elements.contentSearch.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') { contentPage = 1; void loadContent(); }

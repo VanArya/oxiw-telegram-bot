@@ -22,7 +22,8 @@ const ACTOR = Object.freeze({
   identitySource: 'google_cloud_adc_service_account_impersonation',
 });
 const APPROVAL = Object.freeze({
-  ownerId: 'catalog-owner', approverId: 'second-approver', approvalReference: 'CHG-2026-1042',
+  ownerId: 'catalog-owner', ownerIdentitySource: 'firebase_admin_id_token',
+  approvalReference: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 });
 
 function makeRuntime(bootstrapAdministrator) {
@@ -35,7 +36,7 @@ function makeRuntime(bootstrapAdministrator) {
 function request(overrides = {}) {
   return {
     env: ENV,
-    targetSubjectId: 'first-admin',
+    targetResolver: async () => 'first-admin',
     confirmation: CONFIRMATION_VALUE,
     trustedActorProvider: async () => ACTOR,
     trustedApprovalProvider: async () => APPROVAL,
@@ -44,9 +45,9 @@ function request(overrides = {}) {
   };
 }
 
-test('requires an explicit target and exact confirmation before any runtime or actor lookup', async () => {
-  assert.deepEqual(parseBootstrapArguments(['--target-subject-id', 'first-admin']), {
-    targetSubjectId: 'first-admin',
+test('requires exact confirmation and rejects request-controlled target IDs', async () => {
+  assert.deepEqual(parseBootstrapArguments(['--confirm', CONFIRMATION_VALUE]), {
+    confirmation: CONFIRMATION_VALUE,
   });
   await assert.rejects(
     executeCatalogAdminBootstrap(request({ confirmation: undefined })),
@@ -56,16 +57,8 @@ test('requires an explicit target and exact confirmation before any runtime or a
     executeCatalogAdminBootstrap(request({ env: {} })),
     (error) => error instanceof CatalogAdminBootstrapError && error.code === 'CONFIGURATION_INVALID',
   );
-  assert.throws(
-    () => parseBootstrapArguments(['--target-subject-id']),
-    (error) => error instanceof CatalogAdminBootstrapError && error.code === 'TARGET_REQUIRED',
-  );
-  assert.throws(
-    () => parseBootstrapArguments([
-      '--target-subject-id', 'first-admin', '--target-subject-id', 'second-admin',
-    ]),
-    (error) => error instanceof CatalogAdminBootstrapError && error.code === 'TARGET_REQUIRED',
-  );
+  assert.throws(() => parseBootstrapArguments(['--target-subject-id', 'first-admin']),
+    (error) => error instanceof CatalogAdminBootstrapError && error.code === 'TARGET_NOT_ACCEPTED');
 
   let runtimeCalls = 0;
   let actorCalls = 0;
@@ -97,6 +90,10 @@ test('keeps the executable disabled when no trusted actor source is configured',
 test('uses only the injected operational runtime and bootstrapAdministrator transaction seam', async () => {
   const calls = [];
   const result = await executeCatalogAdminBootstrap(request({
+    trustedApprovalProvider: async ({ targetSubjectId }) => {
+      calls.push(['approval', targetSubjectId]);
+      return APPROVAL;
+    },
     runtimeFactory: async ({ env }) => {
       calls.push(['runtime', env.CATALOG_GCP_PROJECT_ID]);
       return makeRuntime(async (options) => {
@@ -107,6 +104,7 @@ test('uses only the injected operational runtime and bootstrapAdministrator tran
   }));
   assert.deepEqual(result, { version: 1, eventId: 'event-1' });
   assert.deepEqual(calls, [
+    ['approval', 'first-admin'],
     ['runtime', 'oxiw-catalog-test-123'],
     ['bootstrap', { actor: ACTOR, approval: APPROVAL, targetSubjectId: 'first-admin' }],
   ]);
@@ -129,14 +127,14 @@ test('propagates repeat, inconsistent-state, and audit failures as safe bootstra
   }
 });
 
-test('CLI main accepts the confirmation flags but remains disabled without trusted actor wiring', async () => {
+test('CLI main accepts confirmation but remains disabled without target wiring', async () => {
   await assert.rejects(
     main({
-      argv: ['--target-subject-id', 'first-admin', '--confirm', CONFIRMATION_VALUE],
+      argv: ['--confirm', CONFIRMATION_VALUE],
       env: ENV,
     }),
     (error) => error instanceof CatalogAdminBootstrapError &&
-      error.code === 'TRUSTED_ACTOR_SOURCE_UNCONFIGURED',
+      error.code === 'TARGET_SOURCE_UNCONFIGURED',
   );
 });
 
@@ -149,12 +147,18 @@ test('bootstrap remains blocked unless independent approval context is injected'
     error.code === 'TRUSTED_APPROVAL_SOURCE_UNCONFIGURED');
   await assert.rejects(executeCatalogAdminBootstrap(request({
     trustedApprovalProvider: async () => ({
-      ownerId: 'same-person', approverId: 'same-person', approvalReference: 'CHG-1',
+      ownerId: 'same-person', ownerIdentitySource: 'environment', approvalReference: 'CHG-1',
     }),
     runtimeFactory: async () => { runtimeCalls += 1; return makeRuntime(() => {}); },
   })), (error) => error instanceof CatalogAdminBootstrapError &&
     error.code === 'TRUSTED_APPROVAL_INVALID');
   assert.equal(runtimeCalls, 0);
+});
+
+test('bootstrap remains blocked when the target resolver is not configured', async () => {
+  await assert.rejects(executeCatalogAdminBootstrap(request({ targetResolver: undefined })),
+    (error) => error instanceof CatalogAdminBootstrapError &&
+      error.code === 'TARGET_SOURCE_UNCONFIGURED');
 });
 
 test('package exposes a separate bootstrap command while npm start remains the Main Bot', () => {

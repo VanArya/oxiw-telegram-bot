@@ -29,6 +29,10 @@ function createAdminApi(writableProvider, {
   roleProvider = createInMemoryCatalogAdminRoleProvider({ [subjectId]: roles }),
   reportRoleResolutionFailure,
   authorizePermission = roleAuthorizer,
+  authorizeOwner,
+  targetResolver,
+  resolveManagerEmail,
+  directCategoryWritesEnabled,
 } = {}) {
   return createCatalogAdminApi({
     writableProvider,
@@ -36,6 +40,10 @@ function createAdminApi(writableProvider, {
     roleProvider,
     reportRoleResolutionFailure,
     authorizePermission,
+    authorizeOwner,
+    targetResolver,
+    resolveManagerEmail,
+    directCategoryWritesEnabled: directCategoryWritesEnabled === undefined ? true : directCategoryWritesEnabled,
   });
 }
 
@@ -784,5 +792,188 @@ test('legacy HTTP bootstrap route is not exposed', async () => {
     }));
     assert.equal(result.status, 404);
     assert.equal(result.body.error.code, 'NOT_FOUND');
+  });
+});
+
+function createManagerRoleProvider({ initial = [], failAudit = false } = {}) {
+  const assignments = new Map(initial.map((assignment) => [assignment.subjectId, structuredClone(assignment)]));
+  const auditEvents = [];
+  return {
+    auditEvents,
+    async resolveRoles(subjectId) {
+      const assignment = assignments.get(subjectId);
+      return assignment?.active ? [...assignment.roles] : [];
+    },
+    async listAssignments({ activeOnly = false } = {}) {
+      return [...assignments.values()]
+        .filter((assignment) => !activeOnly || assignment.active)
+        .map((assignment) => structuredClone(assignment));
+    },
+    async getAssignment(subjectId) {
+      const assignment = assignments.get(subjectId);
+      return assignment ? structuredClone(assignment) : null;
+    },
+    async changeAssignment(options) {
+      const current = assignments.get(options.targetSubjectId);
+      const actualVersion = current?.version ?? 0;
+      if (actualVersion !== options.expectedVersion) {
+        const error = new Error('version conflict');
+        error.code = 'VERSION_CONFLICT';
+        throw error;
+      }
+      if (current && options.active) {
+        const error = new Error('already exists');
+        error.code = 'ALREADY_EXISTS';
+        throw error;
+      }
+      if (!options.active && [...assignments.values()].filter((item) =>
+        item.active && item.roles.includes('administrator')).length <= 1) {
+        const error = new Error('last administrator');
+        error.code = 'LAST_ADMINISTRATOR';
+        throw error;
+      }
+      if (failAudit) throw new Error('audit failure');
+      const next = {
+        subjectId: options.targetSubjectId,
+        roles: [...options.roles],
+        active: options.active,
+        version: actualVersion + 1,
+      };
+      assignments.set(next.subjectId, next);
+      auditEvents.push({ operation: options.active ? 'assignment.created' : 'assignment.disabled', actorId: options.actorId });
+      return { version: next.version, eventId: `event-${auditEvents.length}` };
+    },
+  };
+}
+
+test('owner-only manager API adds, lists, and revokes managers with audit and preconditions', async () => {
+  const roleProvider = createManagerRoleProvider({
+    initial: [{ subjectId: 'first-admin', roles: ['administrator'], active: true, version: 1 }],
+  });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'owner-user',
+    roleProvider,
+    authorizeOwner: (principal) => principal.subjectId === 'owner-user',
+    targetResolver: async (email) => email === 'new-admin@example.com' ? 'new-admin' : 'bad uid',
+    resolveManagerEmail: async (subjectId) => `${subjectId}@example.com`,
+  });
+  await withServer(app, async (baseUrl) => {
+    const added = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'new-admin@example.com' }),
+    }));
+    assert.equal(added.status, 201);
+    assert.equal(added.body.data.subjectId, 'new-admin');
+    assert.equal(roleProvider.auditEvents[0].operation, 'assignment.created');
+
+    const listed = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`));
+    assert.equal(listed.status, 200);
+    assert.deepEqual(listed.body.data.map((item) => item.subjectId), ['first-admin', 'new-admin']);
+    assert.deepEqual(listed.body.data.map((item) => item.email), [
+      'first-admin@example.com', 'new-admin@example.com',
+    ]);
+
+    const etag = `"catalog-v1.${Buffer.from('manager:new-admin').toString('base64url')}.v1"`;
+    const revoked = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/new-admin`, {
+      method: 'DELETE', headers: { 'if-match': etag },
+    }));
+    assert.equal(revoked.status, 200);
+    assert.equal(revoked.body.data.active, false);
+    assert.equal(roleProvider.auditEvents[1].operation, 'assignment.disabled');
+  });
+});
+
+test('manager list fails safely when an injected Firebase email lookup fails', async () => {
+  const roleProvider = createManagerRoleProvider({
+    initial: [{ subjectId: 'first-admin', roles: ['administrator'], active: true, version: 1 }],
+  });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'owner-user', roleProvider, authorizeOwner: () => true,
+    resolveManagerEmail: async () => { throw Object.assign(new Error('hidden'), { code: 'MANAGER_EMAIL_LOOKUP_FAILED' }); },
+  });
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`));
+    assert.equal(result.status, 503);
+    assert.equal(result.body.error.code, 'MANAGER_EMAIL_UNAVAILABLE');
+    assert.doesNotMatch(JSON.stringify(result.body), /hidden|first-admin/);
+  });
+});
+
+test('manager API denies non-owner administrators and rejects duplicate, invalid, stale, and last-admin changes', async () => {
+  const roleProvider = createManagerRoleProvider({
+    initial: [{ subjectId: 'only-admin', roles: ['administrator'], active: true, version: 1 }],
+  });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'administrator-user',
+    roleProvider,
+    authorizeOwner: () => false,
+    targetResolver: async () => 'new-admin',
+  });
+  await withServer(app, async (baseUrl) => {
+    const denied = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`));
+    assert.equal(denied.status, 403);
+    assert.equal(denied.body.error.code, 'OWNER_REQUIRED');
+  });
+
+  const ownerApp = createAdminApi(createStore(), {
+    subjectId: 'owner-user', roleProvider,
+    authorizeOwner: () => true,
+    targetResolver: async (email) => email === 'bad@example.com' ? 'bad uid' : 'only-admin',
+  });
+  await withServer(ownerApp, async (baseUrl) => {
+    const duplicate = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'existing@example.com' }),
+    }));
+    assert.equal(duplicate.status, 409);
+    const invalid = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'bad@example.com' }),
+    }));
+    assert.equal(invalid.status, 400);
+    const etag = `"catalog-v1.${Buffer.from('manager:only-admin').toString('base64url')}.v1"`;
+    const last = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/only-admin`, {
+      method: 'DELETE', headers: { 'if-match': etag },
+    }));
+    assert.equal(last.status, 409);
+    assert.equal(last.body.error.code, 'LAST_ADMINISTRATOR');
+    const stale = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/only-admin`, {
+      method: 'DELETE', headers: { 'if-match': `"catalog-v1.${Buffer.from('manager:only-admin').toString('base64url')}.v9"` },
+    }));
+    assert.equal(stale.status, 412);
+  });
+});
+
+test('manager API rolls back when the injected role audit fails', async () => {
+  const roleProvider = createManagerRoleProvider({ failAudit: true });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'owner-user', roleProvider, authorizeOwner: () => true,
+    targetResolver: async () => 'new-admin',
+  });
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'new@example.com' }),
+    }));
+    assert.equal(result.status, 500);
+    assert.equal((await roleProvider.listAssignments()).length, 0);
+    assert.equal(roleProvider.auditEvents.length, 0);
+  });
+});
+
+test('direct category writes stay disabled when the server flag is false', async () => {
+  const app = createAdminApi(createStore(), { directCategoryWritesEnabled: false });
+  await withServer(app, async (baseUrl) => {
+    const url = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`;
+    const result = await json(await fetch(url, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({
+        approvalStatus: 'pending', publicationStatus: 'draft', countryIds: [], genreIds: [],
+        categoryIds: ['featured'],
+      }),
+    }));
+    assert.equal(result.status, 409);
+    assert.equal(result.body.error.code, 'FEATURE_DISABLED');
   });
 });

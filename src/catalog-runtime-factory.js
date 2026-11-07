@@ -31,7 +31,8 @@ function requireEnvironment(env) {
 }
 
 function requireDependencies({ google, firestore, verifyAdminPrincipal, roleProvider, authorizePermission,
-  readinessCheck, categories, collections, auditCollection, clock }) {
+  readinessCheck, categories, collections, auditCollection, clock, authorizeOwner, targetResolver,
+  resolveManagerEmail }) {
   if (!google || typeof google.auth?.GoogleAuth !== 'function' ||
       typeof google.sheets !== 'function' ||
       !firestore || typeof firestore.collection !== 'function' ||
@@ -43,7 +44,10 @@ function requireDependencies({ google, firestore, verifyAdminPrincipal, roleProv
       (categories !== undefined && !Array.isArray(categories)) ||
       (collections !== undefined && !isRecord(collections)) ||
       (auditCollection !== undefined && typeof auditCollection !== 'string') ||
-      (clock !== undefined && typeof clock !== 'function')) {
+      (clock !== undefined && typeof clock !== 'function') ||
+      (authorizeOwner !== undefined && typeof authorizeOwner !== 'function') ||
+      (targetResolver !== undefined && typeof targetResolver !== 'function') ||
+      (resolveManagerEmail !== undefined && typeof resolveManagerEmail !== 'function')) {
     throw new CatalogRuntimeConfigurationError();
   }
 }
@@ -67,11 +71,15 @@ async function createCatalogRuntime({
   auditCollection,
   clock,
   getAdminWebConfig,
+  authorizeOwner,
+  targetResolver,
+  resolveManagerEmail,
+  directCategoryWritesEnabled = false,
 } = {}) {
   const spreadsheetId = requireEnvironment(env);
   requireDependencies({
     google, firestore, verifyAdminPrincipal, roleProvider, authorizePermission, readinessCheck,
-    categories, collections, auditCollection, clock,
+    categories, collections, auditCollection, clock, authorizeOwner, targetResolver, resolveManagerEmail,
   });
 
   let sheetsClient;
@@ -122,6 +130,10 @@ async function createCatalogRuntime({
       roleProvider,
       reportRoleResolutionFailure,
       authorizePermission,
+      authorizeOwner,
+      targetResolver,
+      resolveManagerEmail,
+      directCategoryWritesEnabled,
       readinessCheck,
       ...(categories === undefined ? {} : { categories }),
       ...(getAdminWebConfig === undefined ? {} : { getAdminWebConfig }),
@@ -141,6 +153,7 @@ async function createCatalogRuntime({
     roleProvider,
     reportRoleResolutionFailure,
     authorizePermission,
+    targetResolver,
     readinessCheck,
     app,
   });

@@ -53,6 +53,16 @@ test('rejects ADC clients that are not the SDK impersonated credential type', as
     error.code === 'ADC_IMPERSONATION_REQUIRED');
 });
 
+test('fails closed when ADC is unavailable before any impersonation exchange', async () => {
+  const provider = createGoogleCloudAdcTrustedActorProvider({
+    googleAuthFactory: async () => ({}),
+    impersonatedClientClass: FakeImpersonatedClient,
+    expectedServiceAccount: EXPECTED,
+  });
+  await assert.rejects(provider(), (error) => error instanceof TrustedActorProviderError &&
+    error.code === 'ADC_CLIENT_UNAVAILABLE');
+});
+
 test('rejects a different impersonated service account before exchanging a token', async () => {
   const client = new FakeImpersonatedClient('oxiw-catalog-runtime@oxiw.iam.gserviceaccount.com');
   let tokenCalls = 0;

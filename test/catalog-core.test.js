@@ -131,3 +131,17 @@ test('details are available only for published items', () => {
   assert.equal(findPublishedItem(items, 'fixture-movie-ir-1').title, 'فیلم نمونه یک');
   assert.equal(findPublishedItem(items, 'fixture-movie-ir-draft'), null);
 });
+
+test('manual and hybrid categories union direct and dynamic membership without duplicates', () => {
+  const visible = items.filter((item) => item.approvalStatus === 'approved' && item.publicationStatus === 'published');
+  const direct = { ...visible[0], categoryIds: ['manual-only'] };
+  const dynamic = { ...visible[1], categoryIds: ['hybrid'] };
+  const duplicate = { ...visible[0], categoryIds: ['hybrid'] };
+  const manual = getCategoryItems([direct, dynamic], { id: 'manual-only', mode: 'manual', enabled: true });
+  assert.deepEqual(manual.map(({ id }) => id), [direct.id]);
+  const hybrid = getCategoryItems([duplicate, dynamic], {
+    id: 'hybrid', mode: 'hybrid', enabled: true, filters: { field: 'kind', op: 'eq', value: dynamic.kind },
+  });
+  assert.equal(new Set(hybrid.map(({ id }) => id)).size, hybrid.length);
+  assert.deepEqual(hybrid.map(({ id }) => id).sort(), [duplicate.id, dynamic.id].sort());
+});

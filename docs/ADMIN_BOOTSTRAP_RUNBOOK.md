@@ -11,7 +11,7 @@
 
 ابزار مستقل `catalog:bootstrap-admin` تنها از طریق `bootstrapAdministrator()` در
 Role Provider کار می‌کند. این ابزار تا زمانی که trusted actor مبتنی بر ADC و
-Service Account Impersonation و همچنین منبع مستقل تأیید مالک/نفر دوم به آن تزریق
+Service Account Impersonation و همچنین منبع مستقل تأیید مالک به آن تزریق
 نشوند، fail-closed و غیرقابل‌اجرا است.
 
 ## پیش‌نیازهای تصمیم و دسترسی
@@ -19,7 +19,7 @@ Service Account Impersonation و همچنین منبع مستقل تأیید م�
 - تصویب مالک پروژه برای حساب هدف؛
 - Service Account اختصاصی provisioning، جدا از حساب runtime، با مجوز موقت و محدود؛
 - اثبات هویت مؤثر از ADC impersonation، نه مقدار argv یا environment؛
-- تأیید مستقل owner و approver با مرجع قابل ممیزی؛
+- تأیید مستقل مالک با Firebase ID Token معتبر و مرجع قابل ممیزی؛
 - تأیید پروژه، دیتابیس، schema پیشنهادی، backup و روش rollback؛
 - اجرای ابزار در محیط مورداعتماد و خارج از مسیر عمومی HTTP.
 
@@ -31,12 +31,12 @@ Service Account Impersonation و همچنین منبع مستقل تأیید م�
 پس از اتصال و بازبینی منابع trusted، ابزار فقط با تأیید صریح اجرا می‌شود:
 
 ```text
-npm run catalog:bootstrap-admin -- --target-subject-id <approved-subject> --confirm BOOTSTRAP_FIRST_ADMIN
+npm run catalog:bootstrap-admin -- --confirm BOOTSTRAP_FIRST_ADMIN
 ```
 
-`<approved-subject>` باید از منبع هویتی مورداعتماد بیاید؛ مقدار آزاد CLI مدرک
-هویت نیست. ابزار باید پیش از mutation تنظیمات، actor، approval و وضعیت خالی
-سیستم را بررسی کند.
+UID هدف از Firebase Admin Auth و lookup ایمیل هدف استخراج می‌شود؛ `targetSubjectId`
+هرگز از CLI یا ورودی آزاد گرفته نمی‌شود. ابزار باید پیش از mutation تنظیمات، actor،
+approval تک‌مالک و وضعیت خالی سیستم را بررسی کند.
 
 عملیات موفق در یک تراکنش مشترک assignment اولیه با نقش `administrator`، control
 marker/count و audit event را ثبت می‌کند. وجود هر assignment قبلی، marker نامعتبر
@@ -55,7 +55,7 @@ marker/count و audit event را ثبت می‌کند. وجود هر assignment 
 
 - در وضعیت مبهم یا خطای audit، عملیات را تکرار یا marker را دستی reset نکنید.
 - ابزار را پس از استفاده غیرفعال و مجوز موقت Service Account را لغو کنید.
-- recovery یا rollback فقط با approval مستقل، backup معتبر و runbook جداگانه انجام شود.
+- recovery یا rollback فقط با تأیید مستقل مالک، backup معتبر و runbook جداگانه انجام شود.
 - تغییر دستی assignment یا audit در Firestore مجاز نیست.
 
 نام collectionها و schemaهای Role/Audit در ADR همچنان پیشنهادی‌اند و تا تصویب

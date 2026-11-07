@@ -7,7 +7,7 @@
 - `CatalogAdminRoleProvider.resolveRoles(subjectId)` فقط نقش‌های مورداعتماد را برای یک هویت قبلاً تأییدشده می‌خواند.
 - `src/firestore-catalog-admin-role-provider.js` پیاده‌سازی تزریقی برای resolve تازه و `changeAssignment()` دارد. نام collection قابل‌پیکربندی است؛ پیش‌فرض‌ها نام‌های پیشنهادی ADR هستند. composition عملیاتی آن را به runtime تزریق می‌کند، اما هیچ route provisioning وجود ندارد و bootstrap CLI بدون trusted actor و approval provider غیرفعال است.
 - `changeAssignment()` از `expectedVersion` استفاده می‌کند و assignment و رخداد role-audit را در یک Firestore transaction می‌نویسد. actor باید از caller مورداعتماد بیاید؛ این adapter منشأ هویت را احراز نمی‌کند.
-- `bootstrapAdministrator()` در همان provider یک assignment اولیه با نقش صریح `administrator`، سند کنترل bootstrap و رخداد `bootstrap.completed` را در یک transaction می‌سازد. اکنون actor و approval جداگانه تزریق می‌شوند و رخداد bootstrap با schema version 2 ثبت می‌شود. سند کنترل پیشنهادی فعلی شامل `bootstrapState`, `version` و `activeAdministratorCount` به‌همراه زمان/actor/approval است؛ این schema مصوب عملیاتی نیست.
+- `bootstrapAdministrator()` در همان provider یک assignment اولیه با نقش صریح `administrator`، سند کنترل bootstrap و رخداد `bootstrap.completed` را در یک transaction می‌سازد. برای سیاست تک‌مالک، actor و approval جداگانه تزریق می‌شوند و رخداد bootstrap با schema version 4 ثبت می‌شود. سند کنترل پیشنهادی فعلی شامل `bootstrapState`, `version` و `activeAdministratorCount` به‌همراه زمان/actor/approval است؛ این schema مصوب عملیاتی نیست.
 - هر تغییر assignment سند کنترل را در همان transaction به‌روزرسانی می‌کند و شمارندهٔ مدیران فعال را از assignmentهای خوانده‌شده در transaction تطبیق می‌دهد. حذف یا غیرفعال‌سازی آخرین مدیر فعال با خطای `LAST_ADMINISTRATOR` رد می‌شود.
 - قرارداد جدید `src/catalog-admin-role-audit.js` شکل رخداد lifecycle را اعتبارسنجی و interface زیر را تعریف می‌کند:
 
@@ -17,7 +17,7 @@ CatalogAdminRoleAuditSink.appendInTransaction(transactionContext, event)
 
 - ابزار/provider مسئول تغییر assignment باید context تراکنش را آغاز کند، تغییر assignment را در آن ثبت کند و همان context را به sink بدهد. sink حق ندارد تراکنش جداگانه بسازد یا پنهانی commit کند.
 - `src/google-cloud-adc-trusted-actor-provider.js` seam تزریقی برای ADC دارد: فقط client از نوع عمومی `Impersonated` با principal برابر allowlist و موفقیت تبادل token پذیرفته می‌شود. provider مقدار access token را افشا نمی‌کند. provider خودش سازنده‌های SDK را دریافت می‌کند و runtime به آن وصل نشده است.
-- owner و approver باید از `trustedApprovalProvider` مستقل بیایند؛ validator فقط شکل، تفاوت شناسه‌ها و وجود مرجع را می‌سنجد. منشأ سازمانی معتبر approval هنوز تعریف/پیاده‌سازی نشده، پس تابع تزریقی دلخواه برای استفاده واقعی کافی نیست. هیچ endpoint مدیریتی موجود برای نقش‌ها اضافه نشده است.
+- مالک باید از `trustedApprovalProvider` مستقل و با Firebase ID Token معتبر بیاید؛ validator فقط شکل، مالکیت و وجود مرجع را می‌سنجد. منشأ عملیاتی توکن هنوز به CLI وصل نشده، پس تابع تزریقی fake برای استفاده واقعی کافی نیست. هیچ endpoint مدیریتی موجود برای نقش‌ها اضافه نشده است.
 
 ## رخدادهای موفق مجاز
 
@@ -45,23 +45,25 @@ CatalogAdminRoleAuditSink.appendInTransaction(transactionContext, event)
 
 فیلد اضافه رد می‌شود. roleها باید از allowlist فعلی (`observer`, `editor`, `approver`, `publisher`, `taxonomy_manager`, `administrator`) باشند و تکراری نباشند. تغییرات خالی، ناسازگار با نوع عملیات، version نادرست یا payload ناقص پیش از فراخوانی sink رد می‌شوند. رخداد موفق برای ورودی نامعتبر تولید نمی‌شود.
 
-### نسخهٔ ۲ برای bootstrap با هویت service account
+### نسخهٔ ۴ برای bootstrap تک‌مالک با هویت service account
 
-نسخهٔ ۲ تمام فیلدهای پایه را نگه می‌دارد و این فیلدهای اجباری را اضافه می‌کند:
+نسخهٔ ۲ تمام فیلدهای پایه را نگه می‌دارد و approval دوطرفهٔ قدیمی را توصیف می‌کند؛ نسخهٔ ۴ برای سیاست تک‌مالک این فیلدهای اجباری را اضافه می‌کند:
 
-- `schemaVersion`: عدد ثابت `2`؛
+- `schemaVersion`: عدد ثابت `4`؛
 - `actorType`: فعلاً فقط `service_account`؛
 - `identitySource`: فعلاً فقط `google_cloud_adc_service_account_impersonation`؛
-- `ownerId`, `approverId`: شناسه‌های پایدار و متمایز؛
+- `ownerId`: شناسهٔ پایدار مالک؛
+- `ownerIdentitySource`: برابر `firebase_admin_id_token`؛
 - `approvalReference`: مرجع غیرخالی و محدود به 256 نویسه؛
 - `actorId`: ایمیل principal ازپیش allowlist‌شده با دامنهٔ `iam.gserviceaccount.com`.
 
-نسخهٔ ۱ بدون این فیلدها همچنان معتبر است؛ نسخهٔ ۲ برای bootstrap لازم است. این
-validator نمی‌تواند ثابت کند ایمیل واقعاً از credential آمده یا owner/approver واقعاً
-تأیید کرده‌اند. این ادعا فقط وقتی معتبر است که `trustedActorProvider` و منبع مستقل
+نسخهٔ ۱، ۲ و ۳ همچنان معتبرند؛ نسخهٔ ۴ برای bootstrap تک‌مالک لازم است. این
+validator نمی‌تواند ثابت کند توکن واقعاً از مالک آمده یا approval واقعاً
+تأیید کرده‌اند. این ادعا فقط وقتی معتبر است که `trustedActorProvider` و
 `trustedApprovalProvider` موردبازبینی‌شده باشند. کد فعلی ADC از API عمومی
-`Impersonated.getTargetPrincipal()` و تبادل access token استفاده می‌کند، اما approval
-provider وجود ندارد؛ در نتیجه CLI همچنان غیرفعال است.
+`Impersonated.getTargetPrincipal()` و تبادل access token استفاده می‌کند. provider مالک
+Firebase فقط به‌صورت تزریقی و آفلاین آماده است؛ چون منبع واقعی توکن و UID مالک به CLI
+وصل نشده، اجرای واقعی همچنان غیرفعال است.
 
 ## اتمیک‌بودن و شکست
 

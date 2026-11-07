@@ -359,6 +359,30 @@ test('rejects duplicate category slugs and disabling taxonomy used by content', 
   assert.equal((await provider.getTaxonomyTermWithVersion('country', 'IR')).value.enabled, true);
 });
 
+test('validates direct category membership, preserves omitted assignments, and blocks in-use disable', async () => {
+  const { provider } = setup();
+  const category = { slug: 'manual-only', localizedTitle: { fa: 'دستی' }, enabled: true, mode: 'manual' };
+  await provider.upsertCategory('manual-only', category, { expectedVersion: 0 });
+  await provider.upsertContentMetadata(contentId, { ...metadata, categoryIds: ['manual-only'] }, { expectedVersion: 0 });
+  await provider.upsertContentMetadata(contentId, { ...metadata, publicationStatus: 'draft' }, { expectedVersion: 1 });
+  assert.deepEqual((await provider.getContentMetadata(contentId)).categoryIds, ['manual-only']);
+  await provider.upsertContentMetadata(contentId, { ...metadata, categoryIds: [] }, { expectedVersion: 2 });
+  assert.deepEqual((await provider.getContentMetadata(contentId)).categoryIds, []);
+  await assert.rejects(
+    provider.upsertContentMetadata(contentId, { ...metadata, categoryIds: ['missing'] }, { expectedVersion: 3 }),
+    (error) => error instanceof CatalogConflictError && error.code === 'CATEGORY_REFERENCE_INVALID',
+  );
+  await provider.upsertContentMetadata(contentId, { ...metadata, categoryIds: ['manual-only'] }, { expectedVersion: 3 });
+  await assert.rejects(
+    provider.upsertCategory('manual-only', { ...category, enabled: false }, { expectedVersion: 1 }),
+    (error) => error instanceof CatalogConflictError && error.code === 'CATEGORY_IN_USE',
+  );
+  await assert.rejects(
+    provider.upsertContentMetadata(contentId, { ...metadata, categoryIds: Array.from({ length: 21 }, (_, i) => `c${i}`) }, { expectedVersion: 4 }),
+    (error) => error instanceof CatalogInputError && error.code === 'TOO_MANY_CATEGORIES',
+  );
+});
+
 test('rejects stale writes, missing versions, invalid data and invalid status combinations', async () => {
   const { provider } = setup();
   await assert.rejects(

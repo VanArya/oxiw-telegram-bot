@@ -12,6 +12,7 @@ const {
   IDENTITY_SOURCE,
   isServiceAccountPrincipal,
 } = require('./google-cloud-adc-trusted-actor-provider');
+const { OWNER_IDENTITY_SOURCE } = require('./firebase-owner-bootstrap-approval-provider');
 
 const DEFAULT_ASSIGNMENTS_COLLECTION = 'catalogAdminRoleAssignments';
 const DEFAULT_AUDIT_COLLECTION = 'catalogAdminRoleAuditEvents';
@@ -30,9 +31,9 @@ function validateBootstrapIdentity(actor, approval) {
       actor.actorType !== 'service_account' || actor.identitySource !== IDENTITY_SOURCE ||
       !approval || typeof approval !== 'object' || Array.isArray(approval) ||
       Object.keys(approval).length !== 3 ||
-      Object.keys(approval).some((key) => !['ownerId', 'approverId', 'approvalReference'].includes(key)) ||
-      !isStableSubjectId(approval.ownerId) || !isStableSubjectId(approval.approverId) ||
-      approval.ownerId === approval.approverId ||
+      Object.keys(approval).some((key) => !['ownerId', 'ownerIdentitySource', 'approvalReference'].includes(key)) ||
+      !isStableSubjectId(approval.ownerId) ||
+      approval.ownerIdentitySource !== OWNER_IDENTITY_SOURCE ||
       typeof approval.approvalReference !== 'string' ||
       approval.approvalReference.trim() !== approval.approvalReference ||
       approval.approvalReference.length === 0 || approval.approvalReference.length > 256 ||
@@ -122,6 +123,17 @@ function assignmentSnapshotFromQueryDocument(document) {
   return validateAssignmentSnapshot(document.id, { exists: true, data: () => document.data() });
 }
 
+function publicAssignment(assignment) {
+  return Object.freeze({
+    subjectId: assignment.data.subjectId,
+    roles: Object.freeze([...assignment.roles]),
+    active: assignment.data.active,
+    version: assignment.data.version,
+    ...(assignment.data.createdAt === undefined ? {} : { createdAt: assignment.data.createdAt }),
+    ...(assignment.data.updatedAt === undefined ? {} : { updatedAt: assignment.data.updatedAt }),
+  });
+}
+
 async function readRoleState(transaction, firestore, assignmentsCollection, controlReference, targetReference) {
   const controlSnapshot = await transaction.get(controlReference);
   const targetSnapshot = await transaction.get(targetReference);
@@ -182,6 +194,42 @@ function createFirestoreCatalogAdminRoleProvider({
   }
 
   return Object.freeze({
+    async getAssignment(subjectId) {
+      if (!isStableSubjectId(subjectId)) throw makeResolutionError('INVALID_SUBJECT');
+      try {
+        const state = await resolveRoleState(subjectId);
+        return state.target ? publicAssignment(state.target) : null;
+      } catch (error) {
+        if (error instanceof CatalogAdminRoleResolutionError) throw error;
+        throw makeResolutionError('ROLE_SOURCE_UNAVAILABLE');
+      }
+    },
+
+    async listAssignments({ activeOnly = false } = {}) {
+      if (typeof activeOnly !== 'boolean') throw new TypeError('Invalid assignment list options.');
+      try {
+        return firestore.runTransaction(async (transaction) => {
+          const controlSnapshot = await transaction.get(controlReference());
+          const collectionSnapshot = await transaction.get(firestore.collection(assignmentsCollection));
+          if (!collectionSnapshot || !Array.isArray(collectionSnapshot.docs)) {
+            throw makeResolutionError('ROLE_SOURCE_UNAVAILABLE');
+          }
+          const assignments = collectionSnapshot.docs.map(assignmentSnapshotFromQueryDocument);
+          const control = validateControlSnapshot(controlSnapshot);
+          if (!control && assignments.length > 0) throw makeResolutionError('ROLE_CONTROL_MISSING');
+          if (control && countActiveAdministrators(assignments) !== control.data.activeAdministratorCount) {
+            throw makeResolutionError('ROLE_CONTROL_INCONSISTENT');
+          }
+          return assignments
+            .filter((assignment) => !activeOnly || assignment.data.active)
+            .map(publicAssignment);
+        });
+      } catch (error) {
+        if (error instanceof CatalogAdminRoleResolutionError) throw error;
+        throw makeResolutionError('ROLE_SOURCE_UNAVAILABLE');
+      }
+    },
+
     async resolveRoles(subjectId) {
       if (!isStableSubjectId(subjectId)) throw makeResolutionError('INVALID_SUBJECT');
       try {
@@ -301,7 +349,7 @@ function createFirestoreCatalogAdminRoleProvider({
           }
           const assignmentReferenceForTarget = assignmentReference(targetSubjectId);
           const event = validateCatalogAdminRoleAuditEvent({
-            schemaVersion: 2,
+            schemaVersion: 4,
             eventId: createEventId(),
             operation: 'bootstrap.completed',
             occurredAt: occurredAtIso,
@@ -310,7 +358,7 @@ function createFirestoreCatalogAdminRoleProvider({
             actorType: actor.actorType,
             identitySource: actor.identitySource,
             ownerId: approval.ownerId,
-            approverId: approval.approverId,
+            ownerIdentitySource: approval.ownerIdentitySource,
             approvalReference: approval.approvalReference,
             targetSubjectId,
             rolesBefore: [],
@@ -339,7 +387,7 @@ function createFirestoreCatalogAdminRoleProvider({
             actorType: actor.actorType,
             identitySource: actor.identitySource,
             ownerId: approval.ownerId,
-            approverId: approval.approverId,
+            ownerIdentitySource: approval.ownerIdentitySource,
             approvalReference: approval.approvalReference,
             updatedAt: occurredAtIso,
             updatedBy: actorId,

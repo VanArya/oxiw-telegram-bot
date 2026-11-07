@@ -61,10 +61,14 @@ function createCatalogHttpService({
   roleProvider,
   reportRoleResolutionFailure,
   authorizePermission,
+  authorizeOwner,
+  targetResolver,
+  resolveManagerEmail,
   readinessCheck,
   logger,
   getAdminWebConfig,
   auditReader,
+  directCategoryWritesEnabled = false,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
     throw new TypeError('Catalog HTTP service requires an injected readSheet provider.');
@@ -96,6 +100,10 @@ function createCatalogHttpService({
     roleProvider,
     reportRoleResolutionFailure,
     authorizePermission,
+    authorizeOwner,
+    targetResolver,
+    resolveManagerEmail,
+    directCategoryWritesEnabled,
   });
 
   const app = express();

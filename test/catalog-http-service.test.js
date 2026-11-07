@@ -56,6 +56,7 @@ function createService(overrides = {}) {
     roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
     authorizePermission: roleAuthorizer,
     readinessCheck: async () => readyChecks,
+    directCategoryWritesEnabled: true,
     ...overrides,
   });
 }

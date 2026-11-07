@@ -8,6 +8,8 @@ const PUBLICATION_STATUSES = new Set(['draft', 'published', 'archived', 'unknown
 const TAXONOMY_TYPES = new Set(['country', 'genre']);
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const CATEGORY_MODES = new Set(['dynamic', 'manual', 'hybrid']);
+const MAX_DIRECT_CATEGORIES = 20;
 
 class CatalogInputError extends Error {
   constructor(code = 'INVALID_INPUT') {
@@ -77,7 +79,7 @@ function validateIdList(value, type) {
 function validateCatalogContentMetadata(contentId, value) {
   if (!isCanonicalContentId(contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
   assertAllowedKeys(value, new Set([
-    'contentId', 'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds',
+    'contentId', 'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds',
   ]));
   if (
     (Object.hasOwn(value, 'contentId') && value.contentId !== contentId) ||
@@ -92,8 +94,13 @@ function validateCatalogContentMetadata(contentId, value) {
   };
   const countryIds = validateIdList(value.countryIds, 'country');
   const genreIds = validateIdList(value.genreIds, 'genre');
+  const categoryIds = validateIdList(value.categoryIds, 'category');
+  if (categoryIds !== undefined && categoryIds.length > MAX_DIRECT_CATEGORIES) {
+    throw new CatalogInputError('TOO_MANY_CATEGORIES');
+  }
   if (countryIds !== undefined) metadata.countryIds = countryIds;
   if (genreIds !== undefined) metadata.genreIds = genreIds;
+  if (categoryIds !== undefined) metadata.categoryIds = categoryIds;
   return metadata;
 }
 
@@ -126,7 +133,7 @@ function validateCatalogCategory(categoryId, value) {
     throw new CatalogInputError('INVALID_CATEGORY_ID');
   }
   assertAllowedKeys(value, new Set([
-    'id', 'slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder',
+    'id', 'slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder', 'mode',
   ]));
   if (
     (Object.hasOwn(value, 'id') && value.id !== categoryId) ||
@@ -137,6 +144,7 @@ function validateCatalogCategory(categoryId, value) {
       typeof title !== 'string' || title.trim() === ''
     )) ||
     typeof value.enabled !== 'boolean' ||
+    (value.mode !== undefined && !CATEGORY_MODES.has(value.mode)) ||
     (value.sortOrder !== undefined && !Number.isFinite(value.sortOrder))
   ) throw new CatalogInputError();
 
@@ -147,6 +155,7 @@ function validateCatalogCategory(categoryId, value) {
     enabled: value.enabled,
   };
   if (value.sortOrder !== undefined) category.sortOrder = value.sortOrder;
+  if (value.mode !== undefined) category.mode = value.mode;
   if (value.filters !== undefined) {
     try {
       filterCatalogItems([], value.filters);
@@ -183,6 +192,8 @@ module.exports = {
   CatalogNotFoundError,
   APPROVAL_STATUSES,
   PUBLICATION_STATUSES,
+  CATEGORY_MODES,
+  MAX_DIRECT_CATEGORIES,
   TAXONOMY_TYPES,
   validateApprovalStatus,
   validateCatalogCategory,

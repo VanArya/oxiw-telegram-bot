@@ -31,3 +31,23 @@ test('Firebase Auth explicitly uses in-memory persistence before auth listeners 
   assert.ok(appSource.indexOf('initializeAuth(app') < appSource.indexOf('onAuthStateChanged'));
   assert.ok(appSource.indexOf('initializeAuth(app') < appSource.indexOf('signInWithPopup'));
 });
+
+test('manager administration stays owner-gated and uses the manager APIs safely', () => {
+  assert.match(html, /id="managers-nav"[^>]+data-view="managers"(?![^>]*hidden)/);
+  assert.match(html, /id="view-managers"/);
+  assert.match(html, /id="manager-email"[^>]+type="email"/);
+  assert.match(html, /id="manager-rows"/);
+  assert.match(appSource, /\/managers/);
+  assert.match(appSource, /method: 'POST'/);
+  assert.match(appSource, /method: 'DELETE'/);
+  assert.match(appSource, /If-Match/);
+  assert.match(appSource, /window\.confirm\(/);
+  assert.match(appSource, /OWNER_REQUIRED/);
+  assert.match(appSource, /setManagerAccessVisible\(false\)/);
+  assert.match(appSource, /managerEmailById/);
+  assert.match(appSource, /assignment\.email/);
+  assert.match(appSource, /ایمیل در دسترس نیست/);
+  assert.match(appSource, /ثبت و لغو دسترسی تا تأیید مالک/);
+  assert.match(appSource, /managerSave\.disabled = !managerAccessAllowed/);
+  assert.doesNotMatch(appSource, /roles\.includes\(['"]owner/);
+});

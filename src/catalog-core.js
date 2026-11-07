@@ -153,7 +153,20 @@ function getCategoryItems(items, category) {
   if (category.filters !== undefined && category.filters !== null) {
     assertFilter(category.filters);
   }
-  return filterCatalogItems(items, category.filters);
+  const mode = category.mode || 'dynamic';
+  if (!['dynamic', 'manual', 'hybrid'].includes(mode)) return [];
+  const dynamicItems = mode === 'manual' ? [] : filterCatalogItems(items, category.filters);
+  const manualItems = mode === 'dynamic'
+    ? []
+    : filterCatalogItems(items, undefined).filter((item) =>
+      Array.isArray(item.categoryIds) && item.categoryIds.includes(category.id));
+  if (mode === 'dynamic') return dynamicItems;
+  const seen = new Set();
+  return [...dynamicItems, ...manualItems].filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
 function findPublishedItem(items, id) {

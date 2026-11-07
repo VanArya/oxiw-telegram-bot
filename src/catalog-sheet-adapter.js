@@ -14,6 +14,7 @@ const {
   classifyCatalogDependencyError,
   createCatalogDataValidationError,
 } = require('./catalog-operational-errors');
+const { MAX_DIRECT_CATEGORIES } = require('./catalog-metadata-validation');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 const REQUIRED_HEADERS = Object.freeze(['کد سیستم', 'اسم فیلم']);
@@ -106,6 +107,10 @@ function validMetadata(value, countryIds, genreIds) {
       new Set(value[field]).size !== value[field].length
     ) return false;
   }
+  if (Object.hasOwn(value, 'categoryIds') && value.categoryIds !== undefined &&
+      (!Array.isArray(value.categoryIds) || value.categoryIds.length > MAX_DIRECT_CATEGORIES ||
+       value.categoryIds.some((id) => typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) ||
+       new Set(value.categoryIds).size !== value.categoryIds.length)) return false;
   return true;
 }
 
@@ -211,6 +216,7 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
 
         if (metadata.countryIds !== undefined) content.countryIds = [...metadata.countryIds];
         if (metadata.genreIds !== undefined) content.genreIds = [...metadata.genreIds];
+        content.categoryIds = metadata.categoryIds ? [...metadata.categoryIds] : [];
         content.approvalStatus = metadata.approvalStatus;
         content.publicationStatus = metadata.publicationStatus;
         return content;

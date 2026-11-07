@@ -166,6 +166,10 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
   }
 
   return Object.freeze({
+    async getItem(contentId) {
+      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      return item || null;
+    },
     async list(query) {
       const parsed = parseQuery(query);
       const allItems = await readAllItems();

@@ -38,14 +38,7 @@ function parseBootstrapArguments(argv = []) {
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--target-subject-id') {
-      const value = argv[index + 1];
-      if (Object.hasOwn(options, 'targetSubjectId') || value === undefined ||
-          typeof value !== 'string' || value.startsWith('--')) {
-        throw new CatalogAdminBootstrapError('TARGET_REQUIRED');
-      }
-      options.targetSubjectId = value;
-      index += 1;
-      continue;
+      throw new CatalogAdminBootstrapError('TARGET_NOT_ACCEPTED');
     }
     if (argument === '--confirm') {
       if (Object.hasOwn(options, 'confirmation')) {
@@ -60,18 +53,31 @@ function parseBootstrapArguments(argv = []) {
   return Object.freeze(options);
 }
 
-function validateRequest({ env, targetSubjectId, confirmation }) {
+function validateRequest({ env, confirmation }) {
   try {
     readOperationalConfiguration(env);
   } catch {
     throw new CatalogAdminBootstrapError('CONFIGURATION_INVALID');
   }
-  if (!isStableSubjectId(targetSubjectId)) {
-    throw new CatalogAdminBootstrapError('TARGET_INVALID');
-  }
   if (confirmation !== CONFIRMATION_VALUE) {
     throw new CatalogAdminBootstrapError('CONFIRMATION_REQUIRED');
   }
+}
+
+async function resolveTargetSubjectId(targetResolver) {
+  if (typeof targetResolver !== 'function') {
+    throw new CatalogAdminBootstrapError('TARGET_SOURCE_UNCONFIGURED');
+  }
+  let targetSubjectId;
+  try {
+    targetSubjectId = await targetResolver();
+  } catch {
+    throw new CatalogAdminBootstrapError('TARGET_UNAVAILABLE');
+  }
+  if (!isStableSubjectId(targetSubjectId)) {
+    throw new CatalogAdminBootstrapError('TARGET_INVALID');
+  }
+  return targetSubjectId;
 }
 
 async function resolveTrustedActor(trustedActorProvider) {
@@ -97,21 +103,21 @@ async function resolveTrustedActor(trustedActorProvider) {
   return actor;
 }
 
-async function resolveTrustedApproval(trustedApprovalProvider) {
+async function resolveTrustedApproval(trustedApprovalProvider, targetSubjectId) {
   if (typeof trustedApprovalProvider !== 'function') {
     throw new CatalogAdminBootstrapError('TRUSTED_APPROVAL_SOURCE_UNCONFIGURED');
   }
   let approval;
   try {
-    approval = await trustedApprovalProvider();
+    approval = await trustedApprovalProvider({ targetSubjectId });
   } catch {
     throw new CatalogAdminBootstrapError('TRUSTED_APPROVAL_UNAVAILABLE');
   }
   if (!approval || typeof approval !== 'object' || Array.isArray(approval) ||
       Object.keys(approval).length !== 3 ||
-      Object.keys(approval).some((key) => !['ownerId', 'approverId', 'approvalReference'].includes(key)) ||
-      !isStableSubjectId(approval.ownerId) || !isStableSubjectId(approval.approverId) ||
-      approval.ownerId === approval.approverId ||
+      Object.keys(approval).some((key) => !['ownerId', 'ownerIdentitySource', 'approvalReference'].includes(key)) ||
+      !isStableSubjectId(approval.ownerId) ||
+      approval.ownerIdentitySource !== 'firebase_admin_id_token' ||
       typeof approval.approvalReference !== 'string' ||
       approval.approvalReference.trim() !== approval.approvalReference ||
       approval.approvalReference.length === 0 || approval.approvalReference.length > 256 ||
@@ -123,15 +129,16 @@ async function resolveTrustedApproval(trustedApprovalProvider) {
 
 async function executeCatalogAdminBootstrap({
   env = process.env,
-  targetSubjectId,
+  targetResolver,
   confirmation,
   trustedActorProvider,
   trustedApprovalProvider,
   runtimeFactory = createOperationalCatalogRuntime,
 } = {}) {
-  validateRequest({ env, targetSubjectId, confirmation });
+  validateRequest({ env, confirmation });
+  const targetSubjectId = await resolveTargetSubjectId(targetResolver);
   const actor = await resolveTrustedActor(trustedActorProvider);
-  const approval = await resolveTrustedApproval(trustedApprovalProvider);
+  const approval = await resolveTrustedApproval(trustedApprovalProvider, targetSubjectId);
   if (typeof runtimeFactory !== 'function') {
     throw new CatalogAdminBootstrapError('RUNTIME_FACTORY_INVALID');
   }
@@ -167,6 +174,7 @@ async function main({
   runtimeFactory,
   trustedActorProvider,
   trustedApprovalProvider,
+  targetResolver,
 } = {}) {
   const argumentsObject = parseBootstrapArguments(argv);
   return executeCatalogAdminBootstrap({
@@ -174,7 +182,7 @@ async function main({
     runtimeFactory,
     trustedActorProvider,
     trustedApprovalProvider,
-    targetSubjectId: argumentsObject.targetSubjectId,
+    targetResolver,
     confirmation: argumentsObject.confirmation,
   });
 }

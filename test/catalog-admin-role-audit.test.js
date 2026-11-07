@@ -135,6 +135,31 @@ test('accepts Firebase owner bootstrap schema v3 and rejects mismatched owner id
   }), TypeError);
 });
 
+test('accepts single-owner service bootstrap schema v4 without a second approver', () => {
+  const event = validateCatalogAdminRoleAuditEvent({
+    ...validEvent({
+      operation: 'bootstrap.completed',
+      actorId: 'catalog-bootstrap@oxiw-provisioning.iam.gserviceaccount.com',
+      targetSubjectId: 'first-admin',
+      rolesBefore: [], rolesAfter: ['administrator'],
+      activeBefore: false, activeAfter: true,
+      previousVersion: 0, version: 1,
+    }),
+    schemaVersion: 4,
+    actorType: 'service_account',
+    identitySource: 'google_cloud_adc_service_account_impersonation',
+    ownerId: 'catalog-owner',
+    ownerIdentitySource: 'firebase_admin_id_token',
+    approvalReference: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  });
+  assert.equal(event.schemaVersion, 4);
+  assert.equal(event.ownerIdentitySource, 'firebase_admin_id_token');
+  assert.equal(event.approvalReference, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+  assert.throws(() => validateCatalogAdminRoleAuditEvent({
+    ...event, approverId: 'second-approver',
+  }), TypeError);
+});
+
 test('rejects untrusted or incomplete version 2 identity and approval fields', () => {
   const v2 = {
     ...validEvent({

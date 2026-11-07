@@ -33,6 +33,7 @@ function projectContentMetadata(data, contentId) {
       publicationStatus: data.publicationStatus,
       ...(data.countryIds === undefined ? {} : { countryIds: data.countryIds }),
       ...(data.genreIds === undefined ? {} : { genreIds: data.genreIds }),
+      ...(data.categoryIds === undefined ? {} : { categoryIds: data.categoryIds }),
     });
   } catch {
     return null;
@@ -107,6 +108,7 @@ function createFirestoreCatalogMetadataProvider({ firestore, collections = COLLE
             localizedTitle: data.localizedTitle,
             enabled: data.enabled,
             ...(data.sortOrder === undefined ? {} : { sortOrder: data.sortOrder }),
+            ...(data.mode === undefined ? {} : { mode: data.mode }),
             ...(data.filters === undefined ? {} : { filters: data.filters }),
           });
         }).filter((category) => category.enabled);

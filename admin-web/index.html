@@ -69,6 +69,7 @@
               <button class="nav-item" data-view="genres" data-permission="catalog.taxonomies.manage" type="button"><span>05</span> ژانرها</button>
               <button class="nav-item" data-view="audit" type="button"><span>06</span> تاریخچه عملیات</button>
               <button class="nav-item" data-view="account" type="button"><span>07</span> حساب و دسترسی</button>
+              <button id="managers-nav" class="nav-item" data-view="managers" type="button"><span>08</span> مدیریت مدیران</button>
             </nav>
             <div class="sidebar-note"><span class="status-dot"></span><span>اتصال امن سمت سرور</span></div>
           </aside>
@@ -108,6 +109,7 @@
                   <label>عنوان انگلیسی (اختیاری)<input id="category-title-en" maxlength="160" dir="ltr"></label>
                   <div class="localized-titles"><div class="panel-heading"><h3>عنوان زبان‌های دیگر (اختیاری)</h3><button id="add-localized-title" class="button button-small button-secondary" type="button">افزودن زبان</button></div><div id="category-other-titles"></div></div>
                   <label>Slug<input id="category-slug" required maxlength="80" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" dir="ltr"></label>
+                  <label>نوع عضویت<select id="category-mode"><option value="dynamic">پویا</option><option value="manual">مستقیم</option><option value="hybrid">ترکیبی</option></select></label>
                   <label>ترتیب نمایش<input id="category-sort" type="number" step="1" value="0"></label>
                   <label class="check-label"><input id="category-enabled" type="checkbox" checked> فعال</label>
                   <div class="filter-builder"><div class="panel-heading"><h3>فیلترهای دسته</h3><button id="add-filter" class="button button-small button-secondary" type="button">افزودن شرط</button></div><div id="filter-conditions"></div><p class="fine-print">شرط‌ها با AND ترکیب می‌شوند و فقط فیلدهای مجاز Core قابل انتخاب‌اند.</p><p id="category-filter-warning" class="notice" hidden>این فیلتر از شرط‌های تو‌در‌تو استفاده می‌کند؛ ویرایش پیشرفته در سرور دوباره اعتبارسنجی می‌شود.</p><details id="category-advanced" hidden><summary>ویرایش پیشرفتهٔ فیلتر</summary><textarea id="category-filter-json" rows="8" spellcheck="false" aria-label="فیلتر JSON"></textarea></details></div>
@@ -137,6 +139,18 @@
               <div class="panel"><div class="panel-heading"><h2>نقش‌های فعال</h2></div><div id="account-roles" class="chips"></div><h2 class="subheading">مجوزهای مؤثر</h2><div id="account-permissions" class="permission-list"></div></div>
               <div id="bootstrap-notice" class="notice warning-panel">نقش مدیر اول از پنل ساخته نمی‌شود. provisioning مدیر نخستین تا تعریف و تأیید منشأ مستقل actor و approver غیرفعال است.</div>
             </section>
+
+            <section id="view-managers" class="view">
+              <div class="page-heading"><div><p class="eyebrow">دسترسی مالک</p><h1>مدیریت مدیران</h1><p class="muted">افزودن و لغو دسترسی فقط پس از تأیید مالک در سمت سرور انجام می‌شود.</p></div><div class="form-actions"><button id="manager-new" class="button button-primary" type="button">افزودن مدیر</button><button id="manager-refresh" class="button button-secondary" type="button">به‌روزرسانی</button></div></div>
+              <div id="manager-message" class="notice" role="status" aria-live="polite" hidden></div>
+              <form id="manager-form" class="panel editor-form" hidden>
+                <div class="panel-heading"><div><p class="eyebrow">مدیر جدید</p><h2>افزودن با ایمیل</h2></div><button id="manager-cancel" class="icon-button" type="button" aria-label="بستن">×</button></div>
+                <label for="manager-email">ایمیل حساب Firebase<input id="manager-email" type="email" maxlength="320" autocomplete="off" required dir="ltr" placeholder="name@example.com"></label>
+                <p class="fine-print">UID حساب در Backend و از Firebase Admin استخراج می‌شود؛ ایمیل به‌تنهایی هویت یا مجوز ایجاد نمی‌کند.</p>
+                <div class="form-actions"><button id="manager-save" class="button button-primary" type="submit">افزودن مدیر</button><button class="button button-secondary" type="button" data-manager-cancel>انصراف</button></div>
+              </form>
+              <div class="panel table-panel"><div class="panel-heading"><h2>مدیران فعال</h2></div><div class="table-wrap"><table><thead><tr><th>ایمیل</th><th>شناسه</th><th>نقش</th><th>وضعیت</th><th>نسخه</th><th></th></tr></thead><tbody id="manager-rows"></tbody></table></div></div>
+            </section>
           </div>
         </div>
       </section>
@@ -151,6 +165,7 @@
         <div class="panel-heading"><h3>فرادادهٔ قابل ویرایش</h3></div>
         <label>کشورها<select id="metadata-countries" multiple size="4"></select></label>
         <label>ژانرها<select id="metadata-genres" multiple size="4"></select></label>
+        <label>دسته‌بندی مستقیم<select id="metadata-categories" multiple size="4"></select></label>
         <p class="fine-print">عنوان و اطلاعات اصلی فقط‌خواندنی از Google Sheets هستند. وضعیت تأیید و انتشار از عملیات مستقل مدیریت می‌شوند.</p>
         <button id="metadata-save" class="button button-primary" type="submit">ذخیرهٔ فراداده</button>
       </form>

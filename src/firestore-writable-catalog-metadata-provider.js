@@ -69,6 +69,7 @@ function projectContent(data, contentId) {
       publicationStatus: data.publicationStatus,
       ...(data.countryIds === undefined ? {} : { countryIds: data.countryIds }),
       ...(data.genreIds === undefined ? {} : { genreIds: data.genreIds }),
+      ...(data.categoryIds === undefined ? {} : { categoryIds: data.categoryIds }),
     });
   } catch {
     throw new TypeError();
@@ -83,6 +84,7 @@ function projectCategory(document, data) {
       localizedTitle: data.localizedTitle,
       enabled: data.enabled,
       ...(data.sortOrder === undefined ? {} : { sortOrder: data.sortOrder }),
+      ...(data.mode === undefined ? {} : { mode: data.mode }),
       ...(data.filters === undefined ? {} : { filters: data.filters }),
     });
   } catch {
@@ -203,11 +205,22 @@ function createFirestoreWritableCatalogMetadataProvider({
     }
   }
 
+  async function assertActiveCategoryReferences(transaction, metadata) {
+    for (const id of metadata.categoryIds || []) {
+      const snapshot = await transaction.get(categoryRef(id));
+      const stored = readSnapshot(snapshot);
+      if (!stored || !projectCategory({ id }, stored.data).enabled) {
+        throw new CatalogConflictError('CATEGORY_REFERENCE_INVALID');
+      }
+    }
+  }
+
   async function transactWrite({
     reference,
     options,
     projectExisting,
     value,
+    valueFor,
     entityType,
     entityId,
     operationFor,
@@ -225,21 +238,22 @@ function createFirestoreWritableCatalogMetadataProvider({
         }
         const previous = stored ? projectExisting(stored.data) : null;
         const nextVersion = (stored?.version ?? 0) + 1;
-        if (beforeWrite) await beforeWrite(transaction, previous);
-        const data = { ...value, [INTERNAL_VERSION]: nextVersion };
+        const nextValue = valueFor ? valueFor(previous) : value;
+        if (beforeWrite) await beforeWrite(transaction, previous, nextValue);
+        const data = { ...nextValue, [INTERNAL_VERSION]: nextVersion };
         transaction.set(reference, data);
         const event = eventFor({
-          operation: operationFor(previous, value),
+          operation: operationFor(previous, nextValue),
           entityType,
           entityId,
           options: writeOptions,
           previousVersion: stored?.version ?? 0,
           version: nextVersion,
-          fields: changedFields(previous, value, fieldNames),
+          fields: changedFields(previous, nextValue, fieldNames),
           clock,
         });
         await auditEventSink.appendInTransaction(transaction, event);
-        return { value, version: nextVersion };
+        return { value: nextValue, version: nextVersion };
       });
     } catch (error) {
       if (error instanceof CatalogConflictError || error instanceof CatalogInputError) throw error;
@@ -335,8 +349,14 @@ function createFirestoreWritableCatalogMetadataProvider({
         entityType: 'content',
         entityId: contentId,
         operationFor: (previous) => previous ? 'metadata.updated' : 'metadata.created',
-        fieldNames: ['approvalStatus', 'publicationStatus', 'countryIds', 'genreIds'],
-        beforeWrite: (transaction) => assertActiveTaxonomyReferences(transaction, metadata),
+        fieldNames: ['approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds'],
+        valueFor: (previous) => metadata.categoryIds === undefined && previous
+          ? { ...metadata, ...(previous.categoryIds === undefined ? {} : { categoryIds: previous.categoryIds }) }
+          : metadata,
+        beforeWrite: async (transaction, _previous, nextValue) => {
+          await assertActiveTaxonomyReferences(transaction, nextValue);
+          await assertActiveCategoryReferences(transaction, nextValue);
+        },
       }));
     },
     async updateApprovalStatus(contentId, approvalStatus, options) {
@@ -384,7 +404,7 @@ function createFirestoreWritableCatalogMetadataProvider({
         entityType: 'category',
         entityId: categoryId,
         operationFor: (previous) => previous ? 'category.updated' : 'category.created',
-        fieldNames: ['slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder'],
+        fieldNames: ['slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder', 'mode'],
         beforeWrite: async (transaction, previous) => {
           const snapshot = await transaction.get(
             firestore.collection(collections.categories).where('slug', '==', category.slug),
@@ -392,6 +412,13 @@ function createFirestoreWritableCatalogMetadataProvider({
           if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
           const conflicting = snapshot.docs.some((document) => document.id !== categoryId);
           if (conflicting) throw new CatalogConflictError('DUPLICATE_CATEGORY_SLUG');
+          if (previous?.enabled && !category.enabled) {
+            const references = await transaction.get(
+              firestore.collection(collections.contentMetadata).where('categoryIds', 'array-contains', categoryId),
+            );
+            if (!references || !Array.isArray(references.docs)) throw new TypeError();
+            if (references.docs.length > 0) throw new CatalogConflictError('CATEGORY_IN_USE');
+          }
           return previous;
         },
       }));

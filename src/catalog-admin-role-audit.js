@@ -14,6 +14,11 @@ const ROLE_AUDIT_EVENT_V3_KEYS = new Set([
   ...ROLE_AUDIT_EVENT_V1_KEYS,
   'schemaVersion', 'actorType', 'identitySource', 'ownerId',
 ]);
+const ROLE_AUDIT_EVENT_V4_KEYS = new Set([
+  ...ROLE_AUDIT_EVENT_V1_KEYS,
+  'schemaVersion', 'actorType', 'identitySource', 'ownerId',
+  'ownerIdentitySource', 'approvalReference',
+]);
 const ROLE_AUDIT_OPERATIONS = new Set([
   'assignment.created',
   'roles.changed',
@@ -51,6 +56,19 @@ function hasValidFirebaseOwnerIdentity(event) {
     event.identitySource === 'firebase_admin_id_token' &&
     isStableSubjectId(event.actorId) && isStableSubjectId(event.ownerId) &&
     event.actorId === event.ownerId;
+}
+
+function hasValidSingleOwnerIdentity(event) {
+  return event.schemaVersion === 4 && event.operation === 'bootstrap.completed' &&
+    event.actorType === 'service_account' &&
+    event.identitySource === 'google_cloud_adc_service_account_impersonation' &&
+    isServiceAccountPrincipal(event.actorId) &&
+    isStableSubjectId(event.ownerId) &&
+    event.ownerIdentitySource === 'firebase_admin_id_token' &&
+    typeof event.approvalReference === 'string' &&
+    event.approvalReference.trim() === event.approvalReference &&
+    event.approvalReference.length > 0 && event.approvalReference.length <= 256 &&
+    !/[\u0000-\u001f\u007f]/.test(event.approvalReference);
 }
 
 function isRoleList(value) {
@@ -103,7 +121,8 @@ function validateCatalogAdminRoleAuditEvent(event) {
     : undefined;
   const expectedKeys = schemaVersion === 1 ? ROLE_AUDIT_EVENT_V1_KEYS :
     schemaVersion === 2 ? ROLE_AUDIT_EVENT_V2_KEYS :
-      schemaVersion === 3 ? ROLE_AUDIT_EVENT_V3_KEYS : new Set();
+      schemaVersion === 3 ? ROLE_AUDIT_EVENT_V3_KEYS :
+        schemaVersion === 4 ? ROLE_AUDIT_EVENT_V4_KEYS : new Set();
   if (!event || typeof event !== 'object' || Array.isArray(event) ||
       Object.keys(event).some((key) => !expectedKeys.has(key)) ||
       Object.keys(event).length !== expectedKeys.size ||
@@ -116,7 +135,8 @@ function validateCatalogAdminRoleAuditEvent(event) {
       event.outcome !== 'committed' ||
       !(schemaVersion === 1 ? isStableSubjectId(event.actorId) :
         schemaVersion === 2 ? hasValidIdentityAndApproval(event) :
-          hasValidFirebaseOwnerIdentity(event)) ||
+          schemaVersion === 3 ? hasValidFirebaseOwnerIdentity(event) :
+            hasValidSingleOwnerIdentity(event)) ||
       !isStableSubjectId(event.targetSubjectId) ||
       !isRoleList(event.rolesBefore) || !isRoleList(event.rolesAfter) ||
       typeof event.activeBefore !== 'boolean' || typeof event.activeAfter !== 'boolean' ||
@@ -145,6 +165,7 @@ module.exports = {
   ROLE_AUDIT_EVENT_V1_KEYS,
   ROLE_AUDIT_EVENT_V2_KEYS,
   ROLE_AUDIT_EVENT_V3_KEYS,
+  ROLE_AUDIT_EVENT_V4_KEYS,
   assertCatalogAdminRoleAuditSink,
   validateCatalogAdminRoleAuditEvent,
 };

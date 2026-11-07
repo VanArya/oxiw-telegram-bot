@@ -17,6 +17,12 @@ const {
   createFirebaseAdminIdTokenVerifier,
 } = require('./firebase-admin-id-token-verifier');
 const {
+  createFirebaseAdminManagerEmailResolver,
+} = require('./firebase-admin-manager-email-resolver');
+const {
+  createFirebaseAdminTargetResolver,
+} = require('./firebase-admin-target-resolver');
+const {
   createFirestoreCatalogAdminRoleAuditSink,
   createFirestoreCatalogAdminRoleProvider,
 } = require('./firestore-catalog-admin-role-provider');
@@ -27,6 +33,7 @@ const {
 const PROJECT_ID_ENV = 'CATALOG_GCP_PROJECT_ID';
 const DATABASE_ID_ENV = 'CATALOG_FIRESTORE_DATABASE_ID';
 const DEFAULT_DATABASE_ID = '(default)';
+const DIRECT_CATEGORY_WRITES_ENV = 'CATALOG_DIRECT_CATEGORIES_WRITE_ENABLED';
 const FIREBASE_APP_NAME = 'oxiw-catalog-core';
 
 class CatalogOperationalRuntimeConfigurationError extends Error {
@@ -67,6 +74,7 @@ function readOperationalConfiguration(env) {
     projectId,
     databaseId,
     spreadsheetId: spreadsheetId.trim(),
+    directCategoryWritesEnabled: env[DIRECT_CATEGORY_WRITES_ENV] === 'true',
   });
 }
 
@@ -138,6 +146,8 @@ async function createOperationalCatalogRuntime({
     getFirestore,
   },
   readinessCheck,
+  authorizeOwner,
+  targetResolver,
 } = {}) {
   const configuration = readOperationalConfiguration(env);
   if (!google || typeof google !== 'object') {
@@ -149,6 +159,9 @@ async function createOperationalCatalogRuntime({
     projectId: configuration.projectId,
     databaseId: configuration.databaseId,
   });
+  const operationalTargetResolver = targetResolver === undefined
+    ? createFirebaseAdminTargetResolver({ auth: firebase.auth })
+    : targetResolver;
 
   let roleProvider;
   try {
@@ -183,11 +196,15 @@ async function createOperationalCatalogRuntime({
       verifyAdminPrincipal: createFirebaseAdminIdTokenVerifier({ auth: firebase.auth }),
       roleProvider,
       authorizePermission: createCatalogRoleAuthorizer(),
+      ...(authorizeOwner === undefined ? {} : { authorizeOwner }),
+      targetResolver: operationalTargetResolver,
+      resolveManagerEmail: createFirebaseAdminManagerEmailResolver({ auth: firebase.auth }),
       readinessCheck: operationalReadiness,
       getAdminWebConfig: () => getCatalogFirebaseWebConfig({
         env,
         runtimeProjectId: configuration.projectId,
       }),
+      directCategoryWritesEnabled: configuration.directCategoryWritesEnabled,
     });
   } catch {
     throw new CatalogOperationalRuntimeConfigurationError();
@@ -200,6 +217,7 @@ async function createOperationalCatalogRuntime({
     firebaseApp: firebase.app,
     projectId: configuration.projectId,
     databaseId: configuration.databaseId,
+    targetResolver: operationalTargetResolver,
     readinessCheck: operationalReadiness,
   });
 }
@@ -210,6 +228,7 @@ module.exports = {
   DEFAULT_DATABASE_ID,
   FIREBASE_APP_NAME,
   PROJECT_ID_ENV,
+  DIRECT_CATEGORY_WRITES_ENV,
   createOperationalCatalogRuntime,
   isDatabaseId,
   isProjectId,

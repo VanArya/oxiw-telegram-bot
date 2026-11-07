@@ -16,7 +16,8 @@ const BOOTSTRAP_ACTOR = Object.freeze({
   identitySource: 'google_cloud_adc_service_account_impersonation',
 });
 const BOOTSTRAP_APPROVAL = Object.freeze({
-  ownerId: 'catalog-owner', approverId: 'second-approver', approvalReference: 'CHG-2026-1042',
+  ownerId: 'catalog-owner', ownerIdentitySource: 'firebase_admin_id_token',
+  approvalReference: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 });
 
 function bootstrapRequest(targetSubjectId) {
@@ -152,6 +153,26 @@ test('Firestore resolver returns only allowlisted roles for active assignments',
   assert.deepEqual(await provider.resolveRoles('active-user'), ['observer', 'editor']);
   assert.deepEqual(await provider.resolveRoles('disabled-user'), []);
   assert.deepEqual(await provider.resolveRoles('missing-user'), []);
+});
+
+test('Firestore role provider lists and reads safe manager assignments', async () => {
+  const { firestore, provider } = setup();
+  seedControl(firestore, { count: 1 });
+  firestore.documents.set('catalogAdminRoleAssignments/active-admin', {
+    subjectId: 'active-admin', roles: ['administrator'], active: true, version: 2,
+    createdAt: '2026-10-27T12:00:00.000Z', updatedAt: '2026-10-27T12:00:00.000Z',
+  });
+  firestore.documents.set('catalogAdminRoleAssignments/disabled-admin', {
+    subjectId: 'disabled-admin', roles: ['administrator'], active: false, version: 2,
+  });
+  assert.deepEqual(await provider.getAssignment('active-admin'), {
+    subjectId: 'active-admin', roles: ['administrator'], active: true, version: 2,
+    createdAt: '2026-10-27T12:00:00.000Z', updatedAt: '2026-10-27T12:00:00.000Z',
+  });
+  assert.deepEqual(await provider.listAssignments({ activeOnly: true }), [{
+    subjectId: 'active-admin', roles: ['administrator'], active: true, version: 2,
+    createdAt: '2026-10-27T12:00:00.000Z', updatedAt: '2026-10-27T12:00:00.000Z',
+  }]);
 });
 
 test('Firestore resolver fails closed on invalid subjects, malformed assignments, and read errors', async () => {
@@ -301,12 +322,12 @@ test('bootstrap is one-time, creates marker/count/assignment/audit atomically, a
   const first = await provider.bootstrapAdministrator(bootstrapRequest('first-admin'));
   const bootstrapAudit = firestore.documents.get(`catalogAdminRoleAuditEvents/${first.eventId}`);
   assert.equal(bootstrapAudit.operation, 'bootstrap.completed');
-  assert.equal(bootstrapAudit.schemaVersion, 2);
+  assert.equal(bootstrapAudit.schemaVersion, 4);
   assert.equal(bootstrapAudit.actorId, BOOTSTRAP_ACTOR.actorId);
   assert.equal(bootstrapAudit.actorType, 'service_account');
   assert.equal(bootstrapAudit.identitySource, BOOTSTRAP_ACTOR.identitySource);
   assert.equal(bootstrapAudit.ownerId, BOOTSTRAP_APPROVAL.ownerId);
-  assert.equal(bootstrapAudit.approverId, BOOTSTRAP_APPROVAL.approverId);
+  assert.equal(bootstrapAudit.ownerIdentitySource, BOOTSTRAP_APPROVAL.ownerIdentitySource);
   assert.equal(bootstrapAudit.approvalReference, BOOTSTRAP_APPROVAL.approvalReference);
   assert.equal(firestore.documents.get('catalogAdminControl/bootstrap').activeAdministratorCount, 1);
   await assert.rejects(provider.bootstrapAdministrator(bootstrapRequest('second-admin')), { code: 'BOOTSTRAP_ALREADY_COMPLETED' });
@@ -315,7 +336,7 @@ test('bootstrap is one-time, creates marker/count/assignment/audit atomically, a
   const invalidApproval = setup();
   await assert.rejects(invalidApproval.provider.bootstrapAdministrator({
     ...bootstrapRequest('first-admin'),
-    approval: { ...BOOTSTRAP_APPROVAL, approverId: BOOTSTRAP_APPROVAL.ownerId },
+    approval: { ...BOOTSTRAP_APPROVAL, ownerIdentitySource: 'environment' },
   }), TypeError);
   assert.equal(invalidApproval.firestore.transactionCalls, 0);
   assert.equal(invalidApproval.firestore.documents.size, 0);

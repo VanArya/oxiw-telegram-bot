@@ -84,12 +84,13 @@ createdBy, updatedBy: actor معتبر اپراتور یا workload
 طرح رخداد append-only شامل `eventId`, `operation`, `occurredAt`, `outcome`, `actorId`, `targetSubjectId`, `changedRoles`, `previousVersion`, `version` و `approvalReference` است. فقط delta نقش لازم ثبت شود؛ token خام، credential، header، ایمیل غیرضروری یا payload درخواست ثبت نشود. نوشتن assignment و رخداد موفق باید اتمیک باشد. شکست audit باید assignment را هم rollback کند؛ رخداد شکست می‌تواند از مسیر امن عملیات/پایش جدا ثبت شود، بدون اینکه عملیات موفق وانمود شود.
 
 قرارداد آفلاین فعلی role-audit، رخدادهای قبلی بدون `schemaVersion` را به‌عنوان نسخهٔ
-۱ حفظ می‌کند. برای bootstrap، نسخهٔ ۲ فیلدهای `actorType`, `identitySource`,
-`ownerId`, `approverId` و `approvalReference` را اجباری می‌کند. منبع actor پیشنهادی
+۱ حفظ می‌کند. نسخهٔ ۲ برای سازگاری approval دوطرفه باقی می‌ماند؛ برای سیاست فعلی
+تک‌مالک، نسخهٔ ۴ فیلدهای `actorType`, `identitySource`, `ownerId`,
+`ownerIdentitySource` و `approvalReference` را اجباری می‌کند. منبع actor پیشنهادی
 یک service account مستقل و allowlist‌شده با ADC impersonation است؛ حساب
 `oxiw-catalog-runtime` نباید استفاده شود. این توسعه فقط طرح/کد آفلاین است، نه تصویب
-schema Firestore یا اثبات approval. `ownerId` و `approverId` باید از یک سامانهٔ
-تأیید سازمانی مورداعتماد به دست آیند؛ شناسهٔ CLI/config به‌تنهایی مدرک نیست.
+schema Firestore یا اثبات approval. `ownerId` باید از Firebase ID Token معتبر مالک
+و با `verifyIdToken(token, true)` به دست آید؛ شناسهٔ CLI/config به‌تنهایی مدرک نیست.
 
 پیاده‌سازی ADC تزریقی به API عمومی `Impersonated.getTargetPrincipal()` و موفقیت
 `getAccessToken()` تکیه می‌کند و فقط principal برابر allowlist را می‌پذیرد. این
@@ -147,7 +148,7 @@ Firestore حداقلی و جداگانه؛ ثبت دو تأییدکنندهٔ م
 
 - **پیشنهاد:** نقش‌های server-side در Firestore، lookup تازه پس از verify هویت، تغییر فقط از مسیر provisioning کنترل‌شده و audit اتمیک.
 - **پیاده‌سازی آفلاین موجود:** provider تزریقی Firestore، bootstrap اتمیک، شمارندهٔ مدیران فعال و حفاظت از آخرین administrator با fake محلی آزموده شده‌اند؛ این‌ها اتصال عملیاتی یا تصویب schema نیستند.
-- **ابزار مستقل آفلاین:** `src/catalog-admin-bootstrap-entrypoint.js` تأیید هدف/intent، actor ADC تزریقی و seam `bootstrapAdministrator()` را آماده می‌کند. اجرای CLI همچنان fail-closed است چون actor و به‌خصوص approval provider سازمانی به executable وصل نیستند؛ actor/owner/approver از argv/env پذیرفته نمی‌شوند.
+- **ابزار مستقل آفلاین:** `src/catalog-admin-bootstrap-entrypoint.js` تأیید هدف/intent، actor ADC تزریقی و seam `bootstrapAdministrator()` را آماده می‌کند. provider تک‌مالک Firebase نیز فقط به‌صورت تزریقی آماده است؛ چون token provider و owner UID واقعی به executable وصل نیستند، CLI همچنان fail-closed است و actor/owner از argv/env پذیرفته نمی‌شوند.
 - **مرز HTTP:** پنل و API هیچ مسیر Bootstrap ندارند؛ Firebase authenticated user، owner UID یا secret پنل نمی‌توانند نقش اول را ایجاد کنند.
 - **انجام‌نشده:** حساب مدیر، Firestore/IAM واقعی، schema مصوب، migration/reconciliation، bootstrap کنترل‌شدهٔ production، revoke/recovery عملیاتی و استقرار؛ verifier و runtime wiring موجود فقط کد قابل‌آزمایش‌اند.
 - **نتیجه:** دسترسی مدیریتی واقعی تا تکمیل و تأیید مراحل بالا فعال‌شدنی تلقی نمی‌شود. آزمون‌های fake اثبات امنیت عملیاتی نیستند.

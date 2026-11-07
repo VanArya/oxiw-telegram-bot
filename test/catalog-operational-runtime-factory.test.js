@@ -84,11 +84,19 @@ function makeFirebaseAdmin({ firestore = makeFirestore(), failCredential = false
     authApp: null,
     firestoreArgs: null,
     verifyCalls: [],
+    targetLookupCalls: [],
   };
   const auth = {
     async verifyIdToken(token, checkRevoked) {
       state.verifyCalls.push([token, checkRevoked]);
       return { uid: 'admin-user' };
+    },
+    async getUser(uid) {
+      return { uid, email: `${uid}@example.com`, displayName: 'not returned' };
+    },
+    async getUserByEmail(email) {
+      state.targetLookupCalls.push(email);
+      return { uid: 'resolved-target-uid', email };
     },
   };
   const app = { name: FIREBASE_APP_NAME, options: { projectId: 'oxiw-catalog-test-123' } };
@@ -158,6 +166,9 @@ test('builds operational runtime with Firebase Admin, revoked-token verifier, sh
   });
   assert.deepEqual(principal, { authenticated: true, subjectId: 'admin-user' });
   assert.deepEqual(firebase.state.verifyCalls, [['signed-token', true]]);
+  assert.equal(typeof runtime.targetResolver, 'function');
+  assert.equal(await runtime.targetResolver('new-manager@example.com'), 'resolved-target-uid');
+  assert.deepEqual(firebase.state.targetLookupCalls, ['new-manager@example.com']);
 });
 
 test('uses the compatible (default) Firestore database only when database setting is absent', async () => {
