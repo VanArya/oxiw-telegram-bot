@@ -9,6 +9,7 @@
     "catalog:bootstrap-admin": "node src/catalog-admin-bootstrap-entrypoint.js",
     "catalog:probe-firestore": "node scripts/probe-firestore-readonly.js",
     "catalog:migrate-metadata-versions": "node scripts/migrate-firestore-metadata-versions.js",
+    "catalog:dry-run-genre-migration": "node scripts/dry-run-genre-migration.js",
     "test": "node --test"
   },
   "engines": {
