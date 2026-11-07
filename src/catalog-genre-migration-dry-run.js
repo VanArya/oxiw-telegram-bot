@@ -195,7 +195,6 @@ async function runGenreMigrationDryRun({ sheetProvider, metadataProvider, taxono
       previews.push({ contentId, status: 'needs_review', reason: 'METADATA_INVALID', sourceGenres: source.labels });
       continue;
     }
-    const existingIds = Array.isArray(valid.genreIds) ? [...valid.genreIds] : [];
     if (duplicateContentIds.has(contentId)) {
       summary.needsReview += 1;
       previews.push({ contentId, status: 'needs_review', reason: 'CONTENT_ID_DUPLICATE', existingGenreIds: existingIds, sourceGenres: source.labels });
