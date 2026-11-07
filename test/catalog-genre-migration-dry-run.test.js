@@ -33,7 +33,7 @@ test('genre dry-run reports normalization, mappings, and never writes', async ()
     },
   };
   const taxonomy = { async listAllTaxonomyTerms(type) {
-    calls.push(\`taxonomy-${type}\`);
+    calls.push('taxonomy-' + type);
     return [{ id: 'drama', labelFa: 'درام', enabled: true }, { id: 'comedy', labelFa: 'کمدی', enabled: true }];
   } };
   const report = await runGenreMigrationDryRun({ sheetProvider: sheetProvider(), metadataProvider: metadata, taxonomyProvider: taxonomy });
@@ -52,7 +52,6 @@ test('genre dry-run reports normalization, mappings, and never writes', async ()
 test('genre dry-run rejects incomplete dependencies', async () => {
   await assert.rejects(runGenreMigrationDryRun(), TypeError);
 });
-
 
 test('ambiguous normalized taxonomy labels are never auto-mapped', async () => {
   const metadata = {
