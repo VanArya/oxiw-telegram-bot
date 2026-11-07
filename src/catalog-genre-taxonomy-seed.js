@@ -140,7 +140,7 @@ const GENRE_TERMS = Object.freeze([
 
 function normalizeLabel(value) {
   return typeof value === 'string'
-    ? value.replace(/[\\u200c\\u200d]/g, ' ').replace(/[\\s\\u00a0]+/gu, ' ').trim()
+    ? value.replace(/[\u200c\u200d]/g, ' ').replace(/[\s\u00a0]+/gu, ' ').trim()
     : '';
 }
 
