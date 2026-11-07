@@ -10,7 +10,9 @@
     "catalog:probe-firestore": "node scripts/probe-firestore-readonly.js",
     "catalog:migrate-metadata-versions": "node scripts/migrate-firestore-metadata-versions.js",
     "catalog:dry-run-genre-migration": "node scripts/dry-run-genre-migration.js",
-    "test": "node --test"
+    "test": "node --test",
+    "catalog:seed-genre-taxonomy": "node scripts/seed-genre-taxonomy.js",
+    "catalog:sync-genre-metadata": "node scripts/sync-genre-metadata.js"
   },
   "engines": {
     "node": ">=24 <25"
