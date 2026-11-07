@@ -159,3 +159,47 @@ test('missing or empty source genre data never proposes clearing existing metada
   assert.equal(series.reason, 'GENRE_SOURCE_EMPTY');
   assert.equal(report.summary.transferableAssignments, 0);
 });
+
+
+test('missing metadata produces safe create candidates when every source genre is mapped', async () => {
+  const metadataProvider = { async listContentMetadataWithVersion() { return []; } };
+  const taxonomyProvider = {
+    async listAllTaxonomyTerms() {
+      return [
+        { id: 'drama', labelFa: 'درام', enabled: true },
+        { id: 'comedy', labelFa: 'کمدی', enabled: true },
+        { id: 'mystery', labelFa: 'معمایی', enabled: true },
+      ];
+    },
+  };
+  const report = await runGenreMigrationDryRun({
+    sheetProvider: sheetProvider(), metadataProvider, taxonomyProvider,
+  });
+  assert.equal(report.summary.metadataMissing, 3);
+  assert.equal(report.summary.metadataCreateCandidates, 3);
+  assert.equal(report.summary.needsReview, 0);
+  const item = report['migration-preview'].assignments.find((entry) => entry.contentId.endsWith(':one'));
+  assert.equal(item.status, 'create_metadata');
+  assert.deepEqual(item.proposedMetadata, {
+    approvalStatus: 'pending',
+    publicationStatus: 'draft',
+    countryIds: [],
+    genreIds: ['drama', 'comedy'],
+  });
+});
+
+test('unmapped genres are discovered even when every content metadata document is missing', async () => {
+  const metadataProvider = { async listContentMetadataWithVersion() { return []; } };
+  const taxonomyProvider = {
+    async listAllTaxonomyTerms() {
+      return [{ id: 'drama', labelFa: 'درام', enabled: true }];
+    },
+  };
+  const report = await runGenreMigrationDryRun({
+    sheetProvider: sheetProvider(), metadataProvider, taxonomyProvider,
+  });
+  const labels = report['migration-preview'].newGenres.map((item) => item.label);
+  assert.deepEqual(labels.sort(), ['کمدی', 'معمایی'].sort());
+  assert.equal(report.summary.metadataCreateCandidates, 0);
+  assert.equal(report.summary.needsReview, 3);
+});
