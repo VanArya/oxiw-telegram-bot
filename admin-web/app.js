@@ -221,10 +221,10 @@ function hasPermission(permission) {
 }
 
 function renderPermissionAccess() {
-  $$('[data-permission]').forEach((item) => {
+  $$$('[data-permission]').forEach((item) => {
     item.hidden = !hasPermission(item.dataset.permission);
   });
-  $$('.permission-action').forEach((item) => {
+  $$$('.permission-action').forEach((item) => {
     item.hidden = !hasPermission(item.dataset.permission);
   });
 }
@@ -255,8 +255,8 @@ function renderAccountAccess() {
 function selectView(view, kind) {
   if (view === "content" && kind) elements.contentKind.value = kind;
   if (view === "content") setText($("#view-content h1"), kind === "series" ? "سریال‌ها" : "فیلم‌ها");
-  $$('.view').forEach((section) => section.classList.toggle('active-view', section.id === `view-${view}`));
-  $$('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.view === view && (!button.dataset.kind || button.dataset.kind === elements.contentKind.value)));
+  $$$('.view').forEach((section) => section.classList.toggle('active-view', section.id === `view-${view}`));
+  $$$('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.view === view && (!button.dataset.kind || button.dataset.kind === elements.contentKind.value)));
   clearGlobalMessage();
   const loaders = {
     overview: loadOverview,
@@ -1116,7 +1116,7 @@ authSessionCoordinator = createAuthSessionCoordinator({
     elements.dashboard.hidden = false;
     setGlobalMessage(error.message || 'بررسی دسترسی در دسترس نیست.', { requestId: error.requestId });
     setText($('#top-email'), user.email || 'ایمیل در دسترس نیست');
-    $$('.nav-item').forEach((item) => { item.hidden = true; });
+    $$$('.nav-item').forEach((item) => { item.hidden = true; });
   },
 });
 
@@ -1183,15 +1183,15 @@ async function startFirebase() {
 
 function wireUi() {
   elements.bootRetry.addEventListener('click', () => void startFirebase());
-  $$('[data-settings-view]').forEach((button) => button.addEventListener('click', () => {
+  $$$('[data-settings-view]').forEach((button) => button.addEventListener('click', () => {
     const target = button.dataset.settingsView;
-    $$('.settings-pane').forEach((pane) => { pane.hidden = pane.id !== `settings-${target}`; });
+    $$$('.settings-pane').forEach((pane) => { pane.hidden = pane.id !== `settings-${target}`; });
     if (target === 'countries') void loadTaxonomy('country');
     if (target === 'genres') void loadTaxonomy('genre');
     if (target === 'categories') void loadCategories();
   }));
-  $('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view, button.dataset.kind)));
-  $$('.refresh-button').forEach((button) => button.addEventListener('click', () => {
+  $$('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view, button.dataset.kind)));
+  $$$('.refresh-button').forEach((button) => button.addEventListener('click', () => {
     const action = button.dataset.refresh;
     if (action === 'overview') void loadOverview();
     else if (action === 'content') void loadContent();
@@ -1208,7 +1208,7 @@ function wireUi() {
   });
   elements.managerRefresh.addEventListener('click', () => void loadManagers());
   elements.managerCancel.addEventListener('click', () => { elements.managerForm.hidden = true; });
-  $$('[data-manager-cancel]').forEach((button) => button.addEventListener('click', () => {
+  $$$('[data-manager-cancel]').forEach((button) => button.addEventListener('click', () => {
     elements.managerForm.hidden = true;
   }));
   elements.managerForm.addEventListener('submit', (event) => void addManager(event));
@@ -1226,16 +1226,16 @@ function wireUi() {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
   });
   elements.metadataForm.addEventListener('submit', (event) => void saveContentMetadata(event));
-  $$('[data-approval]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('approval', button.dataset.approval)));
-  $$('[data-publication]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('publication', button.dataset.publication)));
+  $$$('[data-approval]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('approval', button.dataset.approval)));
+  $$$('[data-publication]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('publication', button.dataset.publication)));
   $('#category-new').addEventListener('click', openNewCategory);
   $('#category-form').addEventListener('submit', (event) => void saveCategory(event));
   $('#add-filter').addEventListener('click', () => addFilterCondition());
   $('#add-localized-title').addEventListener('click', () => addLocalizedTitle());
-  $$('.taxonomy-new').forEach((button) => button.addEventListener('click', () => newTaxonomy(button.dataset.type)));
+  $$$('.taxonomy-new').forEach((button) => button.addEventListener('click', () => newTaxonomy(button.dataset.type)));
   elements.countryForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'country'));
   elements.genreForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'genre'));
-  $$('[data-close-form]').forEach((button) => button.addEventListener('click', () => {
+  $$$('[data-close-form]').forEach((button) => button.addEventListener('click', () => {
     if (button.dataset.closeForm === 'category') elements.categoryForm.hidden = true;
     if (button.dataset.closeForm === 'country') elements.countryForm.hidden = true;
     if (button.dataset.closeForm === 'genre') elements.genreForm.hidden = true;
