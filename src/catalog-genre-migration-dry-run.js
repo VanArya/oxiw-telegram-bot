@@ -8,10 +8,7 @@ const GENRE_HEADERS = Object.freeze(['ژانر', 'ژانرها']);
 
 function normalizeGenreLabel(value) {
   if (typeof value !== 'string') return '';
-  return value
-    .replace(/[\u200c\u200d]/g, ' ')
-    .replace(/[\s\u00a0]+/gu, ' ')
-    .trim();
+  return value.replace(/[\u200c\u200d]/g, ' ').replace(/[\s\u00a0]+/gu, ' ').trim();
 }
 
 function splitGenreCell(value) {
@@ -36,8 +33,7 @@ function taxonomyMap(terms) {
   for (const term of terms) {
     if (!term || typeof term.id !== 'string' || typeof term.labelFa !== 'string') continue;
     const key = normalizeGenreLabel(term.labelFa);
-    if (!key) continue;
-    if (ambiguousLabels.has(key)) continue;
+    if (!key || ambiguousLabels.has(key)) continue;
     if (byLabel.has(key) && byLabel.get(key) !== term.id) {
       byLabel.delete(key);
       ambiguousLabels.add(key);
@@ -67,6 +63,7 @@ async function runGenreMigrationDryRun({ sheetProvider, metadataProvider, taxono
   const rawGenreSet = new Set();
   const normalizedGenreSet = new Set();
   const sourceByContent = new Map();
+  const duplicateContentIds = new Set();
   const invalidRows = [];
 
   for (const sheetName of SHEETS) {
@@ -89,14 +86,18 @@ async function runGenreMigrationDryRun({ sheetProvider, metadataProvider, taxono
       }
       if (sourceByContent.has(contentId)) {
         summary.duplicateContentIds += 1;
+        duplicateContentIds.add(contentId);
         invalidRows.push({ sheet: sheetName, row: rowIndex + 2, issue: 'CONTENT_ID_DUPLICATE' });
+        continue;
       }
       const labels = genreHeader ? splitGenreCell(row[headers.indexOf(genreHeader)]) : [];
       if (!labels.length) {
         sheetReport.emptyGenres += 1;
         summary.emptyGenres += 1;
       }
-      sourceByContent.set(contentId, { sheet: sheetName, row: rowIndex + 2, labels });
+      sourceByContent.set(contentId, {
+        sheet: sheetName, row: rowIndex + 2, labels, genreColumnMissing: !genreHeader,
+      });
       summary.rawGenreValues += labels.length;
       for (const raw of labels) {
         const normalized = normalizeGenreLabel(raw);
@@ -116,13 +117,11 @@ async function runGenreMigrationDryRun({ sheetProvider, metadataProvider, taxono
     if (value?.contentId) metadataById.set(value.contentId, value);
   }
   const terms = await taxonomyProvider.listAllTaxonomyTerms('genre');
-  const {
-    byLabel: termByLabel,
-    ambiguousLabels: ambiguousTaxonomyLabels,
-    duplicateLabels,
-  } = taxonomyMap(Array.isArray(terms) ? terms : []);
+  const { byLabel: termByLabel, ambiguousLabels: ambiguousTaxonomyLabels, duplicateLabels } =
+    taxonomyMap(Array.isArray(terms) ? terms : []);
   const previews = [];
   const newGenres = new Set();
+
   for (const [contentId, source] of sourceByContent) {
     const metadata = metadataById.get(contentId);
     if (!metadata) {
@@ -139,42 +138,81 @@ async function runGenreMigrationDryRun({ sheetProvider, metadataProvider, taxono
       previews.push({ contentId, status: 'needs_review', reason: 'METADATA_INVALID', sourceGenres: source.labels });
       continue;
     }
+    const existingIds = Array.isArray(valid.genreIds) ? [...valid.genreIds] : [];
+    if (duplicateContentIds.has(contentId)) {
+      summary.needsReview += 1;
+      previews.push({ contentId, status: 'needs_review', reason: 'CONTENT_ID_DUPLICATE', existingGenreIds: existingIds, sourceGenres: source.labels });
+      continue;
+    }
+    if (source.genreColumnMissing) {
+      summary.needsReview += 1;
+      previews.push({ contentId, status: 'needs_review', reason: 'GENRE_COLUMN_MISSING', existingGenreIds: existingIds });
+      continue;
+    }
+    if (!source.labels.length) {
+      summary.needsReview += 1;
+      previews.push({ contentId, status: 'needs_review', reason: 'GENRE_SOURCE_EMPTY', existingGenreIds: existingIds, sourceGenres: [] });
+      continue;
+    }
+
     const targetIds = [];
     const unresolved = [];
     const ambiguous = [];
+    const repeated = [];
+    const seenNormalizedLabels = new Set();
     for (const label of source.labels) {
       const normalizedLabel = normalizeGenreLabel(label);
+      if (!normalizedLabel) {
+        unresolved.push(label);
+        continue;
+      }
+      if (seenNormalizedLabels.has(normalizedLabel)) {
+        repeated.push(label);
+        continue;
+      }
+      seenNormalizedLabels.add(normalizedLabel);
       if (ambiguousTaxonomyLabels.has(normalizedLabel)) {
         ambiguous.push(label);
         continue;
       }
       const id = termByLabel.get(normalizedLabel);
-      if (id) targetIds.push(id); else { unresolved.push(label); newGenres.add(label); }
+      if (id) targetIds.push(id);
+      else { unresolved.push(label); newGenres.add(label); }
     }
-    const existingIds = Array.isArray(valid.genreIds) ? [...valid.genreIds] : [];
-    const same = unresolved.length === 0 && existingIds.length === targetIds.length &&
-      existingIds.every((id) => targetIds.includes(id));
-    if (same) previews.push({ contentId, status: 'unchanged', existingGenreIds: existingIds });
-    else if (ambiguous.length) {
+
+    const same = unresolved.length === 0 && ambiguous.length === 0 && repeated.length === 0 &&
+      existingIds.length === targetIds.length && existingIds.every((id) => targetIds.includes(id));
+    if (same) {
+      previews.push({ contentId, status: 'unchanged', existingGenreIds: existingIds });
+    } else if (ambiguous.length || repeated.length || unresolved.length) {
       summary.needsReview += 1;
-      previews.push({ contentId, status: 'needs_review', reason: 'GENRE_TERM_AMBIGUOUS', existingGenreIds: existingIds, sourceGenres: source.labels, ambiguousGenres: ambiguous });
-    } else if (unresolved.length) {
-      summary.needsReview += 1;
-      previews.push({ contentId, status: 'needs_review', reason: 'GENRE_TERM_UNMAPPED', existingGenreIds: existingIds, sourceGenres: source.labels, unresolvedGenres: unresolved });
+      const reason = ambiguous.length ? 'GENRE_TERM_AMBIGUOUS' :
+        repeated.length ? 'GENRE_LABEL_DUPLICATE' : 'GENRE_TERM_UNMAPPED';
+      previews.push({
+        contentId, status: 'needs_review', reason, existingGenreIds: existingIds,
+        sourceGenres: source.labels,
+        ...(ambiguous.length ? { ambiguousGenres: ambiguous } : {}),
+        ...(repeated.length ? { duplicateGenres: repeated } : {}),
+        ...(unresolved.length ? { unresolvedGenres: unresolved } : {}),
+      });
     } else {
       if (existingIds.length && !same) summary.metadataConflicts += 1;
       summary.transferableAssignments += targetIds.length;
       previews.push({ contentId, status: 'transferable', existingGenreIds: existingIds, proposedGenreIds: targetIds });
     }
   }
-  const rawGenres = [...new Set([...frequencies.keys()])];
+
   summary.uniqueRawGenres = rawGenreSet.size;
   summary.uniqueNormalizedGenres = normalizedGenreSet.size;
   return {
     summary,
     'genre-frequency': [...frequencies.entries()].sort((a, b) => b[1] - a[1]).map(([genre, count]) => ({ genre, count })),
     'normalization-report': { changes: normalization, invalidRows, duplicateTaxonomyLabels: duplicateLabels },
-    'migration-preview': { existingGenres: Array.isArray(terms) ? terms.map(({ id, labelFa, enabled }) => ({ id, labelFa, enabled })) : [], newGenres: [...newGenres].map((label) => ({ label, status: 'needs_review', reason: 'TERM_ID_REQUIRED' })), assignments: previews },
+    'migration-preview': {
+      existingGenres: Array.isArray(terms) ? terms.map(({ id, labelFa, enabled }) => ({ id, labelFa, enabled })) : [],
+      newGenres: [...newGenres].map((label) => ({ label, status: 'needs_review', reason: 'TERM_ID_REQUIRED' })),
+      assignments: previews,
+    },
   };
 }
 
