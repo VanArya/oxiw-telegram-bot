@@ -252,9 +252,11 @@ function renderAccountAccess() {
   });
 }
 
-function selectView(view) {
+function selectView(view, kind) {
+  if (view === "content" && kind) elements.contentKind.value = kind;
+  if (view === "content") setText($("#view-content h1"), kind === "series" ? "سریال‌ها" : "فیلم‌ها");
   $$('.view').forEach((section) => section.classList.toggle('active-view', section.id === `view-${view}`));
-  $$('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.view === view));
+  $('.nav-item').forEach((button) => button.classList.toggle('active', button.dataset.view === view && (!button.dataset.kind || button.dataset.kind === elements.contentKind.value)));
   clearGlobalMessage();
   const loaders = {
     overview: loadOverview,
@@ -1181,7 +1183,14 @@ async function startFirebase() {
 
 function wireUi() {
   elements.bootRetry.addEventListener('click', () => void startFirebase());
-  $$('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view)));
+  $('[data-settings-view]').forEach((button) => button.addEventListener('click', () => {
+    const target = button.dataset.settingsView;
+    $('.settings-pane').forEach((pane) => { pane.hidden = pane.id !== `settings-${target}`; });
+    if (target === 'countries') void loadTaxonomy('country');
+    if (target === 'genres') void loadTaxonomy('genre');
+    if (target === 'categories') void loadCategories();
+  }));
+  $('.nav-item').forEach((button) => button.addEventListener('click', () => selectView(button.dataset.view, button.dataset.kind)));
   $$('.refresh-button').forEach((button) => button.addEventListener('click', () => {
     const action = button.dataset.refresh;
     if (action === 'overview') void loadOverview();
