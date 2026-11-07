@@ -1,6 +1,7 @@
+@import url("https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap");
 :root {
   color-scheme: light;
-  font-family: Vazirmatn, IRANSans, Tahoma, "Segoe UI", sans-serif;
+  font-family: Vazirmatn, "B Nazanin", BNazanin, "Vazir", Tahoma, sans-serif;
   color: #182b42;
   background: #edf2f4;
   font-synthesis: none;
@@ -142,3 +143,5 @@ tbody tr:hover { background: #fbfdfd; }
 @media (max-width: 420px) {
   .stats-grid { gap: .45rem; }.stat-card { min-height: 6.2rem; padding: .8rem; }.stat-card strong { font-size: 1.4rem; }.toolbar { grid-template-columns: 1fr; }.toolbar .search-control, .toolbar > button { grid-column: auto; }.topbar-account { gap: .2rem; }.brand small { display: none; }
 }
+
+.catalog-settings-tabs{display:flex;flex-wrap:wrap;gap:.55rem;margin:0 0 1rem}.settings-pane[hidden]{display:none!important}
