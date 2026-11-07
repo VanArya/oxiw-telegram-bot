@@ -1,6 +1,7 @@
 'use strict';
 
 const { mapCatalogSheetRow } = require('./catalog-sheet-mapper');
+const { assertFilter, matchesFilter } = require('./catalog-core');
 const { isCanonicalContentId, validateCatalogContentMetadata } = require('./catalog-metadata-validation');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
@@ -59,7 +60,7 @@ function pageNumber(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
 }
 
 function parseQuery(query) {
-  const allowed = new Set(['q', 'kind', 'approvalStatus', 'publicationStatus', 'page', 'pageSize']);
+  const allowed = new Set(['q', 'kind', 'approvalStatus', 'publicationStatus', 'countryId', 'genreId', 'categoryId', 'page', 'pageSize']);
   for (const key of query.keys()) if (!allowed.has(key) || query.getAll(key).length !== 1) {
     throw new CatalogAdminListInputError();
   }
@@ -67,6 +68,9 @@ function parseQuery(query) {
   const kind = query.get('kind');
   const approvalStatus = query.get('approvalStatus');
   const publicationStatus = query.get('publicationStatus');
+  const countryId = query.get('countryId');
+  const genreId = query.get('genreId');
+  const categoryId = query.get('categoryId');
   if (q.length > 100 || (kind !== null && !['movie', 'series'].includes(kind)) ||
       (approvalStatus !== null && !APPROVAL_STATUSES.has(approvalStatus)) ||
       (publicationStatus !== null && !PUBLICATION_STATUSES.has(publicationStatus))) {
@@ -77,6 +81,9 @@ function parseQuery(query) {
     kind,
     approvalStatus,
     publicationStatus,
+    countryId,
+    genreId,
+    categoryId,
     page: pageNumber(query.get('page') ?? undefined, 1),
     pageSize: pageNumber(query.get('pageSize') ?? undefined, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX),
   });
@@ -100,6 +107,7 @@ function projectAdminItem(mapped, record, metadataRecord) {
     publicationStatus: metadata?.publicationStatus ?? 'unknown',
     countryIds: metadata?.countryIds ? [...metadata.countryIds] : [],
     genreIds: metadata?.genreIds ? [...metadata.genreIds] : [],
+    directCategoryIds: metadata?.categoryIds ? [...metadata.categoryIds] : [],
     hasMetadata: Boolean(metadata),
   };
   if (Number.isInteger(content.releaseYear)) dto.releaseYear = content.releaseYear;
@@ -173,6 +181,30 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     async list(query) {
       const parsed = parseQuery(query);
       const allItems = await readAllItems();
+      const [categories, countries, genres] = await Promise.all([
+        writableProvider.listCategories(),
+        writableProvider.listTaxonomyTerms('country'),
+        writableProvider.listTaxonomyTerms('genre'),
+      ]);
+      const enabledCategoryIds = new Set(categories.filter((entry) => entry.enabled).map((entry) => entry.id));
+      const enabledCountryIds = new Set(countries.filter((entry) => entry.enabled).map((entry) => entry.id));
+      const enabledGenreIds = new Set(genres.filter((entry) => entry.enabled).map((entry) => entry.id));
+      if ((parsed.countryId && !enabledCountryIds.has(parsed.countryId)) ||
+          (parsed.genreId && !enabledGenreIds.has(parsed.genreId)) ||
+          (parsed.categoryId && !enabledCategoryIds.has(parsed.categoryId))) {
+        throw new CatalogAdminListInputError();
+      }
+      const categoryById = new Map(categories.map((category) => [category.id, category]));
+      for (const category of categories) {
+        if (category.filters !== undefined && category.filters !== null) assertFilter(category.filters);
+      }
+      const categoryMatches = (item, category) => {
+        const mode = category.mode || 'dynamic';
+        const direct = item.directCategoryIds.includes(category.id);
+        const dynamic = mode !== 'manual' && matchesFilter(item, category.filters);
+        return (mode === 'manual' && direct) || (mode === 'dynamic' && dynamic) ||
+          (mode === 'hybrid' && (direct || dynamic));
+      };
       const stats = {
         total: allItems.length,
         movies: allItems.filter((item) => item.kind === 'movie').length,
@@ -187,6 +219,9 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
         if (parsed.kind && item.kind !== parsed.kind) return false;
         if (parsed.approvalStatus && item.approvalStatus !== parsed.approvalStatus) return false;
         if (parsed.publicationStatus && item.publicationStatus !== parsed.publicationStatus) return false;
+        if (parsed.countryId && !item.countryIds.includes(parsed.countryId)) return false;
+        if (parsed.genreId && !item.genreIds.includes(parsed.genreId)) return false;
+        if (parsed.categoryId && !categoryMatches(item, categoryById.get(parsed.categoryId))) return false;
         if (!parsed.q) return true;
         return item.title.toLocaleLowerCase().includes(parsed.q) ||
           item.systemCode.toLocaleLowerCase().includes(parsed.q);
