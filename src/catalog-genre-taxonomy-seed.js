@@ -135,6 +135,11 @@ const GENRE_TERMS = Object.freeze([
     "id": "Comic",
     "labelFa": "کمیک",
     "enabled": true
+  },
+  {
+    "id": "Korean",
+    "labelFa": "کره ای",
+    "enabled": true
   }
 ]);
 
