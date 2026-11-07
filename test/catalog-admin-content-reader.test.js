@@ -7,9 +7,10 @@ const { createInMemoryWritableCatalogMetadataProvider } = require('../src/in-mem
 const { createFixtureProvider, sheets } = require('./fixtures/catalog-sheet-source-fixtures');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
 
-function makeReader({ source = sheets, contentMetadata = [] } = {}) {
+function makeReader({ source = sheets, contentMetadata = [], categories = [] } = {}) {
   const writableProvider = createInMemoryWritableCatalogMetadataProvider({
     contentMetadata,
+    categories,
     taxonomies: {
       country: [{ id: 'IR', labelFa: 'ایران', enabled: true }],
       genre: [{ id: 'drama', labelFa: 'درام', enabled: true }],
@@ -77,6 +78,32 @@ test('admin content reader combines taxonomy and category filters before paginat
   await assert.rejects(reader.list(new URLSearchParams('countryId=US')), {
     name: 'CatalogAdminListInputError',
   });
+});
+
+
+test('admin content reader filters dynamic, manual, and hybrid category membership', async () => {
+  const id = createCatalogContentId('movie', 'fixture-movie-ir');
+  const reader = makeReader({
+    contentMetadata: [{
+      contentId: id, approvalStatus: 'pending', publicationStatus: 'draft',
+      countryIds: ['IR'], genreIds: ['drama'], categoryIds: ['manual-pick'],
+    }],
+    categories: [
+      { id: 'dynamic-iran', slug: 'dynamic-iran', localizedTitle: { fa: 'ایرانی پویا' },
+        enabled: true, mode: 'dynamic',
+        filters: { all: [{ field: 'countryIds', op: 'contains', value: 'IR' }] } },
+      { id: 'manual-pick', slug: 'manual-pick', localizedTitle: { fa: 'انتخاب دستی' },
+        enabled: true, mode: 'manual' },
+      { id: 'hybrid-pick', slug: 'hybrid-pick', localizedTitle: { fa: 'ترکیبی' },
+        enabled: true, mode: 'hybrid',
+        filters: { all: [{ field: 'genreIds', op: 'contains', value: 'drama' }] } },
+    ],
+  });
+  for (const categoryId of ['dynamic-iran', 'manual-pick', 'hybrid-pick']) {
+    const result = await reader.list(new URLSearchParams(`categoryId=${categoryId}&pageSize=100`));
+    assert.equal(result.meta.total, 1, categoryId);
+    assert.equal(result.data[0].id, id);
+  }
 });
 
 test('admin content reader rejects invalid query and ambiguous source identities', async () => {
