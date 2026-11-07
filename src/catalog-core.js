@@ -177,8 +177,10 @@ function findPublishedItem(items, id) {
 }
 
 module.exports = {
+  assertFilter,
   filterCatalogItems,
   findPublishedItem,
+  matchesFilter,
   getCategoryItems,
   isPubliclyVisible,
   listCategories,
