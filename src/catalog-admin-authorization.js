@@ -71,6 +71,15 @@ function normalizeVerifiedCatalogPrincipal(principal) {
   });
 }
 
+function createCatalogOwnerAuthorizer({ ownerSubjectId } = {}) {
+  if (typeof ownerSubjectId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(ownerSubjectId)) {
+    throw new TypeError('A stable Firebase owner UID is required.');
+  }
+  return (principal) => isVerifiedCatalogPrincipal(principal) &&
+    principal.subjectId === ownerSubjectId &&
+    principal.roles.includes('administrator');
+}
+
 function createCatalogRoleAuthorizer() {
   return (principal, permission) => {
     if (!isVerifiedCatalogPrincipal(principal) || !Object.values(PERMISSIONS).includes(permission)) {
@@ -84,6 +93,7 @@ module.exports = {
   PERMISSIONS,
   ROLES,
   createCatalogRoleAuthorizer,
+  createCatalogOwnerAuthorizer,
   isVerifiedCatalogPrincipal,
   isVerifiedCatalogIdentity,
   normalizeVerifiedCatalogIdentity,
