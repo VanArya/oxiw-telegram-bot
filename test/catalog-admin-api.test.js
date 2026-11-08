@@ -1052,6 +1052,40 @@ test('manager role API cannot remove administrator role from the last active adm
   });
 });
 
+test('owner cannot revoke administrator role or disable the configured owner account', async () => {
+  const roleProvider = createManagerRoleProvider({
+    initial: [
+      { subjectId: 'owner-user', roles: ['administrator', 'editor'], active: true, version: 1 },
+      { subjectId: 'backup-admin', roles: ['administrator'], active: true, version: 1 },
+    ],
+  });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'owner-user', roleProvider,
+    authorizeOwner: (principal) => principal.subjectId === 'owner-user',
+  });
+  const etag = `"catalog-v1.${Buffer.from('manager:owner-user').toString('base64url')}.v1"`;
+  await withServer(app, async (baseUrl) => {
+    const roleChange = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/owner-user`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': etag },
+      body: JSON.stringify({ roles: ['editor'] }),
+    }));
+    assert.equal(roleChange.status, 409);
+    assert.equal(roleChange.body.error.code, 'OWNER_ADMIN_REQUIRED');
+
+    const disable = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/owner-user`, {
+      method: 'DELETE',
+      headers: { 'if-match': etag },
+    }));
+    assert.equal(disable.status, 409);
+    assert.equal(disable.body.error.code, 'OWNER_ADMIN_REQUIRED');
+
+    const owner = await roleProvider.getAssignment('owner-user');
+    assert.equal(owner.active, true);
+    assert.deepEqual(owner.roles, ['administrator', 'editor']);
+  });
+});
+
 test('manager API rolls back when the injected role audit fails', async () => {
   const roleProvider = createManagerRoleProvider({ failAudit: true });
   const app = createAdminApi(createStore(), {
