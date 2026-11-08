@@ -875,7 +875,7 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
   await withServer(app, async (baseUrl) => {
     const added = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'new-admin@example.com' }),
+      body: JSON.stringify({ email: 'new-admin@example.com', roles: ['observer'] }),
     }));
     assert.equal(added.status, 201);
     assert.equal(added.body.data.subjectId, 'new-admin');
@@ -1095,7 +1095,7 @@ test('manager API rolls back when the injected role audit fails', async () => {
   await withServer(app, async (baseUrl) => {
     const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'new@example.com' }),
+      body: JSON.stringify({ email: 'new@example.com', roles: ['observer'] }),
     }));
     assert.equal(result.status, 500);
     assert.equal((await roleProvider.listAssignments()).length, 0);
