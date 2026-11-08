@@ -86,7 +86,9 @@ function createFirestoreCatalogAuditReader({ firestore, collection = DEFAULT_COL
         });
       } catch (error) {
         if (error?.code === 'INVALID_PAGINATION') throw error;
-        throw new Error('Catalog audit history is unavailable.');
+        const unavailable = new Error('Catalog audit history is unavailable.', { cause: error });
+        unavailable.code = 'AUDIT_HISTORY_UNAVAILABLE';
+        throw unavailable;
       }
     },
   });
