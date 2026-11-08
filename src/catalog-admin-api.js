@@ -502,7 +502,26 @@ function createCatalogAdminApi({
       if (error?.code === 'INVALID_PAGINATION') {
         return sendError(res, 400, 'INVALID_PAGINATION', 'صفحه‌بندی معتبر نیست.');
       }
-      return sendError(res, 500, 'INTERNAL_ERROR', 'تاریخچهٔ مدیریتی در دسترس نیست.');
+      const diagnosticRequestId = requestId();
+      const cause = error?.cause;
+      const diagnostic = {
+        event: 'catalog_admin_audit_read_failed',
+        requestId: diagnosticRequestId,
+        errorName: typeof error?.name === 'string' ? error.name.slice(0, 80) : 'UnknownError',
+        errorCode: typeof cause?.code === 'string' || typeof cause?.code === 'number'
+          ? String(cause.code).slice(0, 40)
+          : (typeof error?.code === 'string' ? error.code.slice(0, 40) : undefined),
+        errorStatus: Number.isInteger(cause?.status) ? cause.status : undefined,
+      };
+      // Keep diagnostics bounded; never log raw messages, request headers, tokens, or user data.
+      console.error('[catalog-admin-diagnostic]', JSON.stringify(diagnostic));
+      return res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'تاریخچهٔ مدیریتی در دسترس نیست.',
+          requestId: diagnosticRequestId,
+        },
+      });
     }
   }));
 
