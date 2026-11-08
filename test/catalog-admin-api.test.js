@@ -821,13 +821,19 @@ function createManagerRoleProvider({ initial = [], failAudit = false } = {}) {
         error.code = 'VERSION_CONFLICT';
         throw error;
       }
-      if (current?.active && options.active) {
-        const error = new Error('already exists');
-        error.code = 'ALREADY_EXISTS';
+      const currentRoles = current?.roles ?? [];
+      const sameRoles = currentRoles.length === options.roles.length &&
+        options.roles.every((role) => currentRoles.includes(role));
+      if (current?.active && options.active && sameRoles) {
+        const error = new Error('no change');
+        error.code = 'NO_CHANGE';
         throw error;
       }
-      if (!options.active && [...assignments.values()].filter((item) =>
-        item.active && item.roles.includes('administrator')).length <= 1) {
+      const activeAdministrators = [...assignments.values()].filter((item) =>
+        item.active && item.roles.includes('administrator')).length;
+      const wasAdministrator = Boolean(current?.active && currentRoles.includes('administrator'));
+      const remainsAdministrator = Boolean(options.active && options.roles.includes('administrator'));
+      if (wasAdministrator && !remainsAdministrator && activeAdministrators <= 1) {
         const error = new Error('last administrator');
         error.code = 'LAST_ADMINISTRATOR';
         throw error;
@@ -840,10 +846,15 @@ function createManagerRoleProvider({ initial = [], failAudit = false } = {}) {
         version: actualVersion + 1,
       };
       assignments.set(next.subjectId, next);
+      const isSubset = currentRoles.length > options.roles.length &&
+        options.roles.every((role) => currentRoles.includes(role));
       auditEvents.push({
         operation: !current ? 'assignment.created'
-          : (!current.active && options.active ? 'assignment.reactivated' : 'assignment.disabled'),
+          : (!current.active && options.active ? 'assignment.reactivated'
+            : (!options.active ? 'assignment.disabled' : (isSubset ? 'role.revoked' : 'roles.changed'))),
         actorId: options.actorId,
+        rolesBefore: [...currentRoles],
+        rolesAfter: [...options.roles],
       });
       return { version: next.version, eventId: `event-${auditEvents.length}` };
     },
@@ -870,6 +881,17 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
     assert.equal(added.body.data.subjectId, 'new-admin');
     assert.equal(roleProvider.auditEvents[0].operation, 'assignment.created');
 
+    const roleEtag = `"catalog-v1.${Buffer.from('manager:new-admin').toString('base64url')}.v1"`;
+    const changedRoles = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/new-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': roleEtag },
+      body: JSON.stringify({ roles: ['editor', 'approver'] }),
+    }));
+    assert.equal(changedRoles.status, 200);
+    assert.deepEqual(changedRoles.body.data.roles, ['editor', 'approver']);
+    assert.equal(changedRoles.body.data.version, 2);
+    assert.equal(roleProvider.auditEvents[1].operation, 'roles.changed');
+
     const listed = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`));
     assert.equal(listed.status, 200);
     assert.deepEqual(listed.body.data.map((item) => item.subjectId), ['first-admin', 'new-admin']);
@@ -877,13 +899,13 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
       'first-admin@example.com', 'new-admin@example.com',
     ]);
 
-    const etag = `"catalog-v1.${Buffer.from('manager:new-admin').toString('base64url')}.v1"`;
+    const etag = `"catalog-v1.${Buffer.from('manager:new-admin').toString('base64url')}.v2"`;
     const revoked = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/new-admin`, {
       method: 'DELETE', headers: { 'if-match': etag },
     }));
     assert.equal(revoked.status, 200);
     assert.equal(revoked.body.data.active, false);
-    assert.equal(roleProvider.auditEvents[1].operation, 'assignment.disabled');
+    assert.equal(roleProvider.auditEvents[2].operation, 'assignment.disabled');
 
     const reactivated = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -891,8 +913,9 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
     }));
     assert.equal(reactivated.status, 200);
     assert.equal(reactivated.body.data.active, true);
-    assert.equal(reactivated.body.data.version, 3);
-    assert.equal(roleProvider.auditEvents[2].operation, 'assignment.reactivated');
+    assert.equal(reactivated.body.data.version, 4);
+    assert.deepEqual(reactivated.body.data.roles, ['editor', 'approver']);
+    assert.equal(roleProvider.auditEvents[3].operation, 'assignment.reactivated');
   });
 });
 
@@ -954,6 +977,78 @@ test('manager API denies non-owner administrators and rejects duplicate, invalid
       method: 'DELETE', headers: { 'if-match': `"catalog-v1.${Buffer.from('manager:only-admin').toString('base64url')}.v9"` },
     }));
     assert.equal(stale.status, 412);
+  });
+});
+
+
+test('manager role API validates role sets, requires current ETag, and records role revocation', async () => {
+  const roleProvider = createManagerRoleProvider({
+    initial: [
+      { subjectId: 'first-admin', roles: ['administrator'], active: true, version: 1 },
+      { subjectId: 'managed-admin', roles: ['administrator', 'editor'], active: true, version: 1 },
+    ],
+  });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'owner-user', roleProvider, authorizeOwner: () => true,
+  });
+  const etag = `"catalog-v1.${Buffer.from('manager:managed-admin').toString('base64url')}.v1"`;
+  await withServer(app, async (baseUrl) => {
+    const missingPrecondition = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/managed-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ roles: ['editor'] }),
+    }));
+    assert.equal(missingPrecondition.status, 428);
+
+    const invalidRole = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/managed-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': etag },
+      body: JSON.stringify({ roles: ['unknown'] }),
+    }));
+    assert.equal(invalidRole.status, 400);
+
+    const emptyRoles = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/managed-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': etag },
+      body: JSON.stringify({ roles: [] }),
+    }));
+    assert.equal(emptyRoles.status, 400);
+
+    const changed = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/managed-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': etag },
+      body: JSON.stringify({ roles: ['editor'] }),
+    }));
+    assert.equal(changed.status, 200);
+    assert.deepEqual(changed.body.data.roles, ['editor']);
+    assert.equal(roleProvider.auditEvents[0].operation, 'role.revoked');
+
+    const stale = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/managed-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': etag },
+      body: JSON.stringify({ roles: ['publisher'] }),
+    }));
+    assert.equal(stale.status, 412);
+  });
+});
+
+test('manager role API cannot remove administrator role from the last active administrator', async () => {
+  const roleProvider = createManagerRoleProvider({
+    initial: [{ subjectId: 'only-admin', roles: ['administrator', 'editor'], active: true, version: 1 }],
+  });
+  const app = createAdminApi(createStore(), {
+    subjectId: 'owner-user', roleProvider, authorizeOwner: () => true,
+  });
+  const etag = `"catalog-v1.${Buffer.from('manager:only-admin').toString('base64url')}.v1"`;
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers/only-admin`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': etag },
+      body: JSON.stringify({ roles: ['editor'] }),
+    }));
+    assert.equal(result.status, 409);
+    assert.equal(result.body.error.code, 'LAST_ADMINISTRATOR');
+    assert.deepEqual((await roleProvider.getAssignment('only-admin')).roles, ['administrator', 'editor']);
   });
 });
 
