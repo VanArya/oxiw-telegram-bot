@@ -475,11 +475,9 @@ async function addManager(event) {
     });
     const assignment = body?.data;
     if (assignment?.subjectId) managerEmailById.set(assignment.subjectId, email);
-    const rolesWerePreserved = Array.isArray(assignment?.roles) &&
-      (assignment.roles.length !== roles.length || !roles.every((role) => assignment.roles.includes(role)));
     elements.managerForm.reset();
     elements.managerForm.hidden = true;
-    showToast(rolesWerePreserved
+    showToast(assignment?.reactivated
       ? 'مدیر دوباره فعال شد؛ نقش‌های قبلی حفظ شدند.'
       : 'مدیر با نقش‌های انتخاب‌شده اضافه شد.');
     await loadManagers();
