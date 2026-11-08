@@ -145,3 +145,12 @@ tbody tr:hover { background: #fbfdfd; }
 }
 
 .catalog-settings-tabs{display:flex;flex-wrap:wrap;gap:.55rem;margin:0 0 1rem}.settings-pane[hidden]{display:none!important}
+
+
+.manager-role-editor { display: grid; min-width: 13rem; gap: .35rem; padding: .65rem; background: #f8fbfa; border: 1px solid var(--line); border-radius: .65rem; }
+.manager-role-editor strong { color: var(--ink); font-size: .75rem; }
+.manager-role-editor label { display: flex; align-items: center; gap: .45rem; color: #536d7a; font-size: .72rem; white-space: nowrap; }
+.manager-role-editor input { width: 1rem; min-height: 1rem; margin: 0; accent-color: var(--teal); }
+.manager-role-editor .form-actions { margin-top: .25rem; }
+.manager-role-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.manager-role-summary { display: grid; gap: .4rem; }
