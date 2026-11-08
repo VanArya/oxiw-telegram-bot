@@ -160,7 +160,6 @@ function messageForError(error) {
     LAST_ADMINISTRATOR: 'این تغییر آخرین مدیر فعال را حذف می‌کند و مجاز نیست.',
     NO_CHANGE: 'نقش‌های انتخاب‌شده با وضعیت فعلی تفاوتی ندارند.',
     OWNER_ADMIN_REQUIRED: 'دسترسی مدیریتی حساب مالک از این بخش قابل لغو نیست.',
-    REACTIVATION_PRESERVES_ROLES: 'فعال‌سازی مجدد نقش‌های قبلی را حفظ می‌کند؛ پس از فعال‌سازی می‌توانید آن‌ها را ویرایش کنید.',
     AUTHENTICATION_UNAVAILABLE: 'بررسی هویت موقتاً در دسترس نیست.',
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
@@ -476,9 +475,13 @@ async function addManager(event) {
     });
     const assignment = body?.data;
     if (assignment?.subjectId) managerEmailById.set(assignment.subjectId, email);
+    const rolesWerePreserved = Array.isArray(assignment?.roles) &&
+      (assignment.roles.length !== roles.length || !roles.every((role) => assignment.roles.includes(role)));
     elements.managerForm.reset();
     elements.managerForm.hidden = true;
-    showToast('مدیر با موفقیت اضافه شد.');
+    showToast(rolesWerePreserved
+      ? 'مدیر دوباره فعال شد؛ نقش‌های قبلی حفظ شدند.'
+      : 'مدیر با نقش‌های انتخاب‌شده اضافه شد.');
     await loadManagers();
   } catch (error) {
     if (error.status === 403) setManagerAccessVisible(false);
