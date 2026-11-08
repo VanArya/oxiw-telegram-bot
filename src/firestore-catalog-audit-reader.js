@@ -71,9 +71,11 @@ function createFirestoreCatalogAuditReader({ firestore, collection = DEFAULT_COL
         throw error;
       }
       try {
+        // eventId is the Firestore document ID (the sink writes doc(eventId)).
+        // Firestore's implicit __name__ tie-breaker therefore provides the same
+        // deterministic secondary order without requiring a composite index.
         const query = firestore.collection(collection)
           .orderBy('occurredAt', 'desc')
-          .orderBy('eventId', 'desc')
           .offset(offset)
           .limit(pageSize + 1);
         const snapshot = await query.get();
