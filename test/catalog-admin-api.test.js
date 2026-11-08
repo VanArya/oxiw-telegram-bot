@@ -909,7 +909,7 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
 
     const reactivated = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email: 'new-admin@example.com' }),
+      body: JSON.stringify({ email: 'new-admin@example.com', roles: ['observer'] }),
     }));
     assert.equal(reactivated.status, 200);
     assert.equal(reactivated.body.data.active, true);
