@@ -126,9 +126,9 @@ function setManagerAccessVisible(visible) {
   if (elements.managerNav) elements.managerNav.hidden = false;
   if (elements.managerSave) elements.managerSave.disabled = !managerAccessAllowed;
   if (elements.managerRoles) {
-    $('input', elements.managerRoles).forEach((control) => { control.disabled = !managerAccessAllowed; });
+    Array.from(elements.managerRoles.querySelectorAll('input')).forEach((control) => { control.disabled = !managerAccessAllowed; });
   }
-  $('button, input', elements.managerRows).forEach((control) => {
+  Array.from(elements.managerRows.querySelectorAll('button, input')).forEach((control) => {
     control.disabled = !managerAccessAllowed;
   });
   if (!managerAccessAllowed && elements.managerMessage) {
@@ -461,7 +461,7 @@ async function addManager(event) {
   }
   if (!elements.managerForm.checkValidity()) return;
   const email = elements.managerEmail.value.trim();
-  const roles = $('input[name="manager-new-role"]:checked', elements.managerRoles).map((input) => input.value);
+  const roles = Array.from(elements.managerRoles.querySelectorAll('input[name="manager-new-role"]:checked')).map((input) => input.value);
   if (roles.length === 0) {
     setManagerMessage('برای مدیر جدید دست‌کم یک نقش انتخاب کنید.');
     return;
