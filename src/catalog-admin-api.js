@@ -401,12 +401,6 @@ function createCatalogAdminApi({
       const reactivating = current?.active === false;
       const roles = reactivating ? current.roles : normalizeCatalogAdminRoles(req.body.roles);
       if (roles.length === 0) throw new CatalogInputError();
-      if (reactivating && req.body.roles !== undefined) {
-        const requestedRoles = normalizeCatalogAdminRoles(req.body.roles);
-        if (requestedRoles.length !== roles.length || !requestedRoles.every((role) => roles.includes(role))) {
-          return sendError(res, 409, 'REACTIVATION_PRESERVES_ROLES', 'فعال‌سازی مجدد نقش‌های قبلی را حفظ می‌کند؛ پس از فعال‌سازی می‌توانید آن‌ها را ویرایش کنید.');
-        }
-      }
       const result = await roleProvider.changeAssignment({
         actorId: res.locals.catalogAdminPrincipal.subjectId,
         targetSubjectId,
