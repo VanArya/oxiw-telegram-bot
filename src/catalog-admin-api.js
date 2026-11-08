@@ -389,17 +389,21 @@ function createCatalogAdminApi({
       const targetSubjectId = await targetResolver(req.body.email);
       if (!isStableSubjectId(targetSubjectId)) throw new CatalogInputError();
       const current = await readManagerAssignment(targetSubjectId);
-      if (current) return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل وجود دارد.');
+      if (current?.active === true) {
+        return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل فعال است.');
+      }
+      const reactivating = current?.active === false;
+      const roles = reactivating ? current.roles : ['administrator'];
       const result = await roleProvider.changeAssignment({
         actorId: res.locals.catalogAdminPrincipal.subjectId,
         targetSubjectId,
-        roles: ['administrator'],
+        roles,
         active: true,
-        expectedVersion: 0,
+        expectedVersion: current?.version ?? 0,
       });
-      return res.status(201).json({ data: {
+      return res.status(reactivating ? 200 : 201).json({ data: {
         subjectId: targetSubjectId,
-        roles: ['administrator'],
+        roles: [...roles],
         active: true,
         version: result.version,
         eventId: result.eventId,
