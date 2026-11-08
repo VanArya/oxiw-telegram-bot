@@ -156,6 +156,7 @@ function messageForError(error) {
     PRECONDITION_FAILED: 'داده پس از آخرین بارخوانی تغییر کرده است.',
     LAST_ADMINISTRATOR: 'این تغییر آخرین مدیر فعال را حذف می‌کند و مجاز نیست.',
     NO_CHANGE: 'نقش‌های انتخاب‌شده با وضعیت فعلی تفاوتی ندارند.',
+    OWNER_ADMIN_REQUIRED: 'دسترسی مدیریتی حساب مالک از این بخش قابل لغو نیست.',
     AUTHENTICATION_UNAVAILABLE: 'بررسی هویت موقتاً در دسترس نیست.',
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
