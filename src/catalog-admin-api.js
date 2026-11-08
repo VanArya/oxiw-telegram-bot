@@ -412,6 +412,7 @@ function createCatalogAdminApi({
         subjectId: targetSubjectId,
         roles: [...roles],
         active: true,
+        reactivated: reactivating,
         version: result.version,
         eventId: result.eventId,
       } });
