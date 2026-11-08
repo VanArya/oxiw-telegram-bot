@@ -86,6 +86,7 @@ function validateAssignmentSnapshot(subjectId, snapshot) {
 
 function chooseOperation(before, afterRoles, afterActive) {
   if (!before) return 'assignment.created';
+  if (!before.data.active && afterActive) return 'assignment.reactivated';
   if (before.data.active && !afterActive) return 'assignment.disabled';
   const isSubset = afterRoles.length < before.roles.length &&
     afterRoles.every((role) => before.roles.includes(role));
@@ -442,10 +443,12 @@ function createFirestoreCatalogAdminRoleProvider({
               !nextRoles.every((role) => before.roles.includes(role)))) {
             throw new TypeError('Disabling an assignment must preserve its roles.');
           }
-          if (before && active && !before.data.active) {
-            throw new TypeError('Reactivating a disabled assignment is not supported by this operation.');
+          if (before && active && !before.data.active &&
+              (nextRoles.length !== before.roles.length ||
+               !nextRoles.every((role) => before.roles.includes(role)))) {
+            throw new TypeError('Reactivating an assignment must preserve its existing roles.');
           }
-          if (before && active && nextRoles.length === before.roles.length &&
+          if (before && active && before.data.active && nextRoles.length === before.roles.length &&
               nextRoles.every((role) => before.roles.includes(role))) {
             throw new TypeError('Role assignment change has no effect.');
           }

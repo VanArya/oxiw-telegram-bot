@@ -297,6 +297,16 @@ test('revocation and soft disable are audited and resolve to no access', async (
     'assignment.disabled');
   assert.equal(firestore.documents.get('catalogAdminControl/bootstrap').activeAdministratorCount, 1);
   assert.deepEqual(await provider.resolveRoles('managed-user'), []);
+  const reactivated = await provider.changeAssignment({
+    actorId: 'trusted-operator', targetSubjectId: 'managed-user', roles: ['observer'], active: true,
+    expectedVersion: 3,
+  });
+  assert.equal(reactivated.version, 4);
+  assert.equal(firestore.documents.get(`catalogAdminRoleAuditEvents/${reactivated.eventId}`).operation,
+    'assignment.reactivated');
+  assert.equal(firestore.documents.get('catalogAdminRoleAssignments/managed-user').active, true);
+  assert.equal(firestore.documents.get('catalogAdminControl/bootstrap').activeAdministratorCount, 1);
+  assert.deepEqual(await provider.resolveRoles('managed-user'), ['observer']);
 });
 
 test('assignment write or audit failure rolls back both writes', async () => {

@@ -821,7 +821,7 @@ function createManagerRoleProvider({ initial = [], failAudit = false } = {}) {
         error.code = 'VERSION_CONFLICT';
         throw error;
       }
-      if (current && options.active) {
+      if (current?.active && options.active) {
         const error = new Error('already exists');
         error.code = 'ALREADY_EXISTS';
         throw error;
@@ -840,7 +840,11 @@ function createManagerRoleProvider({ initial = [], failAudit = false } = {}) {
         version: actualVersion + 1,
       };
       assignments.set(next.subjectId, next);
-      auditEvents.push({ operation: options.active ? 'assignment.created' : 'assignment.disabled', actorId: options.actorId });
+      auditEvents.push({
+        operation: !current ? 'assignment.created'
+          : (!current.active && options.active ? 'assignment.reactivated' : 'assignment.disabled'),
+        actorId: options.actorId,
+      });
       return { version: next.version, eventId: `event-${auditEvents.length}` };
     },
   };
@@ -880,6 +884,15 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
     assert.equal(revoked.status, 200);
     assert.equal(revoked.body.data.active, false);
     assert.equal(roleProvider.auditEvents[1].operation, 'assignment.disabled');
+
+    const reactivated = await json(await fetch(`${baseUrl}${ADMIN_PATH}/managers`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'new-admin@example.com' }),
+    }));
+    assert.equal(reactivated.status, 200);
+    assert.equal(reactivated.body.data.active, true);
+    assert.equal(reactivated.body.data.version, 3);
+    assert.equal(roleProvider.auditEvents[2].operation, 'assignment.reactivated');
   });
 });
 

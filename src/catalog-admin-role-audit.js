@@ -24,6 +24,7 @@ const ROLE_AUDIT_OPERATIONS = new Set([
   'roles.changed',
   'role.revoked',
   'assignment.disabled',
+  'assignment.reactivated',
   'bootstrap.completed',
 ]);
 
@@ -104,6 +105,9 @@ function matchesOperationTransition(event) {
         event.rolesBefore.length > 0 && isStrictSubset(event.rolesAfter, event.rolesBefore);
     case 'assignment.disabled':
       return event.activeBefore === true && event.activeAfter === false &&
+        event.rolesBefore.length > 0 && sameRoles(event.rolesBefore, event.rolesAfter);
+    case 'assignment.reactivated':
+      return event.activeBefore === false && event.activeAfter === true &&
         event.rolesBefore.length > 0 && sameRoles(event.rolesBefore, event.rolesAfter);
     case 'bootstrap.completed':
       return event.previousVersion === 0 && event.version === 1 &&
