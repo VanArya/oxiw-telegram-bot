@@ -12,6 +12,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { getCatalogFirebaseWebConfig } = require('./catalog-admin-web-config');
 const {
   createCatalogRoleAuthorizer,
+  createCatalogOwnerAuthorizer,
 } = require('./catalog-admin-authorization');
 const {
   createFirebaseAdminIdTokenVerifier,
@@ -34,6 +35,7 @@ const PROJECT_ID_ENV = 'CATALOG_GCP_PROJECT_ID';
 const DATABASE_ID_ENV = 'CATALOG_FIRESTORE_DATABASE_ID';
 const DEFAULT_DATABASE_ID = '(default)';
 const DIRECT_CATEGORY_WRITES_ENV = 'CATALOG_DIRECT_CATEGORIES_WRITE_ENABLED';
+const OWNER_UID_ENV = 'CATALOG_ADMIN_OWNER_UID';
 const FIREBASE_APP_NAME = 'oxiw-catalog-core';
 
 class CatalogOperationalRuntimeConfigurationError extends Error {
@@ -63,10 +65,13 @@ function readOperationalConfiguration(env) {
     : env[DATABASE_ID_ENV];
   const spreadsheetId = env.CATALOG_SPREADSHEET_ID;
   const adcPath = env.GOOGLE_APPLICATION_CREDENTIALS;
+  const ownerSubjectId = env[OWNER_UID_ENV];
 
   if (!isProjectId(projectId) || !isDatabaseId(databaseId) ||
       typeof spreadsheetId !== 'string' || spreadsheetId.trim() === '' ||
-      (adcPath !== undefined && (typeof adcPath !== 'string' || adcPath.trim() === ''))) {
+      (adcPath !== undefined && (typeof adcPath !== 'string' || adcPath.trim() === '')) ||
+      (ownerSubjectId !== undefined &&
+        (typeof ownerSubjectId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(ownerSubjectId)))) {
     throw new CatalogOperationalRuntimeConfigurationError();
   }
 
@@ -74,6 +79,7 @@ function readOperationalConfiguration(env) {
     projectId,
     databaseId,
     spreadsheetId: spreadsheetId.trim(),
+    ownerSubjectId,
     directCategoryWritesEnabled: env[DIRECT_CATEGORY_WRITES_ENV] === 'true',
   });
 }
@@ -162,6 +168,11 @@ async function createOperationalCatalogRuntime({
   const operationalTargetResolver = targetResolver === undefined
     ? createFirebaseAdminTargetResolver({ auth: firebase.auth })
     : targetResolver;
+  const operationalAuthorizeOwner = authorizeOwner === undefined
+    ? (configuration.ownerSubjectId === undefined
+      ? undefined
+      : createCatalogOwnerAuthorizer({ ownerSubjectId: configuration.ownerSubjectId }))
+    : authorizeOwner;
 
   let roleProvider;
   try {
@@ -196,7 +207,7 @@ async function createOperationalCatalogRuntime({
       verifyAdminPrincipal: createFirebaseAdminIdTokenVerifier({ auth: firebase.auth }),
       roleProvider,
       authorizePermission: createCatalogRoleAuthorizer(),
-      ...(authorizeOwner === undefined ? {} : { authorizeOwner }),
+      ...(operationalAuthorizeOwner === undefined ? {} : { authorizeOwner: operationalAuthorizeOwner }),
       targetResolver: operationalTargetResolver,
       resolveManagerEmail: createFirebaseAdminManagerEmailResolver({ auth: firebase.auth }),
       readinessCheck: operationalReadiness,
@@ -218,6 +229,7 @@ async function createOperationalCatalogRuntime({
     projectId: configuration.projectId,
     databaseId: configuration.databaseId,
     targetResolver: operationalTargetResolver,
+    authorizeOwner: operationalAuthorizeOwner,
     readinessCheck: operationalReadiness,
   });
 }
@@ -229,6 +241,7 @@ module.exports = {
   FIREBASE_APP_NAME,
   PROJECT_ID_ENV,
   DIRECT_CATEGORY_WRITES_ENV,
+  OWNER_UID_ENV,
   createOperationalCatalogRuntime,
   isDatabaseId,
   isProjectId,

@@ -7,6 +7,7 @@ const {
   CatalogOperationalRuntimeConfigurationError,
   DEFAULT_DATABASE_ID,
   FIREBASE_APP_NAME,
+  OWNER_UID_ENV,
   createOperationalCatalogRuntime,
 } = require('../src/catalog-operational-runtime-factory');
 const {
@@ -140,7 +141,7 @@ test('builds operational runtime with Firebase Admin, revoked-token verifier, sh
   const google = makeGoogle(state);
   const firebase = makeFirebaseAdmin();
   const runtime = await createOperationalCatalogRuntime({
-    env: env({ CATALOG_FIRESTORE_DATABASE_ID: 'catalog-db' }),
+    env: env({ CATALOG_FIRESTORE_DATABASE_ID: 'catalog-db', [OWNER_UID_ENV]: 'owner-user' }),
     google,
     firebaseAdmin: firebase.firebaseAdmin,
   });
@@ -148,6 +149,19 @@ test('builds operational runtime with Firebase Admin, revoked-token verifier, sh
   assert.equal(runtime.runtimeMode, 'operational');
   assert.equal(runtime.projectId, 'oxiw-catalog-test-123');
   assert.equal(runtime.databaseId, 'catalog-db');
+  assert.equal(typeof runtime.authorizeOwner, 'function');
+  assert.equal(runtime.authorizeOwner({
+    authenticated: true, subjectId: 'owner-user', roles: ['administrator'],
+  }), true);
+  assert.equal(runtime.authorizeOwner({
+    authenticated: true, subjectId: 'other-admin', roles: ['administrator'],
+  }), false);
+  assert.equal(runtime.authorizeOwner({
+    authenticated: true, subjectId: 'owner-user', roles: ['observer'],
+  }), false);
+  assert.equal(runtime.authorizeOwner({
+    authenticated: false, subjectId: 'owner-user', roles: ['administrator'],
+  }), false);
   assert.equal(getCatalogProviderKind(runtime.provider), 'google-sheets');
   assert.equal(getCatalogProviderKind(runtime.metadataProvider), 'firestore-read');
   assert.equal(getCatalogProviderKind(runtime.writableProvider), 'firestore-write');
@@ -191,6 +205,7 @@ test('rejects incomplete or invalid operational configuration before initializat
     env({ CATALOG_FIRESTORE_DATABASE_ID: 'bad database' }),
     env({ CATALOG_SPREADSHEET_ID: '' }),
     env({ GOOGLE_APPLICATION_CREDENTIALS: '' }),
+    env({ [OWNER_UID_ENV]: 'invalid owner uid' }),
   ]) {
     await assert.rejects(
       createOperationalCatalogRuntime({
@@ -202,6 +217,30 @@ test('rejects incomplete or invalid operational configuration before initializat
     );
   }
   assert.equal(firebase.state.credentialCalls, 0);
+});
+
+test('owner authorization is disabled unless a valid Firebase UID is configured', async () => {
+  const unconfigured = await createOperationalCatalogRuntime({
+    env: env(),
+    google: makeGoogle({}),
+    firebaseAdmin: makeFirebaseAdmin().firebaseAdmin,
+  });
+  assert.equal(unconfigured.authorizeOwner, undefined);
+
+  const configured = await createOperationalCatalogRuntime({
+    env: env({ [OWNER_UID_ENV]: 'owner-user' }),
+    google: makeGoogle({}),
+    firebaseAdmin: makeFirebaseAdmin().firebaseAdmin,
+  });
+  assert.equal(configured.authorizeOwner({
+    authenticated: true, subjectId: 'owner-user', roles: ['administrator'],
+  }), true);
+  assert.equal(configured.authorizeOwner({
+    authenticated: true, subjectId: 'owner-user', roles: ['observer'],
+  }), false);
+  assert.equal(configured.authorizeOwner({
+    authenticated: true, subjectId: 'another-user', roles: ['administrator'],
+  }), false);
 });
 
 test('fails closed and sanitizes ADC initialization errors', async () => {
