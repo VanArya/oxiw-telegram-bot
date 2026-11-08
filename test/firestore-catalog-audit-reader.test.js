@@ -22,19 +22,27 @@ function event(eventId, occurredAt, extra = {}) {
 }
 
 class FakeQuery {
-  constructor(documents) { this.documents = documents; this.skip = 0; this.take = Infinity; }
-  orderBy() { return this; }
+  constructor(documents) { this.documents = documents; this.skip = 0; this.take = Infinity; this.orderings = []; }
+  orderBy(field, direction) { this.orderings.push([field, direction]); return this; }
   offset(value) { this.skip = value; return this; }
   limit(value) { this.take = value; return this; }
   async get() {
     return { docs: [...this.documents]
-      .sort((left, right) => right.data().occurredAt.localeCompare(left.data().occurredAt))
+      .sort((left, right) => right.data().occurredAt.localeCompare(left.data().occurredAt) || right.id.localeCompare(left.id))
       .slice(this.skip, this.skip + this.take) };
   }
 }
 
 function createFirestore(documents) {
-  return { collection: () => new FakeQuery(documents) };
+  const queries = [];
+  return {
+    queries,
+    collection: () => {
+      const query = new FakeQuery(documents);
+      queries.push(query);
+      return query;
+    },
+  };
 }
 
 test('lists paginated catalog audit events with an explicit safe projection', async () => {
@@ -48,8 +56,10 @@ test('lists paginated catalog audit events with an explicit safe projection', as
     { id: ids[1], data: () => event(ids[1], '2026-10-02T00:00:00.000Z') },
     { id: ids[2], data: () => event(ids[2], '2026-10-03T00:00:00.000Z') },
   ];
-  const reader = createFirestoreCatalogAuditReader({ firestore: createFirestore(docs) });
+  const firestore = createFirestore(docs);
+  const reader = createFirestoreCatalogAuditReader({ firestore });
   const first = await reader.list({ page: '1', pageSize: '2' });
+  assert.deepEqual(firestore.queries[0].orderings, [['occurredAt', 'desc']]);
   assert.deepEqual(first.data.map(({ eventId }) => eventId), [ids[2], ids[1]]);
   assert.equal(first.meta.hasMore, true);
   assert.equal(Object.hasOwn(first.data[0], 'rawPayload'), false);
