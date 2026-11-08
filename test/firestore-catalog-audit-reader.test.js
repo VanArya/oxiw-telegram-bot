@@ -63,10 +63,30 @@ test('rejects invalid pagination and malformed stored audit events', async () =>
     firestore: createFirestore([{ id: 'bad', data: () => event('other-id', 'bad-date') }]),
   });
   await assert.rejects(reader.list({ page: '0' }), { code: 'INVALID_PAGINATION' });
+  await assert.rejects(reader.list(), /history is unavailable/);
+});
+
+
+test('preserves the Firestore failure as an internal cause without exposing its message', async () => {
+  const firestoreFailure = Object.assign(new Error('private Firestore details'), {
+    code: 9,
+    status: 400,
+  });
+  const firestore = {
+    collection() {
+      return {
+        orderBy() { return this; },
+        offset() { return this; },
+        limit() { return this; },
+        async get() { throw firestoreFailure; },
+      };
+    },
+  };
+  const reader = createFirestoreCatalogAuditReader({ firestore });
   await assert.rejects(reader.list(), (error) => {
-    assert.match(error.message, /history is unavailable/);
     assert.equal(error.code, 'AUDIT_HISTORY_UNAVAILABLE');
-    assert.equal(error.cause, undefined);
+    assert.equal(error.cause, firestoreFailure);
+    assert.doesNotMatch(error.message, /private Firestore details/);
     return true;
   });
 });
