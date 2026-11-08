@@ -25,7 +25,7 @@ const elements = Object.fromEntries([
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
   'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
-  'managerCancel', 'managerEmail', 'managerSave', 'managerRows',
+  'managerCancel', 'managerEmail', 'managerRoles', 'managerSave', 'managerRows',
 ].map((name) => [
   name,
   document.getElementById(name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)),
@@ -125,6 +125,9 @@ function setManagerAccessVisible(visible) {
   managerAccessAllowed = Boolean(visible);
   if (elements.managerNav) elements.managerNav.hidden = false;
   if (elements.managerSave) elements.managerSave.disabled = !managerAccessAllowed;
+  if (elements.managerRoles) {
+    $('input', elements.managerRoles).forEach((control) => { control.disabled = !managerAccessAllowed; });
+  }
   $('button, input', elements.managerRows).forEach((control) => {
     control.disabled = !managerAccessAllowed;
   });
@@ -157,6 +160,7 @@ function messageForError(error) {
     LAST_ADMINISTRATOR: 'این تغییر آخرین مدیر فعال را حذف می‌کند و مجاز نیست.',
     NO_CHANGE: 'نقش‌های انتخاب‌شده با وضعیت فعلی تفاوتی ندارند.',
     OWNER_ADMIN_REQUIRED: 'دسترسی مدیریتی حساب مالک از این بخش قابل لغو نیست.',
+    REACTIVATION_PRESERVES_ROLES: 'فعال‌سازی مجدد نقش‌های قبلی را حفظ می‌کند؛ پس از فعال‌سازی می‌توانید آن‌ها را ویرایش کنید.',
     AUTHENTICATION_UNAVAILABLE: 'بررسی هویت موقتاً در دسترس نیست.',
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
@@ -457,13 +461,18 @@ async function addManager(event) {
   }
   if (!elements.managerForm.checkValidity()) return;
   const email = elements.managerEmail.value.trim();
-  if (!window.confirm('این حساب به‌عنوان مدیر سامانه اضافه شود؟')) return;
+  const roles = $('input[name="manager-new-role"]:checked', elements.managerRoles).map((input) => input.value);
+  if (roles.length === 0) {
+    setManagerMessage('برای مدیر جدید دست‌کم یک نقش انتخاب کنید.');
+    return;
+  }
+  if (!window.confirm('این حساب با نقش‌های انتخاب‌شده به فهرست مدیران اضافه شود؟')) return;
   setBusy(elements.managerSave, true);
   clearManagerMessage();
   try {
     const { body } = await api(`${API_ROOT}/managers`, {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, roles }),
     });
     const assignment = body?.data;
     if (assignment?.subjectId) managerEmailById.set(assignment.subjectId, email);
