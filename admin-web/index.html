@@ -146,6 +146,16 @@
                 <div class="panel-heading"><div><p class="eyebrow">مدیر جدید</p><h2>افزودن با ایمیل</h2></div><button id="manager-cancel" class="icon-button" type="button" aria-label="بستن">×</button></div>
                 <label for="manager-email">ایمیل حساب Firebase<input id="manager-email" type="email" maxlength="320" autocomplete="off" required dir="ltr" placeholder="name@example.com"></label>
                 <p class="fine-print">UID حساب در Backend و از Firebase Admin استخراج می‌شود؛ ایمیل به‌تنهایی هویت یا مجوز ایجاد نمی‌کند.</p>
+                <fieldset id="manager-roles" class="manager-role-options">
+                  <legend>نقش‌های اولیه</legend>
+                  <label><input type="checkbox" name="manager-new-role" value="observer" checked> ناظر</label>
+                  <label><input type="checkbox" name="manager-new-role" value="editor"> ویرایشگر</label>
+                  <label><input type="checkbox" name="manager-new-role" value="approver"> تأییدکننده</label>
+                  <label><input type="checkbox" name="manager-new-role" value="publisher"> ناشر</label>
+                  <label><input type="checkbox" name="manager-new-role" value="taxonomy_manager"> مدیر دسته‌ها</label>
+                  <label><input type="checkbox" name="manager-new-role" value="administrator"> مدیر سامانه</label>
+                  <p class="fine-print">برای حساب غیرفعال‌شده، فعال‌سازی مجدد نقش‌های قبلی را حفظ می‌کند؛ پس از آن می‌توانید نقش‌ها را ویرایش کنید.</p>
+                </fieldset>
                 <div class="form-actions"><button id="manager-save" class="button button-primary" type="submit">افزودن مدیر</button><button class="button button-secondary" type="button" data-manager-cancel>انصراف</button></div>
               </form>
               <div class="panel table-panel"><div class="panel-heading"><h2>مدیران فعال</h2></div><div class="table-wrap"><table><thead><tr><th>ایمیل</th><th>شناسه</th><th>نقش</th><th>وضعیت</th><th>نسخه</th><th>عملیات</th></tr></thead><tbody id="manager-rows"></tbody></table></div></div>
