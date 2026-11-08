@@ -210,6 +210,11 @@ test('accepts create, revoke, disable, and one-time administrator bootstrap tran
     activeBefore: true, activeAfter: false,
   })).operation, 'assignment.disabled');
   assert.equal(validateCatalogAdminRoleAuditEvent(validEvent({
+    operation: 'assignment.reactivated',
+    rolesBefore: ['observer'], rolesAfter: ['observer'],
+    activeBefore: false, activeAfter: true,
+  })).operation, 'assignment.reactivated');
+  assert.equal(validateCatalogAdminRoleAuditEvent(validEvent({
     operation: 'bootstrap.completed',
     rolesBefore: [], rolesAfter: ['administrator'],
     activeBefore: false, activeAfter: true,
