@@ -63,5 +63,10 @@ test('rejects invalid pagination and malformed stored audit events', async () =>
     firestore: createFirestore([{ id: 'bad', data: () => event('other-id', 'bad-date') }]),
   });
   await assert.rejects(reader.list({ page: '0' }), { code: 'INVALID_PAGINATION' });
-  await assert.rejects(reader.list(), /history is unavailable/);
+  await assert.rejects(reader.list(), (error) => {
+    assert.match(error.message, /history is unavailable/);
+    assert.equal(error.code, 'AUDIT_HISTORY_UNAVAILABLE');
+    assert.equal(error.cause, undefined);
+    return true;
+  });
 });
