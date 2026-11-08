@@ -879,6 +879,7 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
     }));
     assert.equal(added.status, 201);
     assert.equal(added.body.data.subjectId, 'new-admin');
+    assert.equal(added.body.data.reactivated, false);
     assert.equal(roleProvider.auditEvents[0].operation, 'assignment.created');
 
     const roleEtag = `"catalog-v1.${Buffer.from('manager:new-admin').toString('base64url')}.v1"`;
@@ -913,6 +914,7 @@ test('owner-only manager API adds, lists, and revokes managers with audit and pr
     }));
     assert.equal(reactivated.status, 200);
     assert.equal(reactivated.body.data.active, true);
+    assert.equal(reactivated.body.data.reactivated, true);
     assert.equal(reactivated.body.data.version, 4);
     assert.deepEqual(reactivated.body.data.roles, ['editor', 'approver']);
     assert.equal(roleProvider.auditEvents[3].operation, 'assignment.reactivated');
