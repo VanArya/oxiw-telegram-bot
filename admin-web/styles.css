@@ -154,3 +154,10 @@ tbody tr:hover { background: #fbfdfd; }
 .manager-role-editor .form-actions { margin-top: .25rem; }
 .manager-role-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .manager-role-summary { display: grid; gap: .4rem; }
+
+
+.manager-role-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: .5rem .8rem; margin: 0; padding: .8rem; border: 1px solid var(--line); border-radius: .7rem; }
+.manager-role-options legend { padding: 0 .35rem; color: var(--ink); font-size: .8rem; font-weight: 800; }
+.manager-role-options label { display: flex; align-items: center; gap: .45rem; color: #536d7a; font-size: .76rem; }
+.manager-role-options input { width: 1rem; min-height: 1rem; margin: 0; accent-color: var(--teal); }
+.manager-role-options .fine-print { grid-column: 1 / -1; margin: .2rem 0 0; }
