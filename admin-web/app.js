@@ -25,7 +25,7 @@ const elements = Object.fromEntries([
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
   'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
-  'managerCancel', 'managerEmail', 'managerSave', 'managerRows',
+  'managerCancel', 'managerEmail', 'managerRoles', 'managerSave', 'managerRows',
 ].map((name) => [
   name,
   document.getElementById(name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)),
@@ -125,8 +125,11 @@ function setManagerAccessVisible(visible) {
   managerAccessAllowed = Boolean(visible);
   if (elements.managerNav) elements.managerNav.hidden = false;
   if (elements.managerSave) elements.managerSave.disabled = !managerAccessAllowed;
-  $$('.button-danger', elements.managerRows).forEach((button) => {
-    button.disabled = !managerAccessAllowed;
+  if (elements.managerRoles) {
+    Array.from(elements.managerRoles.querySelectorAll('input')).forEach((control) => { control.disabled = !managerAccessAllowed; });
+  }
+  Array.from(elements.managerRows.querySelectorAll('button, input')).forEach((control) => {
+    control.disabled = !managerAccessAllowed;
   });
   if (!managerAccessAllowed && elements.managerMessage) {
     setManagerMessage('ثبت و لغو دسترسی تا تأیید مالک در سمت سرور غیرفعال است.');
@@ -154,6 +157,9 @@ function messageForError(error) {
     APPROVAL_REQUIRED: 'برای انتشار، محتوا باید ابتدا تأیید شود.',
     PRECONDITION_REQUIRED: 'نسخهٔ رکورد لازم است؛ داده را دوباره دریافت کنید.',
     PRECONDITION_FAILED: 'داده پس از آخرین بارخوانی تغییر کرده است.',
+    LAST_ADMINISTRATOR: 'این تغییر آخرین مدیر فعال را حذف می‌کند و مجاز نیست.',
+    NO_CHANGE: 'نقش‌های انتخاب‌شده با وضعیت فعلی تفاوتی ندارند.',
+    OWNER_ADMIN_REQUIRED: 'دسترسی مدیریتی حساب مالک از این بخش قابل لغو نیست.',
     AUTHENTICATION_UNAVAILABLE: 'بررسی هویت موقتاً در دسترس نیست.',
     ROLE_RESOLUTION_UNAVAILABLE: 'بررسی نقش‌ها موقتاً در دسترس نیست.',
     AUTHORIZATION_UNAVAILABLE: 'بررسی مجوز موقتاً در دسترس نیست.',
@@ -290,6 +296,100 @@ function managerEtag(subjectId, version) {
   return `"catalog-v1.${encoded}.v${version}"`;
 }
 
+const MANAGER_ROLE_OPTIONS = Object.freeze([
+  { value: 'observer', label: 'ناظر' },
+  { value: 'editor', label: 'ویرایشگر' },
+  { value: 'approver', label: 'تأییدکننده' },
+  { value: 'publisher', label: 'ناشر' },
+  { value: 'taxonomy_manager', label: 'مدیر دسته‌ها' },
+  { value: 'administrator', label: 'مدیر سامانه' },
+]);
+
+function renderManagerRoleSummary(assignment, cell) {
+  cell.replaceChildren();
+  const wrapper = document.createElement('div');
+  wrapper.className = 'manager-role-summary';
+  const summary = document.createElement('span');
+  summary.textContent = (assignment.roles || []).map(roleLabel).join('، ') || '—';
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'button button-small button-secondary';
+  edit.textContent = 'ویرایش نقش';
+  edit.disabled = !managerAccessAllowed;
+  edit.addEventListener('click', () => openManagerRoleEditor(assignment, cell));
+  wrapper.append(summary, edit);
+  cell.append(wrapper);
+}
+
+function openManagerRoleEditor(assignment, cell) {
+  cell.replaceChildren();
+  const form = document.createElement('form');
+  form.className = 'manager-role-editor';
+  const heading = document.createElement('strong');
+  heading.textContent = 'نقش‌های فعال';
+  form.append(heading);
+
+  MANAGER_ROLE_OPTIONS.forEach(({ value, label }) => {
+    const option = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.name = 'roles';
+    checkbox.value = value;
+    checkbox.checked = assignment.roles.includes(value);
+    option.append(checkbox, document.createTextNode(label));
+    form.append(option);
+  });
+
+  const actions = document.createElement('div');
+  actions.className = 'form-actions';
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'button button-small button-primary';
+  save.textContent = 'ذخیره نقش‌ها';
+  save.disabled = !managerAccessAllowed;
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'button button-small button-secondary';
+  cancel.textContent = 'انصراف';
+  cancel.addEventListener('click', () => renderManagerRoleSummary(assignment, cell));
+  actions.append(save, cancel);
+  form.append(actions);
+  form.addEventListener('submit', (event) => void updateManagerRoles(event, assignment, form));
+  cell.append(form);
+}
+
+async function updateManagerRoles(event, assignment, form) {
+  event.preventDefault();
+  if (!managerAccessAllowed) {
+    setManagerMessage('تغییر نقش‌ها فقط برای مالک مجاز است.');
+    return;
+  }
+  const roles = [...form.querySelectorAll('input[name="roles"]:checked')].map((input) => input.value);
+  if (roles.length === 0) {
+    setManagerMessage('هر مدیر فعال باید دست‌کم یک نقش داشته باشد.');
+    return;
+  }
+  if (!window.confirm('نقش‌های این مدیر با انتخاب جدید جایگزین شوند؟')) return;
+  const save = form.querySelector('button[type="submit"]');
+  setBusy(save, true);
+  setManagerMessage('در حال ذخیرهٔ نقش‌ها…', 'neutral');
+  try {
+    await api(`${API_ROOT}/managers/${encodeURIComponent(assignment.subjectId)}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': managerEtag(assignment.subjectId, assignment.version) },
+      body: JSON.stringify({ roles }),
+    });
+    showToast('نقش‌های مدیر به‌روزرسانی شد.');
+    await loadManagers();
+  } catch (error) {
+    if (error.status === 403) setManagerAccessVisible(false);
+    setManagerMessage(error.message || 'تغییر نقش‌ها انجام نشد.');
+    if (error.status === 401) reportApiError(error);
+  } finally {
+    setBusy(save, false);
+  }
+}
+
 function renderManagers(assignments) {
   elements.managerRows.replaceChildren();
   if (!assignments.length) {
@@ -310,19 +410,22 @@ function renderManagers(assignments) {
     subject.className = 'mono';
     subject.textContent = assignment.subjectId;
     const roles = document.createElement('td');
-    roles.textContent = (assignment.roles || []).map(roleLabel).join('، ') || '—';
+    renderManagerRoleSummary(assignment, roles);
     const status = document.createElement('td');
     status.textContent = assignment.active ? 'فعال' : 'غیرفعال';
     const version = document.createElement('td');
     version.textContent = String(assignment.version ?? '—');
     const action = document.createElement('td');
+    const actions = document.createElement('div');
+    actions.className = 'manager-role-actions';
     const revoke = document.createElement('button');
     revoke.type = 'button';
     revoke.className = 'button button-small button-danger';
     revoke.textContent = 'لغو دسترسی';
     revoke.disabled = !managerAccessAllowed;
     revoke.addEventListener('click', () => void revokeManager(assignment));
-    action.append(revoke);
+    actions.append(revoke);
+    action.append(actions);
     row.append(email, subject, roles, status, version, action);
     elements.managerRows.append(row);
   });
@@ -357,19 +460,26 @@ async function addManager(event) {
   }
   if (!elements.managerForm.checkValidity()) return;
   const email = elements.managerEmail.value.trim();
-  if (!window.confirm('این حساب به‌عنوان مدیر سامانه اضافه شود؟')) return;
+  const roles = Array.from(elements.managerRoles.querySelectorAll('input[name="manager-new-role"]:checked')).map((input) => input.value);
+  if (roles.length === 0) {
+    setManagerMessage('برای مدیر جدید دست‌کم یک نقش انتخاب کنید.');
+    return;
+  }
+  if (!window.confirm('این حساب با نقش‌های انتخاب‌شده به فهرست مدیران اضافه شود؟')) return;
   setBusy(elements.managerSave, true);
   clearManagerMessage();
   try {
     const { body } = await api(`${API_ROOT}/managers`, {
       method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, roles }),
     });
     const assignment = body?.data;
     if (assignment?.subjectId) managerEmailById.set(assignment.subjectId, email);
     elements.managerForm.reset();
     elements.managerForm.hidden = true;
-    showToast('مدیر با موفقیت اضافه شد.');
+    showToast(assignment?.reactivated
+      ? 'مدیر دوباره فعال شد؛ نقش‌های قبلی حفظ شدند.'
+      : 'مدیر با نقش‌های انتخاب‌شده اضافه شد.');
     await loadManagers();
   } catch (error) {
     if (error.status === 403) setManagerAccessVisible(false);

@@ -328,7 +328,13 @@ function createCatalogAdminApi({
       return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
     }
     if (error?.code === 'LAST_ADMINISTRATOR') {
-      return sendError(res, 409, 'LAST_ADMINISTRATOR', 'آخرین مدیر فعال قابل لغو نیست.');
+      return sendError(res, 409, 'LAST_ADMINISTRATOR', 'این تغییر آخرین مدیر فعال را حذف می‌کند و مجاز نیست.');
+    }
+    if (error?.code === 'NO_CHANGE') {
+      return sendError(res, 409, 'NO_CHANGE', 'نقش‌های انتخاب‌شده با وضعیت فعلی تفاوتی ندارند.');
+    }
+    if (error?.code === 'OWNER_ADMIN_REQUIRED') {
+      return sendError(res, 409, 'OWNER_ADMIN_REQUIRED', 'نقش مدیر سامانه برای حساب مالک قابل لغو نیست.');
     }
     if (error?.code === 'ALREADY_EXISTS') {
       return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل وجود دارد.');
@@ -380,7 +386,7 @@ function createCatalogAdminApi({
 
   app.post(`${BASE_PATH}/managers`, requireOwner, parseJson, asyncRoute(async (req, res) => {
     try {
-      requireBodyKeys(req.body, ['email']);
+      requireBodyKeys(req.body, ['email'], ['email', 'roles']);
       if (typeof req.body.email !== 'string' || !EMAIL_PATTERN.test(req.body.email) ||
           req.body.email.length > 320) throw new CatalogInputError();
       if (typeof targetResolver !== 'function' || typeof roleProvider?.changeAssignment !== 'function') {
@@ -393,7 +399,8 @@ function createCatalogAdminApi({
         return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل فعال است.');
       }
       const reactivating = current?.active === false;
-      const roles = reactivating ? current.roles : ['administrator'];
+      const roles = reactivating ? current.roles : normalizeCatalogAdminRoles(req.body.roles);
+      if (roles.length === 0) throw new CatalogInputError();
       const result = await roleProvider.changeAssignment({
         actorId: res.locals.catalogAdminPrincipal.subjectId,
         targetSubjectId,
@@ -403,6 +410,51 @@ function createCatalogAdminApi({
       });
       return res.status(reactivating ? 200 : 201).json({ data: {
         subjectId: targetSubjectId,
+        roles: [...roles],
+        active: true,
+        reactivated: reactivating,
+        version: result.version,
+        eventId: result.eventId,
+      } });
+    } catch (error) {
+      return handleManagerError(error, res);
+    }
+  }));
+
+  app.patch(`${BASE_PATH}/managers/:subjectId`, requireOwner, parseJson, asyncRoute(async (req, res) => {
+    if (!isStableSubjectId(req.params.subjectId)) {
+      return sendError(res, 400, 'INVALID_INPUT', 'شناسهٔ مدیر معتبر نیست.');
+    }
+    const precondition = readIfMatch(req, res, 'manager', req.params.subjectId);
+    if (!precondition || res.headersSent) return;
+    try {
+      requireBodyKeys(req.body, ['roles']);
+      const roles = normalizeCatalogAdminRoles(req.body.roles);
+      if (roles.length === 0) throw new CatalogInputError();
+      if (typeof roleProvider?.changeAssignment !== 'function') {
+        return sendError(res, 503, 'ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED', 'مدیریت مدیران پیکربندی نشده است.');
+      }
+      const current = await readManagerAssignment(req.params.subjectId);
+      if (!current || current.active !== true) {
+        return sendError(res, 404, 'NOT_FOUND', 'مدیر فعال پیدا نشد.');
+      }
+      if (req.params.subjectId === res.locals.catalogAdminPrincipal.subjectId &&
+          !roles.includes('administrator')) {
+        return sendError(res, 409, 'OWNER_ADMIN_REQUIRED', 'نقش مدیر سامانه برای حساب مالک قابل لغو نیست.');
+      }
+      if (current.roles.length === roles.length && roles.every((role) => current.roles.includes(role))) {
+        return sendError(res, 409, 'NO_CHANGE', 'نقش‌های انتخاب‌شده با وضعیت فعلی تفاوتی ندارند.');
+      }
+      const result = await roleProvider.changeAssignment({
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+        targetSubjectId: req.params.subjectId,
+        roles: [...roles],
+        active: true,
+        expectedVersion: precondition.expectedVersion,
+      });
+      res.set('ETag', makeEtag('manager', req.params.subjectId, result.version));
+      return res.json({ data: {
+        subjectId: req.params.subjectId,
         roles: [...roles],
         active: true,
         version: result.version,
@@ -423,6 +475,9 @@ function createCatalogAdminApi({
     try {
       const current = await readManagerAssignment(req.params.subjectId);
       if (!current || current.active !== true) return sendError(res, 404, 'NOT_FOUND', 'مدیر پیدا نشد.');
+      if (req.params.subjectId === res.locals.catalogAdminPrincipal.subjectId) {
+        return sendError(res, 409, 'OWNER_ADMIN_REQUIRED', 'حساب مالک از این مسیر قابل غیرفعال‌سازی نیست.');
+      }
       const result = await roleProvider.changeAssignment({
         actorId: res.locals.catalogAdminPrincipal.subjectId,
         targetSubjectId: req.params.subjectId,
