@@ -386,7 +386,7 @@ function createCatalogAdminApi({
 
   app.post(`${BASE_PATH}/managers`, requireOwner, parseJson, asyncRoute(async (req, res) => {
     try {
-      requireBodyKeys(req.body, ['email']);
+      requireBodyKeys(req.body, ['email'], ['email', 'roles']);
       if (typeof req.body.email !== 'string' || !EMAIL_PATTERN.test(req.body.email) ||
           req.body.email.length > 320) throw new CatalogInputError();
       if (typeof targetResolver !== 'function' || typeof roleProvider?.changeAssignment !== 'function') {
@@ -399,7 +399,14 @@ function createCatalogAdminApi({
         return sendError(res, 409, 'ALREADY_EXISTS', 'مدیر از قبل فعال است.');
       }
       const reactivating = current?.active === false;
-      const roles = reactivating ? current.roles : ['administrator'];
+      const roles = reactivating ? current.roles : normalizeCatalogAdminRoles(req.body.roles);
+      if (roles.length === 0) throw new CatalogInputError();
+      if (reactivating && req.body.roles !== undefined) {
+        const requestedRoles = normalizeCatalogAdminRoles(req.body.roles);
+        if (requestedRoles.length !== roles.length || !requestedRoles.every((role) => roles.includes(role))) {
+          return sendError(res, 409, 'REACTIVATION_PRESERVES_ROLES', 'فعال‌سازی مجدد نقش‌های قبلی را حفظ می‌کند؛ پس از فعال‌سازی می‌توانید آن‌ها را ویرایش کنید.');
+        }
+      }
       const result = await roleProvider.changeAssignment({
         actorId: res.locals.catalogAdminPrincipal.subjectId,
         targetSubjectId,
