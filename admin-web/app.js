@@ -37,6 +37,7 @@ let currentUser = null;
 let session = null;
 let firebaseConfig = null;
 let contentPage = 1;
+let contentLifecycleStatus = 'active';
 let auditPage = 1;
 let contentTotal = 0;
 let auditHasMore = false;
@@ -603,6 +604,14 @@ function renderContentRows(items) {
     open.textContent = 'مدیریت';
     open.addEventListener('click', () => void openContent(item));
     action.append(open);
+    const lifecycle = document.createElement('button');
+    lifecycle.type = 'button';
+    lifecycle.className = 'button button-small ' + (item.lifecycleStatus === 'disabled' ? 'button-primary' : 'button-danger');
+    lifecycle.textContent = item.lifecycleStatus === 'disabled' ? 'بازگردانی' : 'غیرفعال‌سازی';
+    lifecycle.disabled = !hasPermission('catalog.metadata.write');
+    lifecycle.addEventListener('click', () => void changeContentLifecycle(item,
+      item.lifecycleStatus === 'disabled' ? 'active' : 'disabled'));
+    action.append(lifecycle);
     row.append(selection, title, kind, code, year, approval, publication, metadata, action);
     elements.contentRows.append(row);
   });
@@ -661,6 +670,7 @@ function contentQuery() {
   const params = new URLSearchParams({ page: String(contentPage), pageSize: '20' });
   const q = elements.contentSearch.value.trim();
   if (q) params.set('q', q);
+  params.set('lifecycleStatus', contentLifecycleStatus);
   if (elements.contentKind.value) params.set('kind', elements.contentKind.value);
   if (elements.contentApproval.value) params.set('approvalStatus', elements.contentApproval.value);
   if (elements.contentPublication.value) params.set('publicationStatus', elements.contentPublication.value);
@@ -692,6 +702,38 @@ async function loadContentFilterOptions() {
   populateFilterSelect(elements.contentGenre, genreTerms, (term) => term.labelFa);
   populateFilterSelect(elements.contentCategory, categoryTerms, (term) =>
     term.localizedTitle?.fa || term.slug || term.id);
+}
+
+async function changeContentLifecycle(item, lifecycleStatus) {
+  if (!item || !hasPermission('catalog.metadata.write')) return;
+  const disabling = lifecycleStatus === 'disabled';
+  const actionLabel = disabling ? 'غیرفعال‌سازی' : 'بازگردانی';
+  const warning = disabling
+    ? 'این عنوان از کاتالوگ عمومی خارج می‌شود. با پیاده‌سازی فصل‌ها و قسمت‌ها، همین عملیات به تمام اجزای سریال نیز اعمال خواهد شد.'
+    : 'این عنوان دوباره در کاتالوگ فعال قرار می‌گیرد.';
+  if (!window.confirm(`${actionLabel} «${item.title}» انجام شود؟\\n${warning}`)) return;
+  try {
+    let etag = null;
+    try {
+      const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
+      etag = current.etag;
+    } catch (error) {
+      if (error.status !== 404) throw error;
+    }
+    const result = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/lifecycle`, {
+      method: 'PATCH',
+      headers: etag ? { 'If-Match': etag } : { 'If-None-Match': '*' },
+      body: JSON.stringify({ lifecycleStatus }),
+    });
+    showToast(disabling ? 'محتوا غیرفعال شد.' : 'محتوا بازگردانی شد.', 'success');
+    selectedContentIds.delete(item.id);
+    await loadContent();
+  } catch (error) {
+    if (error.status === 412) {
+      showToast('اطلاعات هم‌زمان تغییر کرده است؛ فهرست را تازه‌سازی کنید.', 'error');
+      await loadContent();
+    } else reportApiError(error);
+  }
 }
 
 async function loadContent() {
@@ -1633,6 +1675,18 @@ function wireUi() {
     renderContentRows(currentItems);
     updateBulkControls();
   });
+  $('[data-lifecycle-view]').forEach((button) => button.addEventListener('click', () => {
+    contentLifecycleStatus = button.dataset.lifecycleView;
+    contentPage = 1;
+    selectedContentIds.clear();
+    $('[data-lifecycle-view]').forEach((tab) => {
+      const active = tab.dataset.lifecycleView === contentLifecycleStatus;
+      tab.classList.toggle('button-primary', active);
+      tab.classList.toggle('button-secondary', !active);
+      tab.setAttribute('aria-pressed', String(active));
+    });
+    void loadContent();
+  }));
   $('#content-search-button').addEventListener('click', () => { contentPage = 1; void loadContent(); });
   $('#content-filter-reset').addEventListener('click', () => {
     [elements.contentSearch, elements.contentApproval, elements.contentPublication, elements.contentCountry, elements.contentGenre, elements.contentCategory].forEach((control) => { control.value = ''; });
