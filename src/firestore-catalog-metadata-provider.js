@@ -34,6 +34,9 @@ function projectContentMetadata(data, contentId) {
       ...(data.countryIds === undefined ? {} : { countryIds: data.countryIds }),
       ...(data.genreIds === undefined ? {} : { genreIds: data.genreIds }),
       ...(data.categoryIds === undefined ? {} : { categoryIds: data.categoryIds }),
+      ...(data.lifecycleStatus === undefined ? {} : { lifecycleStatus: data.lifecycleStatus }),
+      ...(data.disabledAt === undefined ? {} : { disabledAt: data.disabledAt }),
+      ...(data.disabledBy === undefined ? {} : { disabledBy: data.disabledBy }),
     });
   } catch {
     return null;
