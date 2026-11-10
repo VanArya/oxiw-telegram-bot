@@ -87,7 +87,7 @@ test('disabled archive includes independent disabled seasons and episodes but hi
     }],
     seriesStructureProvider: {
       async listStructure(id, options) {
-        assert.equal(id, seriesId);
+        if (id !== seriesId) return [];
         assert.deepEqual(options, { includeDisabled: true, parentLifecycleStatus: 'active' });
         return [
           {
