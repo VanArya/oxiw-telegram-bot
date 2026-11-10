@@ -366,7 +366,7 @@ test('hard deletes unused categories and taxonomy terms with transactional audit
   const events = [...firestore.documents.entries()]
     .filter(([path]) => path.startsWith('catalogAuditEvents/'))
     .map(([, event]) => event);
-  assert.deepEqual(events.slice(-2).map((event) => event.operation), ['category.deleted', 'taxonomy.deleted']);
+  assert.deepEqual(events.slice(-3).map((event) => event.operation), ['category.deleted', 'taxonomy.created', 'taxonomy.deleted']);
   assert.deepEqual(events.slice(-2).map((event) => event.actorId), ['owner-test', 'owner-test']);
 });
 
