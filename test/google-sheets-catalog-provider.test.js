@@ -97,9 +97,9 @@ test('permanently clears a source row only when its current version matches', as
     spreadsheetId: spreadsheetIdFixture,
     range: "'سینمایی'!A2:ZZZ2",
   }]);
-  await assert.rejects(provider.deleteCatalogRow({
+  assert.deepEqual(await provider.deleteCatalogRow({
     sheetName: 'سینمایی', systemCode: 'delete-code', expectedVersion: version,
-  }), (error) => error.code === 'ROW_NOT_FOUND' || error.code === 'VERSION_CONFLICT');
+  }), { alreadyMissing: true });
 });
 
 test('rejects invalid sheet names before calling the client', async () => {
