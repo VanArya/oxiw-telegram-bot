@@ -240,7 +240,7 @@ test('role audit history is owner-only and paginated', async () => {
           actorId: 'fixture-owner',
           targetSubjectId: 'fixture-manager',
           rolesBefore: [],
-          rolesAfter: ['content_editor'],
+          rolesAfter: ['editor'],
           activeBefore: false,
           activeAfter: true,
           previousVersion: 0,
