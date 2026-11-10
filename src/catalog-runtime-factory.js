@@ -8,7 +8,7 @@ const { createFirestoreWritableCatalogMetadataProvider } = require('./firestore-
 const { createGoogleSheetsCatalogProvider } = require('./google-sheets-catalog-provider');
 const { assertCatalogAdminRoleProvider } = require('./catalog-admin-role-provider');
 
-const GOOGLE_SHEETS_READONLY_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+const GOOGLE_SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SPREADSHEET_ID_ENV = 'CATALOG_SPREADSHEET_ID';
 
 class CatalogRuntimeConfigurationError extends Error {
@@ -84,7 +84,7 @@ async function createCatalogRuntime({
 
   let sheetsClient;
   try {
-    const auth = new google.auth.GoogleAuth({ scopes: [GOOGLE_SHEETS_READONLY_SCOPE] });
+    const auth = new google.auth.GoogleAuth({ scopes: [GOOGLE_SHEETS_SCOPE] });
     const authClient = await auth.getClient();
     if (!authClient) throw new TypeError();
     sheetsClient = google.sheets({ version: 'v4', auth: authClient });
@@ -161,7 +161,7 @@ async function createCatalogRuntime({
 
 module.exports = {
   CatalogRuntimeConfigurationError,
-  GOOGLE_SHEETS_READONLY_SCOPE,
+  GOOGLE_SHEETS_SCOPE,
   SPREADSHEET_ID_ENV,
   createCatalogRuntime,
 };
