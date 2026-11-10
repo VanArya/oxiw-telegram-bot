@@ -121,6 +121,7 @@ async function createCatalogRuntime({
       firestore,
       auditEventSink,
       ...(collections?.contentMetadata ? { contentMetadataCollection: collections.contentMetadata } : {}),
+      ...(collections?.seriesStructures ? { collection: collections.seriesStructures } : {}),
       ...(clock === undefined ? {} : { clock }),
     });
   } catch {
