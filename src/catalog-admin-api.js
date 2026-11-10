@@ -651,8 +651,9 @@ function createCatalogAdminApi({
         : new Set(['title', 'startYear', 'endYear', 'seasonsAndEpisodes', 'synopsis', 'cast', 'language', 'rating', 'trailerUrl', 'posterUrl']);
       for (const [field, value] of Object.entries(fields)) {
         if (!allowed.has(field) || !Object.hasOwn(SOURCE_EDITABLE_FIELDS, field)) throw new CatalogInputError();
-        if (field === 'releaseYear' || field === 'startYear' || field === 'endYear') {
-          if (field === 'endYear' && current.kind === 'series' && value === 'در حال پخش') continue;
+        if (field === 'endYear' && current.kind === 'series') {
+          if (value !== '' && value !== 'در حال پخش' && (!/^\\d{4}$/.test(String(value)) || Number(value) < 1800 || Number(value) > 3000)) throw new CatalogInputError();
+        } else if (field === 'releaseYear' || field === 'startYear') {
           if (value !== '' && (!Number.isInteger(value) || value < 1800 || value > 3000)) throw new CatalogInputError();
         } else if (typeof value !== 'string' || value.length > SOURCE_EDITABLE_FIELDS[field] ||
             (field === 'title' && value.trim() === '')) throw new CatalogInputError();
