@@ -80,18 +80,28 @@ function validateCatalogContentMetadata(contentId, value) {
   if (!isCanonicalContentId(contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
   assertAllowedKeys(value, new Set([
     'contentId', 'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds',
+    'lifecycleStatus', 'disabledAt', 'disabledBy',
   ]));
   if (
     (Object.hasOwn(value, 'contentId') && value.contentId !== contentId) ||
     !APPROVAL_STATUSES.has(value.approvalStatus) ||
-    !PUBLICATION_STATUSES.has(value.publicationStatus)
+    !PUBLICATION_STATUSES.has(value.publicationStatus) ||
+    (value.lifecycleStatus !== undefined && !['active', 'disabled'].includes(value.lifecycleStatus)) ||
+    (value.disabledAt !== undefined && (typeof value.disabledAt !== 'string' || !Number.isFinite(Date.parse(value.disabledAt)) || new Date(value.disabledAt).toISOString() !== value.disabledAt)) ||
+    (value.disabledBy !== undefined && (typeof value.disabledBy !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value.disabledBy))) ||
+    ((value.disabledAt === undefined) !== (value.disabledBy === undefined)) ||
+    (value.lifecycleStatus === 'disabled' && value.disabledAt === undefined) ||
+    (value.lifecycleStatus === 'active' && value.disabledAt !== undefined)
   ) throw new CatalogInputError();
 
   const metadata = {
     contentId,
     approvalStatus: value.approvalStatus,
     publicationStatus: value.publicationStatus,
+    lifecycleStatus: value.lifecycleStatus ?? 'active',
   };
+  if (value.disabledAt !== undefined) metadata.disabledAt = value.disabledAt;
+  if (value.disabledBy !== undefined) metadata.disabledBy = value.disabledBy;
   const countryIds = validateIdList(value.countryIds, 'country');
   const genreIds = validateIdList(value.genreIds, 'genre');
   const categoryIds = validateIdList(value.categoryIds, 'category');
