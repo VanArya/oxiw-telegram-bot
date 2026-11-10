@@ -7,7 +7,7 @@ const MAX_PAGE_SIZE = 100;
 
 function positiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER) {
   if (value === undefined) return fallback;
-  if (typeof value !== 'string' || !/^\\d+$/.test(value)) throw new TypeError();
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new TypeError();
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > max) throw new TypeError();
   return parsed;
