@@ -413,6 +413,9 @@ function createFirestoreWritableCatalogMetadataProvider({
         valueFor: (previous) => previous ? {
           ...metadata,
           ...(metadata.categoryIds === undefined && previous.categoryIds !== undefined ? { categoryIds: previous.categoryIds } : {}),
+          ...(metadata.lifecycleStatus === undefined && previous.lifecycleStatus !== undefined
+            ? { lifecycleStatus: previous.lifecycleStatus, ...(previous.disabledAt ? { disabledAt: previous.disabledAt, disabledBy: previous.disabledBy } : {}) }
+            : {}),
           ...(metadata.lifecycleStatus === 'active' && previous.lifecycleStatus === 'disabled'
             ? { lifecycleStatus: 'disabled', disabledAt: previous.disabledAt, disabledBy: previous.disabledBy }
             : {}),
