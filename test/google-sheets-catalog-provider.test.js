@@ -23,7 +23,7 @@ function mockSheetsClient(valuesBySheet, calls = []) {
             : { data: {} };
         },
         async batchUpdate(args) { calls.push({ batchUpdate: args }); return { data: {} }; },
-        async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'${args.range.slice(1,-1)}'!A3:E3` } } }; },
+        async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'سینمایی'!A3:E3` } } }; },
       },
     },
   };
