@@ -81,7 +81,7 @@ test('permanently clears a source row only when its current version matches', as
       async get({ range }) { return { data: { values: values[range] || [] } }; },
       async append() { return { data: {} }; },
       async batchUpdate() { return { data: {} }; },
-      async clear(args) { calls.push(args); return { data: {} }; },
+      async clear(args) { calls.push(args); const rowNumber = Number(/!A(\\d+):/.exec(args.range)?.[1]); values["'سینمایی'"][rowNumber - 1] = []; return { data: {} }; },
     } },
   };
   const provider = createGoogleSheetsCatalogProvider({ sheetsClient: client, spreadsheetId: spreadsheetIdFixture });
