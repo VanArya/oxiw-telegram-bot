@@ -7,6 +7,7 @@ const EVENT_KEYS = new Set([
 const OPERATIONS = new Set([
   'metadata.created', 'metadata.updated',
   'approval.pending', 'approval.approved', 'approval.rejected', 'approval.unknown',
+  'content.disabled', 'content.restored',
   'publication.draft', 'publication.published', 'publication.archived', 'publication.unknown',
   'category.created', 'category.updated', 'category.deleted',
   'taxonomy.created', 'taxonomy.updated', 'taxonomy.deleted',
@@ -14,6 +15,7 @@ const OPERATIONS = new Set([
 const ENTITY_TYPES = new Set(['content', 'category', 'taxonomy']);
 const CHANGED_FIELDS = new Set([
   'contentId', 'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds',
+  'lifecycleStatus', 'disabledAt', 'disabledBy',
   'slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder', 'mode', 'labelFa', 'deleted',
 ]);
 
