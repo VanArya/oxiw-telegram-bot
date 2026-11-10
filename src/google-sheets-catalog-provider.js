@@ -198,6 +198,46 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     writeQueue = result.catch(() => undefined);
     return result;
   };
+  provider.deleteCatalogRow = async function deleteCatalogRow({
+    sheetName, systemCode, expectedVersion,
+  } = {}) {
+    if (!SHEETS.has(sheetName) || typeof systemCode !== 'string' || !systemCode.trim() ||
+        typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion)) {
+      throw Object.assign(new Error('Invalid catalog row deletion.'), { code: 'INVALID_INPUT' });
+    }
+    if (typeof sheetsClient.spreadsheets.values.clear !== 'function') {
+      throw Object.assign(new Error('Catalog row deletion is unavailable.'), { code: 'DELETE_UNAVAILABLE' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet(sheetName);
+      const codeIndex = snapshot.headers.indexOf('کد سیستم');
+      if (codeIndex < 0) throw Object.assign(new Error('Catalog identity column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      const matches = snapshot.rows.map((row, index) => ({ row, index }))
+        .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode.normalize('NFC').trim());
+      if (matches.length === 0) return { alreadyMissing: true };
+      if (matches.length !== 1) {
+        throw Object.assign(new Error('Catalog row identity is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
+      }
+      const { row, index } = matches[0];
+      const record = Object.fromEntries(snapshot.headers.map((header, i) => [header, row[i] ?? '']));
+      const currentVersion = crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+      if (currentVersion !== expectedVersion) {
+        throw Object.assign(new Error('Catalog row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      try {
+        await sheetsClient.spreadsheets.values.clear({
+          spreadsheetId,
+          range: `${quoteSheetRange(sheetName)}!A${index + 2}:ZZZ${index + 2}`,
+        });
+      } catch (error) {
+        throw classifyCatalogDependencyError('sheets', 'sheet_delete', error, 'Unable to delete catalog row.');
+      }
+      return { alreadyMissing: false, rowNumber: index + 2 };
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
   return Object.freeze(markCatalogProviderKind(provider, 'google-sheets'));
 }
 
