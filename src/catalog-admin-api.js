@@ -336,7 +336,7 @@ function createCatalogAdminApi({
   }
 
   function parseStructureNumber(value) {
-    if (typeof value !== 'string' || !/^\\d{1,5}$/.test(value)) throw new CatalogInputError('INVALID_STRUCTURE_NUMBER');
+    if (typeof value !== 'string' || !/^\d{1,5}$/.test(value)) throw new CatalogInputError('INVALID_STRUCTURE_NUMBER');
     const number = Number(value);
     if (!Number.isSafeInteger(number) || number < 1) throw new CatalogInputError('INVALID_STRUCTURE_NUMBER');
     return number;
