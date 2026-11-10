@@ -57,6 +57,7 @@ function createCatalogHttpService({
   categories = [],
   metadataProvider,
   writableProvider,
+  seriesStructureProvider,
   verifyAdminPrincipal,
   roleProvider,
   reportRoleResolutionFailure,
@@ -85,7 +86,7 @@ function createCatalogHttpService({
     throw new TypeError('Catalog HTTP service requires an injected readiness check.');
   }
 
-  const publicApi = createCatalogApi({ provider, categories, metadataProvider, logger });
+  const publicApi = createCatalogApi({ provider, categories, metadataProvider, seriesStructureProvider, logger });
   const adminContentReader = createCatalogAdminContentReader({
     sheetProvider: provider,
     writableProvider,
@@ -107,6 +108,7 @@ function createCatalogHttpService({
   const adminApi = createCatalogAdminApi({
     writableProvider,
     contentReader: adminContentReader,
+    seriesStructureProvider,
     auditReader,
     verifyAdminPrincipal,
     roleProvider,
