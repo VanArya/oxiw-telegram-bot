@@ -223,7 +223,9 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       const schema = await this.getSheetSchema(kind);
       if (!schema) return null;
       const candidate = Object.fromEntries(schema.headers.map((header) => [header, fields[header] ?? '']));
-      mapCatalogSheetRow(schema.sheetName, candidate);
+      try { mapCatalogSheetRow(schema.sheetName, candidate); } catch {
+        throw Object.assign(new Error('Invalid catalog source row.'), { code: 'INVALID_INPUT' });
+      }
       const result = await sheetProvider.createCatalogRow({ sheetName: schema.sheetName, fields });
       const mapped = mapCatalogSheetRow(schema.sheetName, result.record);
       return Object.freeze({
@@ -240,7 +242,9 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       if (!current) return null;
       const record = { ...current.record };
       for (const [header, value] of Object.entries(fields)) record[header] = String(value);
-      mapCatalogSheetRow(current.sourceSheet, record);
+      try { mapCatalogSheetRow(current.sourceSheet, record); } catch {
+        throw Object.assign(new Error('Invalid catalog source row.'), { code: 'INVALID_INPUT' });
+      }
       const result = await sheetProvider.updateCatalogRow({
         sheetName: current.sourceSheet, systemCode: item.systemCode,
         expectedVersion: sourceVersion, fields, actorId,
