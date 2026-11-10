@@ -666,6 +666,7 @@ function createCatalogAdminApi({
       return res.status(201).json({ data: created });
     } catch (error) {
       if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات عنوان جدید معتبر نیست.');
+      if (error?.code === 'INVALID_INPUT') return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات ردیف با ساختار شیت سازگار نیست.');
       if (error?.code === 'ALREADY_EXISTS') return sendError(res, 409, 'ALREADY_EXISTS', 'کد سیستم از قبل ثبت شده است.');
       if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های ضروری شیت در دسترس نیستند.');
       throw error;
@@ -695,7 +696,7 @@ function createCatalogAdminApi({
       });
       return res.json({ data: updated });
     } catch (error) {
-      if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'فیلدهای ویرایش‌شده معتبر نیستند.');
+      if (error instanceof CatalogInputError || error?.code === 'INVALID_INPUT') return sendError(res, 400, 'INVALID_INPUT', 'فیلدهای ویرایش‌شده معتبر نیستند.');
       if (error?.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'اطلاعات در Google Sheets تغییر کرده است؛ دادهٔ تازه را بارگذاری کنید.');
       if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 404, 'NOT_FOUND', 'ردیف یکتای محتوا در Google Sheets پیدا نشد.');
       if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون موردنظر در شیت وجود ندارد.');
