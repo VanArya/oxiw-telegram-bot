@@ -309,6 +309,32 @@ test('content disable and restore are versioned and audited transactionally', as
   assert.deepEqual(events.map((event) => event.actorId), ['admin-test-1', 'admin-test-1']);
 });
 
+test('permanent metadata deletion removes the record but retains the content audit event', async () => {
+  const { firestore, provider } = setup();
+  await provider.upsertContentMetadata(contentId, metadata, {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  });
+  await provider.updateContentLifecycleStatus(contentId, 'disabled', {
+    expectedVersion: 1,
+    actorId: 'admin-test-1',
+  });
+
+  const deleted = await provider.deleteContentMetadata(contentId, {
+    expectedVersion: 2,
+    actorId: 'admin-test-1',
+  });
+  assert.equal(deleted.version, 3);
+  assert.equal(deleted.value.lifecycleStatus, 'disabled');
+  assert.equal(await provider.getContentMetadata(contentId), null);
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, value]) => value);
+  assert.equal(events.at(-1).operation, 'content.deleted');
+  assert.deepEqual(events.at(-1).changedFields, ['deleted']);
+  assert.equal(events.at(-1).actorId, 'admin-test-1');
+});
+
 test('approval and publication remain independent and publication requires approval', async () => {
   const { firestore, provider } = setup();
   const pending = { ...metadata, approvalStatus: 'pending' };
