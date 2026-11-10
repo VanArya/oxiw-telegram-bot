@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const { createCatalogContentId } = require('../src/catalog-content-identity');
 const { createFirestoreCatalogAuditEventSink } = require('../src/firestore-catalog-audit-event-sink');
+const { createFirestoreCatalogSeriesStructureProvider } = require('../src/firestore-catalog-series-structure-provider');
 const {
   createFirestoreWritableCatalogMetadataProvider,
 } = require('../src/firestore-writable-catalog-metadata-provider');
@@ -41,7 +42,7 @@ class FakeFirestore {
       const transaction = {
         get: async (reference) => {
           if (this.failReads) throw new Error('synthetic-private-read-error');
-          if (reference instanceof FakeQuery) return reference.getSnapshot();
+          if (reference instanceof FakeQuery || reference instanceof FakeCollection) return reference.getSnapshot();
           return this.snapshotDocument(reference.path);
         },
         set: (reference, value) => {
@@ -107,8 +108,12 @@ class FakeCollection {
     return new FakeQuery(this.firestore, this.path, field, operator, value);
   }
 
-  async get() {
+  getSnapshot() {
     return this.firestore.snapshotCollection(this.path);
+  }
+
+  async get() {
+    return this.getSnapshot();
   }
 }
 
@@ -333,6 +338,70 @@ test('permanent metadata deletion removes the record but retains the content aud
   assert.equal(events.at(-1).operation, 'content.deleted');
   assert.deepEqual(events.at(-1).changedFields, ['deleted']);
   assert.equal(events.at(-1).actorId, 'admin-test-1');
+});
+
+test('series structure manages seasons, episodes, independent links, lifecycle and cascade deletion', async () => {
+  const { firestore } = setup();
+  const provider = createFirestoreCatalogSeriesStructureProvider({
+    firestore,
+    auditEventSink: createFirestoreCatalogAuditEventSink({ firestore }),
+    clock: () => new Date('2026-11-10T12:00:00.000Z'),
+  });
+  const seriesId = createCatalogContentId('series', 'series-structure-fixture');
+  const season = await provider.createSeason(seriesId, {
+    seasonNumber: 1,
+    title: 'فصل اول',
+  }, { expectedVersion: 0, actorId: 'admin-test-1' });
+  assert.equal(season.version, 1);
+
+  const episode = await provider.createEpisode(seriesId, 1, {
+    episodeNumber: 1,
+    title: 'قسمت اول',
+    downloadLinks: [
+      { id: '720p', label: '720p', url: 'https://download.example/720' },
+      { id: '1080p', label: '1080p', url: 'https://download.example/1080' },
+    ],
+  }, { expectedVersion: 0, actorId: 'admin-test-1' });
+  assert.equal(episode.value.downloadLinks.length, 2);
+
+  await provider.setEpisodeLifecycleStatus(seriesId, 1, 1, 'disabled', {
+    expectedVersion: episode.version,
+    actorId: 'admin-test-1',
+  });
+  assert.equal((await provider.listEpisodes(seriesId, 1)).length, 0);
+  assert.equal((await provider.listEpisodes(seriesId, 1, { includeDisabled: true })).length, 1);
+
+  await provider.setEpisodeLifecycleStatus(seriesId, 1, 1, 'active', {
+    expectedVersion: 2,
+    actorId: 'admin-test-1',
+  });
+  await provider.setSeasonLifecycleStatus(seriesId, 1, 'disabled', {
+    expectedVersion: season.version,
+    actorId: 'admin-test-1',
+  });
+  assert.equal((await provider.listStructure(seriesId)).length, 0);
+  const archived = await provider.listStructure(seriesId, { includeDisabled: true });
+  assert.equal(archived[0].value.lifecycleStatus, 'disabled');
+  assert.equal(archived[0].episodes[0].value.lifecycleStatus, 'active');
+
+  await provider.setSeasonLifecycleStatus(seriesId, 1, 'active', {
+    expectedVersion: 2,
+    actorId: 'admin-test-1',
+  });
+  assert.equal((await provider.listStructure(seriesId)).length, 1);
+  assert.equal((await provider.listStructure(seriesId, { parentLifecycleStatus: 'disabled' })).length, 0);
+
+  const deleted = await provider.deleteSeason(seriesId, 1, {
+    expectedVersion: 3,
+    actorId: 'admin-test-1',
+  });
+  assert.equal(deleted.deletedEpisodes, 1);
+  assert.equal((await provider.listSeasons(seriesId, { includeDisabled: true })).length, 0);
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, value]) => value);
+  assert.ok(events.some((event) => event.operation === 'episode.deleted'));
+  assert.ok(events.some((event) => event.operation === 'season.deleted'));
 });
 
 test('approval and publication remain independent and publication requires approval', async () => {
