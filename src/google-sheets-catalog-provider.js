@@ -90,7 +90,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         !fields || typeof fields !== 'object' || Array.isArray(fields) ||
         Object.keys(fields).length === 0 ||
         Object.keys(fields).some((key) => typeof key !== 'string' || !key.trim() || key === 'کد سیستم' ||
-          key.length > 200 || !Object.hasOwn(EDITABLE_COLUMNS, key) && key.includes('\\u0000'))) {
+          key.length > 200 || /[\u0000]/.test(key))) {
       throw Object.assign(new Error('Invalid catalog row update.'), { code: 'INVALID_INPUT' });
     }
     const operation = async () => {
@@ -170,7 +170,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
           requestBody: { values: [values] },
         });
         const updatedRecord = Object.fromEntries(snapshot.headers.map((header, index) => [header, values[index]]));
-        const rowNumber = Number(/!A(\\d+):/.exec(response?.data?.updates?.updatedRange || '')?.[1]) || snapshot.rows.length + 2;
+        const rowNumber = Number(/!A(\d+):/.exec(response?.data?.updates?.updatedRange || '')?.[1]) || snapshot.rows.length + 2;
         return {
           sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
           rowNumber,
