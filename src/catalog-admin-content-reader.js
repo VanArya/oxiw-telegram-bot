@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { mapCatalogSheetRow } = require('./catalog-sheet-mapper');
 const { assertFilter, matchesFilter } = require('./catalog-core');
 const { isCanonicalContentId, validateCatalogContentMetadata } = require('./catalog-metadata-validation');
+const { createCatalogContentId } = require('./catalog-content-identity');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 
@@ -275,15 +276,41 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       if (!current) return null;
       const record = { ...current.record };
       for (const [header, value] of Object.entries(fields)) record[header] = String(value);
+      const nextSystemCode = String(record['کد سیستم'] ?? '').normalize('NFC').trim();
+      if (!nextSystemCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
       try { mapCatalogSheetRow(current.sourceSheet, record); } catch {
         throw Object.assign(new Error('Invalid catalog source row.'), { code: 'INVALID_INPUT' });
       }
+      const nextId = createCatalogContentId(item.kind, nextSystemCode);
       const result = await sheetProvider.updateCatalogRow({
         sheetName: current.sourceSheet, systemCode: item.systemCode,
         expectedVersion: sourceVersion, fields, actorId,
       });
+      if (nextId !== item.id) {
+        try {
+          if (typeof writableProvider.moveContentMetadata !== 'function') {
+            throw new Error('Metadata identity migration is unavailable.');
+          }
+          await writableProvider.moveContentMetadata(item.id, nextId, { actorId });
+        } catch {
+          try {
+            await sheetProvider.updateCatalogRow({
+              sheetName: current.sourceSheet, systemCode: nextSystemCode,
+              expectedVersion: result.sourceVersion,
+              fields: { 'کد سیستم': item.systemCode }, actorId,
+            });
+          } catch {
+            throw Object.assign(new Error('Catalog identity migration and rollback failed.'), {
+              code: 'IDENTITY_METADATA_MIGRATION_FAILED',
+            });
+          }
+          throw Object.assign(new Error('Catalog metadata identity migration failed; source code was restored.'), {
+            code: 'IDENTITY_METADATA_MIGRATION_FAILED',
+          });
+        }
+      }
       return Object.freeze({
-        id: item.id, kind: item.kind, systemCode: item.systemCode,
+        id: nextId, kind: item.kind, systemCode: nextSystemCode,
         sourceSheet: current.sourceSheet, sourceRowNumber: result.rowNumber,
         sourceVersion: result.sourceVersion, headers: current.headers, record,
       });
