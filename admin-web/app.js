@@ -25,6 +25,7 @@ const elements = Object.fromEntries([
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
+  'roleAuditRows', 'roleAuditPage', 'roleAuditPrev', 'roleAuditNext', 'roleAuditAccess',
   'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
   'managerCancel', 'managerEmail', 'managerRoles', 'managerSave', 'managerRows',
 ].map((name) => [
@@ -40,8 +41,10 @@ let firebaseConfig = null;
 let contentPage = 1;
 let contentLifecycleStatus = 'active';
 let auditPage = 1;
+let roleAuditPage = 1;
 let contentTotal = 0;
 let auditHasMore = false;
+let roleAuditHasMore = false;
 let contentStats = null;
 let contentFilterOptionsLoaded = false;
 let currentItems = [];
@@ -1864,6 +1867,52 @@ async function loadAudit() {
   } catch (error) { reportApiError(error); }
 }
 
+function renderRoleAudit(events) {
+  elements.roleAuditRows.replaceChildren();
+  events.forEach((event) => {
+    const row = document.createElement('tr');
+    const activeLabel = (active) => active ? 'فعال' : 'غیرفعال';
+    const values = [
+      new Date(event.occurredAt).toLocaleString('fa-IR'),
+      event.operation,
+      event.actorId,
+      event.targetSubjectId,
+      event.rolesBefore.join('، ') || '—',
+      event.rolesAfter.join('، ') || '—',
+      `${activeLabel(event.activeBefore)} ← ${activeLabel(event.activeAfter)}`,
+      `${event.previousVersion} ← ${event.version}`,
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement('td');
+      if (index >= 2 && index <= 3) cell.className = 'mono';
+      cell.textContent = String(value);
+      row.append(cell);
+    });
+    elements.roleAuditRows.append(row);
+  });
+  if (!events.length) elements.roleAuditRows.append(emptyRow('رویدادی برای تغییر نقش مدیران ثبت نشده است.'));
+}
+
+async function loadRoleAudit() {
+  try {
+    const { body } = await api(`${API_ROOT}/role-audit?page=${roleAuditPage}&pageSize=20`);
+    renderRoleAudit(body.data);
+    roleAuditHasMore = body.meta.hasMore;
+    setText(elements.roleAuditPage, `صفحهٔ ${roleAuditPage.toLocaleString('fa-IR')}`);
+    elements.roleAuditPrev.disabled = roleAuditPage <= 1;
+    elements.roleAuditNext.disabled = !roleAuditHasMore;
+    setText(elements.roleAuditAccess, 'تاریخچهٔ نقش‌ها با مجوز مالک بارگذاری شد.');
+  } catch (error) {
+    elements.roleAuditRows.replaceChildren(emptyRow(
+      error.status === 403 ? 'مشاهدهٔ تاریخچهٔ تغییر نقش‌ها فقط برای مالک سامانه مجاز است.' :
+        'تاریخچهٔ تغییر نقش‌ها در دسترس نیست.',
+    ));
+    elements.roleAuditPrev.disabled = true;
+    elements.roleAuditNext.disabled = true;
+    setText(elements.roleAuditAccess, error.status === 403 ? 'دسترسی مالک لازم است.' : 'خطا در دریافت اطلاعات');
+  }
+}
+
 function renderSession(user, data) {
   currentUser = user;
   session = data;
@@ -2093,6 +2142,9 @@ function wireUi() {
   }));
   elements.auditPrev.addEventListener('click', () => { if (auditPage > 1) { auditPage -= 1; void loadAudit(); } });
   elements.auditNext.addEventListener('click', () => { if (auditHasMore) { auditPage += 1; void loadAudit(); } });
+  $('#role-audit-refresh').addEventListener('click', () => { roleAuditPage = 1; void loadRoleAudit(); });
+  elements.roleAuditPrev.addEventListener('click', () => { if (roleAuditPage > 1) { roleAuditPage -= 1; void loadRoleAudit(); } });
+  elements.roleAuditNext.addEventListener('click', () => { if (roleAuditHasMore) { roleAuditPage += 1; void loadRoleAudit(); } });
 }
 
 wireUi();
