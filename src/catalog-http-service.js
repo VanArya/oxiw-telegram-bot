@@ -89,6 +89,17 @@ function createCatalogHttpService({
   const adminContentReader = createCatalogAdminContentReader({
     sheetProvider: provider,
     writableProvider,
+    onInvalidSourceRow(diagnostic) {
+      // Only bounded, non-content metadata is logged. Never include row values,
+      // system codes, file IDs, or raw validation messages.
+      console.error('[catalog-admin-diagnostic]', JSON.stringify({
+        event: 'catalog_admin_source_row_skipped',
+        sheetName: diagnostic.sheetName,
+        rowNumber: diagnostic.rowNumber,
+        stage: diagnostic.stage,
+        validationIssue: diagnostic.validationIssue,
+      }));
+    },
   });
   // Missing verifier/policy is intentionally allowed here because the existing
   // admin API fails closed with 503. It never derives a principal from the request.
