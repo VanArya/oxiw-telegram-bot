@@ -12,7 +12,7 @@ const event = Object.freeze({
   actorId: 'owner-user',
   targetSubjectId: 'manager-user',
   rolesBefore: [],
-  rolesAfter: ['content_editor'],
+  rolesAfter: ['editor'],
   activeBefore: false,
   activeAfter: true,
   previousVersion: 0,
