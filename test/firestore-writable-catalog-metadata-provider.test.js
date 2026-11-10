@@ -276,6 +276,39 @@ test('invalid stored metadata documents are classified separately from Firestore
   );
 });
 
+test('content disable and restore are versioned and audited transactionally', async () => {
+  const { firestore, provider } = setup({
+    clock: () => new Date('2026-11-10T12:00:00.000Z'),
+  });
+  const disabled = await provider.updateContentLifecycleStatus(contentId, 'disabled', {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  });
+  assert.equal(disabled.version, 1);
+  assert.equal(disabled.value.lifecycleStatus, 'disabled');
+  assert.equal(disabled.value.disabledAt, '2026-11-10T12:00:00.000Z');
+  assert.equal(disabled.value.disabledBy, 'admin-test-1');
+
+  const restored = await provider.updateContentLifecycleStatus(contentId, 'active', {
+    expectedVersion: 1,
+    actorId: 'admin-test-1',
+  });
+  assert.equal(restored.version, 2);
+  assert.equal(restored.value.lifecycleStatus, 'active');
+  assert.equal(Object.hasOwn(restored.value, 'disabledAt'), false);
+  assert.equal(Object.hasOwn(restored.value, 'disabledBy'), false);
+
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, event]) => event);
+  assert.deepEqual(events.map((event) => event.operation), ['content.disabled', 'content.restored']);
+  assert.deepEqual(events.map((event) => event.changedFields), [
+    ['lifecycleStatus', 'disabledAt', 'disabledBy'],
+    ['lifecycleStatus', 'disabledAt', 'disabledBy'],
+  ]);
+  assert.deepEqual(events.map((event) => event.actorId), ['admin-test-1', 'admin-test-1']);
+});
+
 test('approval and publication remain independent and publication requires approval', async () => {
   const { firestore, provider } = setup();
   const pending = { ...metadata, approvalStatus: 'pending' };
