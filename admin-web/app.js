@@ -746,7 +746,7 @@ async function changeContentLifecycle(item, lifecycleStatus) {
 
 async function permanentlyDeleteContent(item) {
   if (!item || item.lifecycleStatus !== 'disabled' || !item.sourceVersion) return;
-  if (!window.confirm(`حذف دائم «${item.title}» انجام شود؟\\nاین عملیات قابل بازگشت نیست و اطلاعات منبع محتوا نیز حذف خواهد شد.`)) return;
+  if (!window.confirm(`حذف دائم «${item.title}» انجام شود؟\nاین عملیات قابل بازگشت نیست و اطلاعات منبع محتوا نیز حذف خواهد شد.`)) return;
   try {
     const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
     await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}`, {
