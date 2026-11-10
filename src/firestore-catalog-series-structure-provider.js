@@ -307,7 +307,7 @@ function createFirestoreCatalogSeriesStructureProvider({
       const snapshot = await episodesRef(seriesId, seasonNumber).get();
       if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
       return snapshot.docs.map((doc) => {
-        const stored = snapshotValue({ exists: true, data: doc.data });
+        const stored = snapshotValue({ exists: true, data: () => doc.data() });
         return { value: projectEpisode(doc.id, stored.data), version: stored.version };
       }).filter(({ value }) => includeDisabled || value.lifecycleStatus === 'active')
         .sort((left, right) => left.value.episodeNumber - right.value.episodeNumber);
@@ -422,7 +422,7 @@ function createFirestoreCatalogSeriesStructureProvider({
         if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
         const seasonRecords = snapshot.docs.map((doc) => ({
           doc,
-          stored: snapshotValue({ exists: true, data: doc.data }),
+          stored: snapshotValue({ exists: true, data: () => doc.data() }),
           value: projectSeason(doc.id, doc.data()),
         }));
         const episodeRecords = [];
@@ -430,7 +430,7 @@ function createFirestoreCatalogSeriesStructureProvider({
           const episodes = await transaction.get(episodesRef(seriesId, season.value.seasonNumber));
           if (!episodes || !Array.isArray(episodes.docs)) throw new TypeError();
           for (const episode of episodes.docs) {
-            const stored = snapshotValue({ exists: true, data: episode.data });
+            const stored = snapshotValue({ exists: true, data: () => episode.data() });
             episodeRecords.push({
               seasonNumber: season.value.seasonNumber,
               episode,
