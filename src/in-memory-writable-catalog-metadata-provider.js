@@ -132,6 +132,22 @@ function createInMemoryWritableCatalogMetadataProvider({
       if (!value) return null;
       return { value: clone(value), version: taxonomyVersions.get(type).get(termId) };
     },
+    async moveContentMetadata(oldContentId, newContentId) {
+      if (typeof oldContentId !== 'string' || typeof newContentId !== 'string' ||
+          !oldContentId || !newContentId || oldContentId === newContentId) {
+        throw new CatalogConflictError('INVALID_CONTENT_ID');
+      }
+      const current = metadata.get(oldContentId);
+      if (!current) return null;
+      if (metadata.has(newContentId)) throw new CatalogConflictError('ALREADY_EXISTS');
+      const version = (metadataVersions.get(oldContentId) ?? 0) + 1;
+      const moved = validateCatalogContentMetadata(newContentId, { ...current, contentId: newContentId });
+      metadata.delete(oldContentId);
+      metadataVersions.delete(oldContentId);
+      metadata.set(newContentId, moved);
+      metadataVersions.set(newContentId, version);
+      return { value: clone(moved), version };
+    },
     async upsertContentMetadata(contentId, value, options) {
       const record = validateCatalogContentMetadata(contentId, value);
       if (record.publicationStatus === 'published' && record.approvalStatus !== 'approved') {
