@@ -123,7 +123,7 @@ test('updates only explicitly editable catalog cells after checking the source-r
         writes.push(args);
         for (const entry of args.requestBody.data) {
           const match = /!([A-Z]+)([0-9]+)$/.exec(entry.range);
-          const col = match[1].charCodeAt(1) - 65;
+          const col = match[1].charCodeAt(0) - 65;
           const row = Number(match[2]) - 1;
           values["'سینمایی'"][row][col] = entry.values[0][0];
         }
