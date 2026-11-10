@@ -23,6 +23,7 @@ const COLLECTIONS = Object.freeze({
   contentMetadata: 'catalogContentMetadata',
   categories: 'catalogCategories',
   taxonomies: 'catalogTaxonomies',
+  seriesStructures: 'catalogSeriesStructures',
 });
 const TAXONOMY_TYPES = new Set(['country', 'genre']);
 const INTERNAL_VERSION = '_version';
@@ -45,6 +46,10 @@ function validateConfiguration({ firestore, auditEventSink, collections, clock }
         typeof collections[key] !== 'string' || collections[key].trim() === ''
       ))) {
     throw new TypeError('Invalid catalog metadata collection configuration.');
+  }
+  if (collections.seriesStructures !== undefined &&
+      (typeof collections.seriesStructures !== 'string' || collections.seriesStructures.trim() === '')) {
+    throw new TypeError('Invalid series structure collection configuration.');
   }
   assertCatalogAuditEventSink(auditEventSink);
   if (typeof clock !== 'function') throw new TypeError('Catalog provider clock must be a function.');
@@ -475,7 +480,7 @@ function createFirestoreWritableCatalogMetadataProvider({
         entityType: 'content',
         entityId: contentId,
         referenceCheck: contentId.startsWith('series:') ? async (transaction) => {
-          const seasonsCollection = firestore.collection('catalogSeriesStructures')
+          const seasonsCollection = firestore.collection(collections.seriesStructures || COLLECTIONS.seriesStructures)
             .doc(contentId).collection('seasons');
           const seasonsSnapshot = await transaction.get(seasonsCollection);
           if (!seasonsSnapshot || !Array.isArray(seasonsSnapshot.docs)) throw new TypeError();
