@@ -23,6 +23,7 @@ function mockSheetsClient(valuesBySheet, calls = []) {
             : { data: {} };
         },
         async batchUpdate(args) { calls.push({ batchUpdate: args }); return { data: {} }; },
+        async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'${args.range.slice(1,-1)}'!A3:E3` } } }; },
       },
     },
   };
@@ -37,7 +38,7 @@ const seriesValues = [
   ['mock-series-us', 'سریال آزمایشی خارجی', '2019', '2021', 'US', 'published'],
 ];
 
-test('reads headers and rows for both approved sheets using values.get only', async () => {
+test('reads headers and rows for both approved sheets using dynamic values.get and append methods', async () => {
   const calls = [];
   const provider = createGoogleSheetsCatalogProvider({
     sheetsClient: mockSheetsClient({ "'سینمایی'": movieValues, "'سریال'": seriesValues }, calls),
@@ -54,7 +55,7 @@ test('reads headers and rows for both approved sheets using values.get only', as
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow']);
 });
 
 test('empty sheets and responses without values become empty snapshots', async () => {
@@ -70,7 +71,7 @@ test('rejects invalid sheet names before calling the client', async () => {
   let calls = 0;
   const provider = createGoogleSheetsCatalogProvider({
     sheetsClient: {
-      spreadsheets: { values: { async get() { calls += 1; return { data: {} }; }, async batchUpdate() { return { data: {} }; } } },
+      spreadsheets: { values: { async get() { calls += 1; return { data: {} }; }, async batchUpdate() { return { data: {} }; }, async append() { return { data: {} }; } } },
     },
     spreadsheetId: spreadsheetIdFixture,
   });
@@ -89,6 +90,7 @@ test('sanitizes client errors and rejects malformed responses without exposing v
             throw error;
           },
           async batchUpdate() { return { data: {} }; },
+          async append() { return { data: {} }; },
         },
       },
     },
@@ -119,6 +121,7 @@ test('updates only explicitly editable catalog cells after checking the source-r
   const client = {
     spreadsheets: { values: {
       async get({ range }) { return { data: { values: values[range] || [] } }; },
+      async append(args) { return { data: { updates: { updatedRange: "'سینمایی'!A3:E3" } } }; },
       async batchUpdate(args) {
         writes.push(args);
         for (const entry of args.requestBody.data) {
@@ -136,15 +139,34 @@ test('updates only explicitly editable catalog cells after checking the source-r
   const record = Object.fromEntries(before.headers.map((header, index) => [header, before.rows[0][index] ?? '']));
   const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
   const result = await provider.updateCatalogRow({
-    sheetName: 'سینمایی', systemCode: 'safe-code', expectedVersion: version, fields: { title: 'عنوان تازه' },
+    sheetName: 'سینمایی', systemCode: 'safe-code', expectedVersion: version, fields: { 'اسم فیلم': 'عنوان تازه' },
   });
   assert.equal(values["'سینمایی'"][1][1], 'عنوان تازه');
   assert.equal(values["'سینمایی'"][1][4], 'do-not-touch');
   assert.equal(writes[0].requestBody.valueInputOption, 'RAW');
   assert.equal(result.rowNumber, 2);
   await assert.rejects(provider.updateCatalogRow({
-    sheetName: 'سینمایی', systemCode: 'safe-code', expectedVersion: version, fields: { title: 'عنوان stale' },
+    sheetName: 'سینمایی', systemCode: 'safe-code', expectedVersion: version, fields: { 'اسم فیلم': 'عنوان stale' },
   }), (error) => error.code === 'VERSION_CONFLICT');
+});
+
+test('appends a new record using the live sheet header order and RAW values', async () => {
+  const values = { "'سینمایی'": [['کد سیستم', 'اسم فیلم', 'Telegram File ID']] };
+  let appended;
+  const client = { spreadsheets: { values: {
+    async get({ range }) { return { data: { values: values[range] || [] } }; },
+    async batchUpdate() { return { data: {} }; },
+    async append(args) { appended = args; values["'سینمایی'"] .push(args.requestBody.values[0]); return { data: { updates: { updatedRange: "'سینمایی'!A2:C2" } } }; },
+  } } };
+  const provider = createGoogleSheetsCatalogProvider({ sheetsClient: client, spreadsheetId: spreadsheetIdFixture });
+  const created = await provider.createCatalogRow({
+    sheetName: 'سینمایی',
+    fields: { 'کد سیستم': 'new-movie', 'اسم فیلم': 'فیلم تازه', 'Telegram File ID': 'file-id-123' },
+  });
+  assert.deepEqual(appended.requestBody.values, [['new-movie', 'فیلم تازه', 'file-id-123']]);
+  assert.equal(appended.valueInputOption, 'RAW');
+  assert.equal(created.rowNumber, 2);
+  assert.equal(created.record['Telegram File ID'], 'file-id-123');
 });
 
 test('legacy rows remain mappable without country and internal Telegram IDs stay private', async () => {
@@ -177,7 +199,7 @@ test('legacy rows remain mappable without country and internal Telegram IDs stay
 test('provider rejects missing client or Spreadsheet ID at construction', () => {
   assert.throws(
     () => createGoogleSheetsCatalogProvider({ sheetsClient: {}, spreadsheetId: spreadsheetIdFixture }),
-    /Sheets values client with read and batch-update access/,
+    /Sheets values client with read, append, and batch-update access/,
   );
   assert.throws(
     () => createGoogleSheetsCatalogProvider({
