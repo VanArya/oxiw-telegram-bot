@@ -281,7 +281,7 @@ function selectView(view, kind) {
     categories: loadCategories,
     countries: () => loadTaxonomy('country'),
     genres: () => loadTaxonomy('genre'),
-    audit: loadAudit,
+    audit: () => { void loadAudit(); void loadRoleAudit(); },
     managers: loadManagers,
   };
   if (loaders[view]) void loaders[view]();
