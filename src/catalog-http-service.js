@@ -98,6 +98,7 @@ function createCatalogHttpService({
         rowNumber: diagnostic.rowNumber,
         stage: diagnostic.stage,
         validationIssue: diagnostic.validationIssue,
+        ...(diagnostic.fieldName ? { fieldName: diagnostic.fieldName } : {}),
       }));
     },
   });
