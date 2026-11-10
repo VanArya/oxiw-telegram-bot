@@ -77,7 +77,6 @@ function makeGoogle({ failAuth = false } = {}) {
             },
             async batchUpdate() { return { data: {} }; },
             async append() { return { data: {} }; },
-            async batchUpdate() { return { data: {} }; },
           },
         },
       };
