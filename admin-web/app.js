@@ -989,7 +989,7 @@ async function updateItemStatus(kind, value) {
   } finally { $$('.button', group).forEach((button) => { button.disabled = false; }); }
 }
 
-function makeRecordButton(primary, secondary, onClick) {
+function makeRecordButton(primary, secondary, onClick, onDelete) {
   const record = document.createElement('div');
   record.className = 'record-button';
   const details = document.createElement('div');
@@ -1005,6 +1005,14 @@ function makeRecordButton(primary, secondary, onClick) {
   edit.textContent = 'ویرایش';
   edit.addEventListener('click', onClick);
   record.append(details, edit);
+  if (typeof onDelete === 'function') {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'button button-small button-danger record-delete';
+    remove.textContent = 'حذف';
+    remove.addEventListener('click', onDelete);
+    record.append(remove);
+  }
   return record;
 }
 
@@ -1023,6 +1031,7 @@ async function loadCategories() {
         category.localizedTitle.fa || category.slug,
         `${category.slug} · ${category.enabled ? 'فعال' : 'غیرفعال'}`,
         () => void editCategory(category.id),
+        () => void deleteCategory(category.id),
       ));
     });
     clearGlobalMessage();
@@ -1258,6 +1267,24 @@ async function saveCategory(event) {
   } finally { setBusy(button, false); }
 }
 
+async function deleteCategory(id) {
+  if (!hasPermission('catalog.categories.manage')) return;
+  if (!window.confirm(`دسته‌بندی «${id}» برای همیشه حذف شود؟ اگر به محتوایی اختصاص داشته باشد، حذف انجام نمی‌شود.`)) return;
+  try {
+    const current = await api(`${API_ROOT}/categories/${encodeURIComponent(id)}`);
+    await api(`${API_ROOT}/categories/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: { 'If-Match': current.etag },
+    });
+    elements.categoryForm.hidden = true;
+    await loadCategories();
+    showToast('دسته‌بندی حذف شد.');
+  } catch (error) {
+    if (error.status === 409) showToast('این دسته‌بندی هنوز به محتوا متصل است و حذف نشد.', 'error');
+    else if (error.status === 412) showToast('دسته‌بندی هم‌زمان تغییر کرده؛ فهرست را تازه‌سازی کنید.', 'error');
+    else reportApiError(error);
+  }
+}
+
 async function loadTaxonomy(type) {
   const list = type === 'country' ? elements.countryList : elements.genreList;
   try {
@@ -1270,9 +1297,29 @@ async function loadTaxonomy(type) {
       term.labelFa,
       `${term.id} · ${term.enabled ? 'فعال' : 'غیرفعال'}`,
       () => void editTaxonomy(type, term.id),
+      () => void deleteTaxonomy(type, term.id),
     )));
     clearGlobalMessage();
   } catch (error) { reportApiError(error); }
+}
+
+async function deleteTaxonomy(type, id) {
+  if (!hasPermission('catalog.taxonomies.manage')) return;
+  const label = type === 'country' ? 'کشور' : 'ژانر';
+  if (!window.confirm(`${label} «${id}» برای همیشه حذف شود؟ اگر در فرادادهٔ محتوایی استفاده شده باشد، حذف انجام نمی‌شود.`)) return;
+  try {
+    const current = await api(`${API_ROOT}/taxonomies/${type}/${encodeURIComponent(id)}`);
+    await api(`${API_ROOT}/taxonomies/${type}/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: { 'If-Match': current.etag },
+    });
+    taxonomyElements(type).form.hidden = true;
+    await loadTaxonomy(type);
+    showToast(`${label} حذف شد.`);
+  } catch (error) {
+    if (error.status === 409) showToast(`این ${label} هنوز در اطلاعات محتوا استفاده می‌شود و حذف نشد.`, 'error');
+    else if (error.status === 412) showToast(`${label} هم‌زمان تغییر کرده؛ فهرست را تازه‌سازی کنید.`, 'error');
+    else reportApiError(error);
+  }
 }
 
 function taxonomyElements(type) {
