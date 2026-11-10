@@ -803,6 +803,50 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.delete(`${BASE_PATH}/items/:contentId`, requireOwner, parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const precondition = readIfMatch(req, res, 'content', req.params.contentId);
+    if (!precondition || res.headersSent) return;
+    try {
+      requireBodyKeys(req.body, ['sourceVersion']);
+      if (typeof req.body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(req.body.sourceVersion)) {
+        throw new CatalogInputError();
+      }
+      if (typeof contentReader?.deleteItemSource !== 'function' ||
+          typeof provider.deleteContentMetadata !== 'function') {
+        return sendError(res, 503, 'CONTENT_DELETE_NOT_CONFIGURED', 'حذف دائم محتوا پیکربندی نشده است.');
+      }
+      const current = await provider.getContentMetadataWithVersion(req.params.contentId);
+      if (!current) return sendError(res, 404, 'NOT_FOUND', 'فرادادهٔ محتوا پیدا نشد.');
+      if (current.version !== precondition.expectedVersion) {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
+      }
+      if (current.value.lifecycleStatus !== 'disabled') {
+        return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا محتوا را غیرفعال کنید.');
+      }
+      await contentReader.deleteItemSource(req.params.contentId, {
+        sourceVersion: req.body.sourceVersion,
+      });
+      await provider.deleteContentMetadata(req.params.contentId, {
+        expectedVersion: precondition.expectedVersion,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.json({ data: { contentId: req.params.contentId, deleted: true } });
+    } catch (error) {
+      if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات حذف معتبر نیست.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
+      }
+      if (error instanceof CatalogNotFoundError) {
+        return sendError(res, 404, 'NOT_FOUND', 'محتوا پیدا نشد.');
+      }
+      if (error?.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'ردیف منبع تغییر کرده است؛ اطلاعات را تازه‌سازی کنید.');
+      if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 409, 'SOURCE_IDENTITY_AMBIGUOUS', 'ردیف منبع یکتا نیست و حذف انجام نشد.');
+      if (error?.code === 'DELETE_UNAVAILABLE') return sendError(res, 503, 'CONTENT_DELETE_NOT_CONFIGURED', 'حذف دائم منبع محتوا در دسترس نیست.');
+      throw error;
+    }
+  }));
+
   app.patch(`${BASE_PATH}/items/:contentId/approval`, requirePermission(PERMISSIONS.CONTENT_APPROVE), parseJson, asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
     const precondition = readIfMatch(req, res, 'content', req.params.contentId);
