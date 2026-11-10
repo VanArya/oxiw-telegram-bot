@@ -744,6 +744,57 @@ function permissionControls() {
   $('#publication-actions').hidden = !hasPermission('catalog.content.publish');
 }
 
+function renderSourceForm(item) {
+  $('#source-title').value = item.title || '';
+  $('#source-release-year').value = item.releaseYear ?? '';
+  $('#source-start-year').value = item.seriesMetadata?.startYear ?? '';
+  $('#source-end-year').value = item.seriesMetadata?.isOngoing ? 'در حال پخش' : (item.seriesMetadata?.endYear ?? '');
+  $('#source-seasons').value = item.seriesMetadata?.seasonsAndEpisodes ?? '';
+  $('#source-synopsis').value = item.synopsis || '';
+  $('#source-cast').value = item.cast || '';
+  $('#source-language').value = item.language || '';
+  $('#source-rating').value = item.rating || '';
+  $('#source-trailer').value = item.trailerUrl || '';
+  $('#source-poster').value = item.posterUrl || '';
+  $('#source-release-year-label').hidden = item.kind !== 'movie';
+  ['source-start-year-label', 'source-end-year-label', 'source-seasons-label'].forEach((id) => { $('#'+id).hidden = item.kind !== 'series'; });
+  $('#source-form').hidden = !hasPermission('catalog.metadata.write');
+}
+
+async function saveSourceItem(event) {
+  event.preventDefault();
+  if (!selectedItem || !hasPermission('catalog.metadata.write')) return;
+  const fields = {
+    title: $('#source-title').value.trim(), synopsis: $('#source-synopsis').value,
+    cast: $('#source-cast').value, language: $('#source-language').value.trim(),
+    rating: $('#source-rating').value.trim(), trailerUrl: $('#source-trailer').value.trim(),
+    posterUrl: $('#source-poster').value.trim(),
+  };
+  if (selectedItem.kind === 'movie') {
+    fields.releaseYear = $('#source-release-year').value === '' ? '' : Number($('#source-release-year').value);
+  } else {
+    fields.startYear = $('#source-start-year').value === '' ? '' : Number($('#source-start-year').value);
+    fields.endYear = $('#source-end-year').value.trim();
+    fields.seasonsAndEpisodes = $('#source-seasons').value.trim();
+  }
+  const button = $('#source-save');
+  setBusy(button, true);
+  try {
+    const result = await api(API_ROOT + '/items/' + encodeURIComponent(selectedItem.id) + '/source', {
+      method: 'PUT', body: JSON.stringify({ sourceVersion: selectedItem.sourceVersion, fields }),
+    });
+    selectedItem = result.body.data;
+    renderSelectedContent();
+    renderSourceForm(selectedItem);
+    await loadContent();
+    showToast('اطلاعات اصلی در Google Sheets ذخیره شد.');
+  } catch (error) {
+    if (error.status === 412) {
+      await refreshSelectedContent('ردیف در Google Sheets تغییر کرده است؛ اطلاعات تازه بارگذاری شد و تغییر شما ذخیره نشد.');
+      showToast('تعارض نسخه؛ اطلاعات را بازبینی و دوباره ذخیره کنید.', 'error');
+    } else reportApiError(error);
+  } finally { setBusy(button, false); }
+}
 function renderSelectedContent() {
   if (!selectedItem) return;
   setText($('#dialog-kind'), selectedItem.kind === 'movie' ? 'سینمایی' : 'سریال');
@@ -762,6 +813,7 @@ function renderSelectedContent() {
   populateMultiSelect(elements.metadataGenres, genreTerms, selectedMetadata?.genreIds || []);
   populateMultiSelect(elements.metadataCategories, categoryTerms, selectedMetadata?.categoryIds || []);
   permissionControls();
+  renderSourceForm(selectedItem);
 }
 
 async function openContent(item, notice) {
@@ -1459,6 +1511,7 @@ function wireUi() {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
   });
   elements.metadataForm.addEventListener('submit', (event) => void saveContentMetadata(event));
+  $('#source-form').addEventListener('submit', (event) => void saveSourceItem(event));
   $$('[data-approval]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('approval', button.dataset.approval)));
   $$('[data-publication]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('publication', button.dataset.publication)));
   $('#category-new').addEventListener('click', openNewCategory);
