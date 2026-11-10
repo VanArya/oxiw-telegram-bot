@@ -652,6 +652,7 @@ function createCatalogAdminApi({
       for (const [field, value] of Object.entries(fields)) {
         if (!allowed.has(field) || !Object.hasOwn(SOURCE_EDITABLE_FIELDS, field)) throw new CatalogInputError();
         if (field === 'releaseYear' || field === 'startYear' || field === 'endYear') {
+          if (field === 'endYear' && current.kind === 'series' && value === 'در حال پخش') continue;
           if (value !== '' && (!Number.isInteger(value) || value < 1800 || value > 3000)) throw new CatalogInputError();
         } else if (typeof value !== 'string' || value.length > SOURCE_EDITABLE_FIELDS[field] ||
             (field === 'title' && value.trim() === '')) throw new CatalogInputError();
