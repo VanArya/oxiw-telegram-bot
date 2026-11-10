@@ -168,3 +168,17 @@ tbody tr:hover { background: #fbfdfd; }
 
 .source-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.source-fields label{display:grid;gap:.35rem;min-width:0}.source-fields input,.source-fields textarea{width:100%;min-width:0}.source-fields textarea{resize:vertical;min-height:5rem}.record-delete{flex:0 0 auto}.record-button{flex-wrap:wrap}
 @media(max-width:720px){.source-fields{grid-template-columns:1fr}}
+
+
+.series-structure-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #d7dce2); border-radius: 12px; }
+.series-season-list, .series-episode-list { display: grid; gap: .75rem; }
+.series-season-card { padding: .85rem; display: grid; gap: .75rem; }
+.series-episode-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .65rem 0; border-top: 1px solid var(--border, #d7dce2); }
+.series-episode-row > div:first-child { min-width: 0; }
+.series-episode-row .form-actions { justify-content: flex-end; }
+.structure-download-links { display: grid; gap: .65rem; }
+.structure-download-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(180px, 1.5fr) minmax(110px, .6fr) auto auto; gap: .5rem; align-items: center; }
+@media (max-width: 760px) {
+  .series-episode-row { align-items: flex-start; flex-direction: column; }
+  .structure-download-row { grid-template-columns: 1fr; }
+}
