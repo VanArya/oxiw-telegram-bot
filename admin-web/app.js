@@ -2053,6 +2053,20 @@ function wireUi() {
   });
   elements.contentPrev.addEventListener('click', () => { if (contentPage > 1) { contentPage -= 1; void loadContent(); } });
   elements.contentNext.addEventListener('click', () => { if (contentPage * 20 < contentTotal) { contentPage += 1; void loadContent(); } });
+  $('#season-add').addEventListener('click', () => openStructureEditor({ kind: 'season', mode: 'create' }));
+  $('#series-structure-form').addEventListener('submit', (event) => void saveSeriesStructure(event));
+  $('#structure-editor-close').addEventListener('click', () => {
+    $('#series-structure-editor').close();
+    structureEditor = null;
+  });
+  $('#structure-cancel').addEventListener('click', () => {
+    $('#series-structure-editor').close();
+    structureEditor = null;
+  });
+  $('#structure-link-add').addEventListener('click', () => addDownloadLinkEditorRow());
+  $('#series-structure-editor').addEventListener('click', (event) => {
+    if (event.target === $('#series-structure-editor')) $('#series-structure-editor').close();
+  });
   $('#dialog-close').addEventListener('click', () => elements.contentDialog.close());
   elements.contentDialog.addEventListener('click', (event) => {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
