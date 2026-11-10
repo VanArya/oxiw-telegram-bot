@@ -120,6 +120,12 @@ function createCatalogHttpService({
 
   const app = express();
   app.disable('x-powered-by');
+  // Firebase signInWithPopup must retain a usable opener relationship across
+  // the Google auth popup. The default same-origin policy can sever that link.
+  app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    next();
+  });
 
   const adminWebRoot = path.resolve(__dirname, '..', 'admin-web');
   const sendAdminIndex = (req, res) => {
