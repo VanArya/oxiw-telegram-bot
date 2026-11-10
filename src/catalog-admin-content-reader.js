@@ -222,6 +222,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       if (typeof sheetProvider.createCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
       const schema = await this.getSheetSchema(kind);
       if (!schema) return null;
+      const candidate = Object.fromEntries(schema.headers.map((header) => [header, fields[header] ?? '']));
+      mapCatalogSheetRow(schema.sheetName, candidate);
       const result = await sheetProvider.createCatalogRow({ sheetName: schema.sheetName, fields });
       const mapped = mapCatalogSheetRow(schema.sheetName, result.record);
       return Object.freeze({
@@ -236,12 +238,13 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       if (!item) return null;
       const current = await readSourceRecord(item.kind, item.systemCode);
       if (!current) return null;
+      const record = { ...current.record };
+      for (const [header, value] of Object.entries(fields)) record[header] = String(value);
+      mapCatalogSheetRow(current.sourceSheet, record);
       const result = await sheetProvider.updateCatalogRow({
         sheetName: current.sourceSheet, systemCode: item.systemCode,
         expectedVersion: sourceVersion, fields, actorId,
       });
-      const record = { ...current.record };
-      for (const [header, value] of Object.entries(fields)) record[header] = String(value);
       return Object.freeze({
         id: item.id, kind: item.kind, systemCode: item.systemCode,
         sourceSheet: current.sourceSheet, sourceRowNumber: result.rowNumber,
