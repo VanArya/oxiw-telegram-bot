@@ -362,6 +362,37 @@ function createFirestoreWritableCatalogMetadataProvider({
       if (!TAXONOMY_TYPES.has(type) || typeof termId !== 'string') return null;
       return readVersioned(taxonomyRef(type, termId), (data) => projectTaxonomy(type, { id: termId }, data));
     },
+    async moveContentMetadata(oldContentId, newContentId, options = {}) {
+      if (!isCanonicalContentId(oldContentId) || !isCanonicalContentId(newContentId) ||
+          oldContentId === newContentId) throw new CatalogInputError('INVALID_CONTENT_ID');
+      try {
+        return await firestore.runTransaction(async (transaction) => {
+          const oldReference = contentRef(oldContentId);
+          const newReference = contentRef(newContentId);
+          const oldStored = readSnapshot(await transaction.get(oldReference));
+          const newStored = readSnapshot(await transaction.get(newReference));
+          if (!oldStored) return null;
+          if (newStored) throw new CatalogConflictError('ALREADY_EXISTS');
+          const previous = projectContent(oldStored.data, oldContentId);
+          const nextVersion = oldStored.version + 1;
+          const nextValue = validateCatalogContentMetadata(newContentId, {
+            ...previous, contentId: newContentId,
+          });
+          transaction.set(newReference, { ...nextValue, [INTERNAL_VERSION]: nextVersion });
+          transaction.delete(oldReference);
+          const event = eventFor({
+            operation: 'metadata.updated', entityType: 'content', entityId: oldContentId,
+            options, previousVersion: oldStored.version, version: nextVersion,
+            fields: ['contentId'], clock,
+          });
+          await auditEventSink.appendInTransaction(transaction, event);
+          return { value: nextValue, version: nextVersion };
+        });
+      } catch (error) {
+        if (error instanceof CatalogConflictError || error instanceof CatalogInputError) throw error;
+        throw safeStorageError();
+      }
+    },
     async upsertContentMetadata(contentId, value, options) {
       const metadata = validateCatalogContentMetadata(contentId, value);
       if (metadata.publicationStatus === 'published' && metadata.approvalStatus !== 'approved') {
