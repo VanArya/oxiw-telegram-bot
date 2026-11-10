@@ -201,6 +201,7 @@ function publicAdminTaxonomy(type, value) {
 function createCatalogAdminApi({
   writableProvider,
   contentReader,
+  seriesStructureProvider,
   auditReader,
   verifyAdminPrincipal,
   roleProvider,
@@ -310,6 +311,40 @@ function createCatalogAdminApi({
         next();
       })
       .catch(() => sendError(res, 503, 'OWNER_AUTH_UNAVAILABLE', 'بررسی مالک در دسترس نیست.'));
+  }
+
+  async function requireSeriesContent(seriesId, res) {
+    if (typeof contentReader?.getItem !== 'function') {
+      sendError(res, 503, 'CONTENT_READER_UNAVAILABLE', 'خواندن محتوای سریال در دسترس نیست.');
+      return null;
+    }
+    const item = await contentReader.getItem(seriesId);
+    if (!item) {
+      sendError(res, 404, 'NOT_FOUND', 'سریال پیدا نشد.');
+      return null;
+    }
+    if (item.kind !== 'series') {
+      sendError(res, 400, 'SERIES_REQUIRED', 'این عملیات فقط برای سریال‌ها قابل استفاده است.');
+      return null;
+    }
+    if (!seriesStructureProvider) {
+      sendError(res, 503, 'SERIES_STRUCTURE_NOT_CONFIGURED', 'مدیریت فصل و قسمت پیکربندی نشده است.');
+      return null;
+    }
+    return item;
+  }
+
+  function parseStructureNumber(value) {
+    if (typeof value !== 'string' || !/^\\d{1,5}$/.test(value)) throw new CatalogInputError('INVALID_STRUCTURE_NUMBER');
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 1) throw new CatalogInputError('INVALID_STRUCTURE_NUMBER');
+    return number;
+  }
+
+  function structureEntityId(seriesId, seasonNumber, episodeNumber) {
+    return episodeNumber === undefined
+      ? `${seriesId}:season:${seasonNumber}`
+      : `${seriesId}:season:${seasonNumber}:episode:${episodeNumber}`;
   }
 
   async function readManagerAssignment(subjectId) {
@@ -843,6 +878,213 @@ function createCatalogAdminApi({
       if (error?.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'ردیف منبع تغییر کرده است؛ اطلاعات را تازه‌سازی کنید.');
       if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 409, 'SOURCE_IDENTITY_AMBIGUOUS', 'ردیف منبع یکتا نیست و حذف انجام نشد.');
       if (error?.code === 'DELETE_UNAVAILABLE') return sendError(res, 503, 'CONTENT_DELETE_NOT_CONFIGURED', 'حذف دائم منبع محتوا در دسترس نیست.');
+      throw error;
+    }
+  }));
+
+  app.get(`${BASE_PATH}/items/:contentId/seasons`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasons = await seriesStructureProvider.listStructure(req.params.contentId, { includeDisabled: true });
+    return res.json({ data: seasons.map(({ value, version, episodes }) => ({
+      ...value,
+      version,
+      episodes: episodes.map(({ value: episode, version: episodeVersion }) => ({
+        ...episode,
+        version: episodeVersion,
+      })),
+    })) });
+  }));
+
+  app.post(`${BASE_PATH}/items/:contentId/seasons`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const precondition = readMutationPrecondition(req, res, 'season', structureEntityId(req.params.contentId, req.body?.seasonNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      const saved = await seriesStructureProvider.createSeason(req.params.contentId, req.body, {
+        expectedVersion: precondition.expectedVersion,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, 201, 'season', structureEntityId(req.params.contentId, saved.value.seasonNumber),
+        saved, (value) => value);
+    } catch (error) {
+      if (error instanceof CatalogSeriesStructureInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات فصل معتبر نیست.');
+      if (error instanceof CatalogConflictError && error.code === 'ALREADY_EXISTS') return sendError(res, 409, 'ALREADY_EXISTS', 'این فصل قبلاً ثبت شده است.');
+      throw error;
+    }
+  }));
+
+  app.get(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const season = await seriesStructureProvider.getSeasonWithVersion(req.params.contentId, seasonNumber);
+    if (!season) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
+    return sendVersioned(res, 200, 'season', structureEntityId(req.params.contentId, seasonNumber), season, (value) => value);
+  }));
+
+  app.put(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const precondition = readIfMatch(req, res, 'season', structureEntityId(req.params.contentId, seasonNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      const saved = await seriesStructureProvider.updateSeason(req.params.contentId, seasonNumber, req.body, {
+        ...precondition,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, 200, 'season', structureEntityId(req.params.contentId, seasonNumber), saved, (value) => value);
+    } catch (error) {
+      if (error instanceof CatalogSeriesStructureInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات فصل معتبر نیست.');
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ فصل تغییر کرده است.');
+      throw error;
+    }
+  }));
+
+  app.patch(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber/lifecycle`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const precondition = readIfMatch(req, res, 'season', structureEntityId(req.params.contentId, seasonNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      requireBodyKeys(req.body, ['lifecycleStatus']);
+      const saved = await seriesStructureProvider.setSeasonLifecycleStatus(req.params.contentId, seasonNumber, req.body.lifecycleStatus, {
+        ...precondition,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, 200, 'season', structureEntityId(req.params.contentId, seasonNumber), saved, (value) => value);
+    } catch (error) {
+      if (error instanceof CatalogSeriesStructureInputError) return sendError(res, 400, 'INVALID_INPUT', 'وضعیت فصل معتبر نیست.');
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ فصل تغییر کرده است.');
+      throw error;
+    }
+  }));
+
+  app.delete(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const precondition = readIfMatch(req, res, 'season', structureEntityId(req.params.contentId, seasonNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      const deleted = await seriesStructureProvider.deleteSeason(req.params.contentId, seasonNumber, {
+        ...precondition,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.json({ data: { seasonNumber, deleted: true, ...deleted } });
+    } catch (error) {
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ فصل تغییر کرده است.');
+      if (error instanceof CatalogConflictError && error.code === 'CASCADE_LIMIT_EXCEEDED') return sendError(res, 409, 'CASCADE_LIMIT_EXCEEDED', 'تعداد قسمت‌ها از حد حذف اتمیک بیشتر است.');
+      throw error;
+    }
+  }));
+
+  app.post(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber/episodes`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const precondition = readMutationPrecondition(req, res, 'episode', structureEntityId(req.params.contentId, seasonNumber, req.body?.episodeNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      const saved = await seriesStructureProvider.createEpisode(req.params.contentId, seasonNumber, req.body, {
+        expectedVersion: precondition.expectedVersion,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, 201, 'episode', structureEntityId(req.params.contentId, seasonNumber, saved.value.episodeNumber), saved, (value) => value);
+    } catch (error) {
+      if (error instanceof CatalogSeriesStructureInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات قسمت معتبر نیست.');
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'ALREADY_EXISTS') return sendError(res, 409, 'ALREADY_EXISTS', 'این قسمت قبلاً ثبت شده است.');
+      throw error;
+    }
+  }));
+
+  app.get(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber/episodes/:episodeNumber`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const episodeNumber = parseStructureNumber(req.params.episodeNumber);
+    const episode = await seriesStructureProvider.getEpisodeWithVersion(req.params.contentId, seasonNumber, episodeNumber);
+    if (!episode) return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
+    return sendVersioned(res, 200, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber), episode, (value) => value);
+  }));
+
+  app.put(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber/episodes/:episodeNumber`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const episodeNumber = parseStructureNumber(req.params.episodeNumber);
+    const precondition = readIfMatch(req, res, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      const saved = await seriesStructureProvider.updateEpisode(req.params.contentId, seasonNumber, episodeNumber, req.body, {
+        ...precondition,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, 200, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber), saved, (value) => value);
+    } catch (error) {
+      if (error instanceof CatalogSeriesStructureInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات قسمت معتبر نیست.');
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ قسمت تغییر کرده است.');
+      throw error;
+    }
+  }));
+
+  app.patch(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber/episodes/:episodeNumber/lifecycle`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const episodeNumber = parseStructureNumber(req.params.episodeNumber);
+    const precondition = readIfMatch(req, res, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      requireBodyKeys(req.body, ['lifecycleStatus']);
+      const saved = await seriesStructureProvider.setEpisodeLifecycleStatus(req.params.contentId, seasonNumber, episodeNumber, req.body.lifecycleStatus, {
+        ...precondition,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, 200, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber), saved, (value) => value);
+    } catch (error) {
+      if (error instanceof CatalogSeriesStructureInputError) return sendError(res, 400, 'INVALID_INPUT', 'وضعیت قسمت معتبر نیست.');
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ قسمت تغییر کرده است.');
+      throw error;
+    }
+  }));
+
+  app.delete(`${BASE_PATH}/items/:contentId/seasons/:seasonNumber/episodes/:episodeNumber`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const item = await requireSeriesContent(req.params.contentId, res);
+    if (!item) return;
+    const seasonNumber = parseStructureNumber(req.params.seasonNumber);
+    const episodeNumber = parseStructureNumber(req.params.episodeNumber);
+    const precondition = readIfMatch(req, res, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber));
+    if (!precondition || res.headersSent) return;
+    try {
+      const deleted = await seriesStructureProvider.deleteEpisode(req.params.contentId, seasonNumber, episodeNumber, {
+        ...precondition,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.json({ data: { seasonNumber, episodeNumber, deleted: true, version: deleted.version } });
+    } catch (error) {
+      if (error instanceof CatalogNotFoundError) return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ قسمت تغییر کرده است.');
       throw error;
     }
   }));
