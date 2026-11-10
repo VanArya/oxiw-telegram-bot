@@ -135,6 +135,9 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const updatedRecord = { ...record };
       for (const [field, value] of Object.entries(fields)) updatedRecord[field] = String(value);
+      if (Object.hasOwn(updatedRecord, 'کد سیستم')) {
+        updatedRecord['کد سیستم'] = String(updatedRecord['کد سیستم']).normalize('NFC').trim();
+      }
       return {
         sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
         rowNumber: index + 2,
