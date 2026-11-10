@@ -204,6 +204,7 @@ function createCatalogAdminApi({
   contentReader,
   seriesStructureProvider,
   auditReader,
+  roleAuditReader,
   verifyAdminPrincipal,
   roleProvider,
   reportRoleResolutionFailure: reportRoleFailure,
@@ -568,6 +569,41 @@ function createCatalogAdminApi({
         error: {
           code: 'INTERNAL_ERROR',
           message: 'فهرست محتوا در دسترس نیست.',
+          requestId: diagnosticRequestId,
+        },
+      });
+    }
+  }));
+
+  app.get(`${BASE_PATH}/role-audit`, requireOwner, asyncRoute(async (req, res) => {
+    if (!roleAuditReader || typeof roleAuditReader.list !== 'function') {
+      return sendError(res, 503, 'ADMIN_ROLE_AUDIT_READ_NOT_CONFIGURED', 'تاریخچهٔ تغییر نقش‌ها پیکربندی نشده است.');
+    }
+    const query = new URL(req.originalUrl, 'http://localhost').searchParams;
+    for (const key of query.keys()) {
+      if (!['page', 'pageSize'].includes(key) || query.getAll(key).length !== 1) {
+        return sendError(res, 400, 'INVALID_PAGINATION', 'صفحه‌بندی معتبر نیست.');
+      }
+    }
+    try {
+      return res.json(await roleAuditReader.list({
+        page: query.get('page') ?? undefined,
+        pageSize: query.get('pageSize') ?? undefined,
+      }));
+    } catch (error) {
+      if (error?.code === 'INVALID_PAGINATION') {
+        return sendError(res, 400, 'INVALID_PAGINATION', 'صفحه‌بندی معتبر نیست.');
+      }
+      const diagnosticRequestId = requestId();
+      console.error('[catalog-admin-diagnostic]', JSON.stringify({
+        event: 'catalog_admin_role_audit_read_failed',
+        requestId: diagnosticRequestId,
+        errorCode: typeof error?.code === 'string' ? error.code.slice(0, 48) : 'UNKNOWN',
+      }));
+      return res.status(500).json({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'تاریخچهٔ تغییر نقش‌ها در دسترس نیست.',
           requestId: diagnosticRequestId,
         },
       });
