@@ -155,7 +155,7 @@ function messageForError(error) {
     UNAUTHENTICATED: 'نشست معتبر نیست؛ دوباره وارد شوید.',
     FORBIDDEN: 'مجوز لازم برای این عملیات را ندارید.',
     NOT_FOUND: 'رکورد پیدا نشد.',
-    ALREADY_EXISTS: 'شناسه از قبل وجود دارد.',
+    ALREADY_EXISTS: 'کد سیستم جدید از قبل ثبت شده است.',
     CONFLICT: 'عملیات با داده‌های موجود سازگار نیست.',
     APPROVAL_REQUIRED: 'برای انتشار، محتوا باید ابتدا تأیید شود.',
     PRECONDITION_REQUIRED: 'نسخهٔ رکورد لازم است؛ داده را دوباره دریافت کنید.',
@@ -803,10 +803,21 @@ async function saveSourceItem(event) {
       method: 'PUT',
       body: JSON.stringify({ sourceVersion: selectedSource.sourceVersion, fields }),
     });
+    const previousId = selectedItem.id;
     selectedSource = result.body.data;
-    renderSourceForm(selectedSource);
-    await loadContent();
-    showToast('تمام ستون‌های ویرایش‌شده در Google Sheets ذخیره شدند.');
+    if (selectedSource.id !== previousId) {
+      elements.contentDialog.close();
+      selectedItem = null;
+      selectedSource = null;
+      await loadContent();
+      const updatedItem = currentItems.find((item) => item.id === result.body.data.id);
+      if (updatedItem) await openContent(updatedItem);
+      showToast('کد سیستم تغییر کرد و وضعیت و فرادادهٔ قبلی حفظ شد.');
+    } else {
+      renderSourceForm(selectedSource);
+      await loadContent();
+      showToast('تمام ستون‌های ویرایش‌شده در Google Sheets ذخیره شدند.');
+    }
   } catch (error) {
     if (error.status === 412) {
       await refreshSelectedContent('ردیف در Google Sheets تغییر کرده است؛ اطلاعات تازه بارگذاری شد و تغییر شما ذخیره نشد.');
