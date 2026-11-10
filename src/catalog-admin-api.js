@@ -580,6 +580,50 @@ function createCatalogAdminApi({
     }
   }));
 
+  const bulkContentStatus = (kind, permission, allowedStatuses, statusField, updateMethod) => {
+    app.post(`${BASE_PATH}/items/bulk/${kind}`, requirePermission(permission), parseJson, asyncRoute(async (req, res) => {
+      try {
+        requireBodyKeys(req.body, ['contentIds', statusField]);
+        const ids = req.body.contentIds;
+        const status = req.body[statusField];
+        if (!Array.isArray(ids) || ids.length < 1 || ids.length > 50 ||
+            ids.some((id) => !isCanonicalContentId(id)) || new Set(ids).size !== ids.length ||
+            !allowedStatuses.has(status)) throw new CatalogInputError();
+        const actorId = res.locals.catalogAdminPrincipal.subjectId;
+        const results = [];
+        for (const contentId of ids) {
+          try {
+            const current = await writableProvider.getContentMetadataWithVersion(contentId);
+            if (!current) {
+              results.push({ contentId, success: false, code: 'METADATA_REQUIRED' });
+              continue;
+            }
+            const saved = await writableProvider[updateMethod](contentId, status, {
+              expectedVersion: current.version,
+              actorId,
+            });
+            results.push({ contentId, success: true, version: saved.version });
+          } catch (error) {
+            const code = error instanceof CatalogConflictError
+              ? (error.code === 'PUBLICATION_REQUIRES_APPROVAL' ? 'APPROVAL_REQUIRED'
+                : error.code === 'VERSION_CONFLICT' ? 'PRECONDITION_FAILED' : 'CONFLICT')
+              : error instanceof CatalogNotFoundError ? 'METADATA_REQUIRED' : 'INTERNAL_ERROR';
+            results.push({ contentId, success: false, code });
+          }
+        }
+        const succeeded = results.filter((item) => item.success).length;
+        return res.json({ data: results, meta: { total: results.length, succeeded, failed: results.length - succeeded } });
+      } catch (error) {
+        if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'فهرست موارد یا وضعیت انتخاب‌شده معتبر نیست.');
+        throw error;
+      }
+    }));
+  };
+  bulkContentStatus('approval', PERMISSIONS.CONTENT_APPROVE,
+    new Set(['approved', 'rejected', 'pending']), 'approvalStatus', 'updateApprovalStatus');
+  bulkContentStatus('publication', PERMISSIONS.CONTENT_PUBLISH,
+    new Set(['published', 'draft', 'archived']), 'publicationStatus', 'updatePublicationStatus');
+
   app.get(`${BASE_PATH}/items/:contentId/metadata`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
     const metadata = await provider.getContentMetadataWithVersion(req.params.contentId);
