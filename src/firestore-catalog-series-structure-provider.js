@@ -12,7 +12,7 @@ const { CatalogSeriesStructureInputError, episodeDocumentId, seasonDocumentId,
 
 const DEFAULT_COLLECTION = 'catalogSeriesStructures';
 const INTERNAL_VERSION = '_version';
-const MAX_ATOMIC_CASCADE_ITEMS = 450;
+const MAX_ATOMIC_CASCADE_ITEMS = 240;
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -144,8 +144,8 @@ function createFirestoreCatalogSeriesStructureProvider({
         [INTERNAL_VERSION]: version,
       };
       if (next.lifecycleStatus === 'disabled') {
-        data.disabledAt = next.disabledAt || now;
-        data.disabledBy = next.disabledBy || writeOptions.actorId;
+        data.disabledAt = previous?.disabledAt || now;
+        data.disabledBy = previous?.disabledBy || writeOptions.actorId;
       } else {
         delete data.disabledAt;
         delete data.disabledBy;
@@ -227,7 +227,9 @@ function createFirestoreCatalogSeriesStructureProvider({
         input: season,
         entityType: 'season',
         entityId: `${seriesId}:season:${seasonNumber}`,
-        operationFor: () => season.lifecycleStatus === 'disabled' ? 'season.disabled' : 'season.updated',
+        operationFor: (previous, next) => previous?.lifecycleStatus !== next.lifecycleStatus
+          ? (next.lifecycleStatus === 'disabled' ? 'season.disabled' : 'season.restored')
+          : 'season.updated',
         fields: ['seasonNumber', 'title', 'description', 'lifecycleStatus'],
       });
     },
@@ -284,6 +286,7 @@ function createFirestoreCatalogSeriesStructureProvider({
     async listEpisodes(seriesId, seasonNumber, { includeDisabled = false } = {}) {
       const season = await provider.getSeasonWithVersion(seriesId, seasonNumber);
       if (!season) throw new CatalogNotFoundError('SEASON_NOT_FOUND');
+      if (!includeDisabled && season.value.lifecycleStatus !== 'active') return [];
       const snapshot = await episodesRef(seriesId, seasonNumber).get();
       if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
       return snapshot.docs.map((doc) => {
@@ -309,6 +312,10 @@ function createFirestoreCatalogSeriesStructureProvider({
         const now = clock();
         if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError();
         const data = { ...episode, createdAt: now.toISOString(), updatedAt: now.toISOString(), [INTERNAL_VERSION]: 1 };
+        if (episode.lifecycleStatus === 'disabled') {
+          data.disabledAt = now.toISOString();
+          data.disabledBy = writeOptions.actorId;
+        }
         transaction.set(reference, data);
         await auditEventSink.appendInTransaction(transaction, eventFor({
           operation: 'episode.created',
@@ -375,42 +382,49 @@ function createFirestoreCatalogSeriesStructureProvider({
     async deleteSeriesStructure(seriesId, options) {
       const writeOptions = validateExpectedVersion(options);
       if (!writeOptions.actorId) throw new CatalogSeriesStructureInputError('ACTOR_REQUIRED');
-      const snapshot = await seasonsRef(seriesId).get();
-      if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
-      const seasonNumbers = snapshot.docs.map((doc) => projectSeason(doc.id, doc.data()).seasonNumber);
-      const episodeCounts = await Promise.all(seasonNumbers.map(async (number) => {
-        const episodes = await episodesRef(seriesId, number).get();
-        if (!episodes || !Array.isArray(episodes.docs)) throw new TypeError();
-        return { number, docs: episodes.docs };
-      }));
-      const total = seasonNumbers.length + episodeCounts.reduce((sum, entry) => sum + entry.docs.length, 0);
-      if (total > MAX_ATOMIC_CASCADE_ITEMS) throw new CatalogConflictError('CASCADE_LIMIT_EXCEEDED');
       return firestore.runTransaction(async (transaction) => {
-        for (const entry of episodeCounts) {
-          for (const episode of entry.docs) {
+        const snapshot = await transaction.get(seasonsRef(seriesId));
+        if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
+        const seasonRecords = snapshot.docs.map((doc) => ({
+          doc,
+          stored: snapshotValue({ exists: true, data: doc.data }),
+          value: projectSeason(doc.id, doc.data()),
+        }));
+        const episodeRecords = [];
+        for (const season of seasonRecords) {
+          const episodes = await transaction.get(episodesRef(seriesId, season.value.seasonNumber));
+          if (!episodes || !Array.isArray(episodes.docs)) throw new TypeError();
+          for (const episode of episodes.docs) {
             const stored = snapshotValue({ exists: true, data: episode.data });
-            const value = projectEpisode(episode.id, stored.data);
-            transaction.delete(episodeRef(seriesId, entry.number, value.episodeNumber));
-            await auditEventSink.appendInTransaction(transaction, eventFor({
-              operation: 'episode.deleted', entityType: 'episode',
-              entityId: `${seriesId}:season:${entry.number}:episode:${value.episodeNumber}`,
-              options: writeOptions, previousVersion: stored.version, version: stored.version + 1,
-              fields: ['deleted'], clock,
-            }));
+            episodeRecords.push({
+              seasonNumber: season.value.seasonNumber,
+              episode,
+              stored,
+              value: projectEpisode(episode.id, stored.data),
+            });
           }
         }
-        for (const doc of snapshot.docs) {
-          const stored = snapshotValue({ exists: true, data: doc.data });
-          const value = projectSeason(doc.id, stored.data);
-          transaction.delete(seasonRef(seriesId, value.seasonNumber));
+        const total = seasonRecords.length + episodeRecords.length;
+        if (total > MAX_ATOMIC_CASCADE_ITEMS) throw new CatalogConflictError('CASCADE_LIMIT_EXCEEDED');
+        for (const entry of episodeRecords) {
+          transaction.delete(episodeRef(seriesId, entry.seasonNumber, entry.value.episodeNumber));
           await auditEventSink.appendInTransaction(transaction, eventFor({
-            operation: 'season.deleted', entityType: 'season',
-            entityId: `${seriesId}:season:${value.seasonNumber}`,
-            options: writeOptions, previousVersion: stored.version, version: stored.version + 1,
+            operation: 'episode.deleted', entityType: 'episode',
+            entityId: `${seriesId}:season:${entry.seasonNumber}:episode:${entry.value.episodeNumber}`,
+            options: writeOptions, previousVersion: entry.stored.version, version: entry.stored.version + 1,
             fields: ['deleted'], clock,
           }));
         }
-        return { deletedSeasons: seasonNumbers.length, deletedEpisodes: total - seasonNumbers.length };
+        for (const entry of seasonRecords) {
+          transaction.delete(seasonRef(seriesId, entry.value.seasonNumber));
+          await auditEventSink.appendInTransaction(transaction, eventFor({
+            operation: 'season.deleted', entityType: 'season',
+            entityId: `${seriesId}:season:${entry.value.seasonNumber}`,
+            options: writeOptions, previousVersion: entry.stored.version, version: entry.stored.version + 1,
+            fields: ['deleted'], clock,
+          }));
+        }
+        return { deletedSeasons: seasonRecords.length, deletedEpisodes: episodeRecords.length };
       });
     },
   };
