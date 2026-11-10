@@ -743,7 +743,7 @@ test('only one concurrent write using the same ETag succeeds', async () => {
   });
 });
 
-test('source editor API exposes all sheet columns, protects identity, and creates sheet rows', async () => {
+test('source editor API exposes all sheet columns, allows identity changes, and creates sheet rows', async () => {
   const store = createStore();
   const item = {
     id: contentId, kind: 'movie', systemCode: 'admin-fixture-1',
@@ -753,13 +753,17 @@ test('source editor API exposes all sheet columns, protects identity, and create
   };
   let created = null;
   const contentReader = {
-    async getItemSource(id) { return id === contentId ? structuredClone(item) : null; },
+    async getItemSource(id) { return id === item.id ? structuredClone(item) : null; },
     async getSheetSchema(kind) { return { kind, sheetName: kind === 'movie' ? 'سینمایی' : 'سریال', headers: item.headers }; },
     async updateItemSource(id, options) {
       assert.equal(id, contentId);
       assert.equal(options.sourceVersion, 'a'.repeat(43));
       assert.equal(options.actorId, 'fixture-admin');
       Object.assign(item.record, options.fields);
+      if (options.fields['کد سیستم']) {
+        item.systemCode = options.fields['کد سیستم'];
+        item.id = `movie:${encodeURIComponent(item.systemCode)}`;
+      }
       item.sourceVersion = 'b'.repeat(43);
       return structuredClone(item);
     },
@@ -786,9 +790,10 @@ test('source editor API exposes all sheet columns, protects identity, and create
     assert.equal(result.status, 200);
     assert.equal(result.body.data.record['Telegram File ID'], 'new-file-id');
 
-    const invalid = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
+    assert.equal(result.body.data.id, 'movie:changed');
+    const invalid = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(item.id)}/source`, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sourceVersion: 'b'.repeat(43), fields: { 'کد سیستم': 'changed' } }),
+      body: JSON.stringify({ sourceVersion: 'b'.repeat(43), fields: { 'کد سیستم': '' } }),
     }));
     assert.equal(invalid.status, 400);
 
