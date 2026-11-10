@@ -89,7 +89,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion) ||
         !fields || typeof fields !== 'object' || Array.isArray(fields) ||
         Object.keys(fields).length === 0 ||
-        Object.keys(fields).some((key) => typeof key !== 'string' || !key.trim() || key === 'کد سیستم' ||
+        Object.keys(fields).some((key) => typeof key !== 'string' || !key.trim() || key === 'کد سیستم' || key === '__proto__' ||
           key.length > 200 || /[\u0000]/.test(key))) {
       throw Object.assign(new Error('Invalid catalog row update.'), { code: 'INVALID_INPUT' });
     }
@@ -164,7 +164,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       try {
         const response = await sheetsClient.spreadsheets.values.append({
           spreadsheetId,
-          range: quoteSheetRange(sheetName),
+          range: `${quoteSheetRange(sheetName)}!A:ZZZ`,
           valueInputOption: 'RAW',
           insertDataOption: 'INSERT_ROWS',
           requestBody: { values: [values] },
