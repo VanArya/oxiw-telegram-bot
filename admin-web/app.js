@@ -707,6 +707,7 @@ async function loadContent() {
     contentTotal = body.meta.total;
     contentStats = body.meta.stats;
     renderContentRows(currentItems);
+    updateBulkControls();
     setText(elements.contentCount, `${contentTotal.toLocaleString('fa-IR')} مورد`);
     setText(elements.contentPage, `صفحهٔ ${body.meta.page.toLocaleString('fa-IR')}`);
     elements.contentPrev.disabled = contentPage <= 1;
@@ -877,16 +878,22 @@ async function updateItemStatus(kind, value) {
 }
 
 function makeRecordButton(primary, secondary, onClick) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'record-button';
+  const record = document.createElement('div');
+  record.className = 'record-button';
+  const details = document.createElement('div');
+  details.className = 'record-details';
   const title = document.createElement('strong');
   title.textContent = primary;
   const detail = document.createElement('span');
   detail.textContent = secondary;
-  button.append(title, detail);
-  button.addEventListener('click', onClick);
-  return button;
+  details.append(title, detail);
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'button button-small button-secondary record-edit';
+  edit.textContent = 'ویرایش';
+  edit.addEventListener('click', onClick);
+  record.append(details, edit);
+  return record;
 }
 
 async function loadCategories() {
