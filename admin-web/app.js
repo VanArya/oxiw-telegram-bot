@@ -46,6 +46,8 @@ let currentItems = [];
 const selectedContentIds = new Set();
 let selectedItem = null;
 let selectedMetadata = null;
+let selectedSource = null;
+let creatingSourceKind = null;
 let selectedEtag = null;
 let countryTerms = [];
 let genreTerms = [];
@@ -744,55 +746,67 @@ function permissionControls() {
   $('#publication-actions').hidden = !hasPermission('catalog.content.publish');
 }
 
-function renderSourceForm(item) {
-  $('#source-title').value = item.title || '';
-  $('#source-release-year').value = item.releaseYear ?? '';
-  $('#source-start-year').value = item.seriesMetadata?.startYear ?? '';
-  $('#source-end-year').value = item.seriesMetadata?.isOngoing ? 'در حال پخش' : (item.seriesMetadata?.endYear ?? '');
-  $('#source-seasons').value = item.seriesMetadata?.seasonsAndEpisodes ?? '';
-  $('#source-synopsis').value = item.synopsis || '';
-  $('#source-cast').value = item.cast || '';
-  $('#source-language').value = item.language || '';
-  $('#source-rating').value = item.rating || '';
-  $('#source-trailer').value = item.trailerUrl || '';
-  $('#source-poster').value = item.posterUrl || '';
-  const available = new Set(item.sourceAvailableFields || []);
-  const labels = { title: 'source-title', releaseYear: 'source-release-year-label', startYear: 'source-start-year-label',
-    endYear: 'source-end-year-label', seasonsAndEpisodes: 'source-seasons-label', synopsis: 'source-synopsis',
-    cast: 'source-cast', language: 'source-language', rating: 'source-rating', trailerUrl: 'source-trailer', posterUrl: 'source-poster' };
-  Object.entries(labels).forEach(([field, id]) => { const control = $('#'+id); const label = control.tagName === 'LABEL' ? control : control.closest('label'); if (label) label.hidden = !available.has(field); });
-  $('#source-form').hidden = !hasPermission('catalog.metadata.write');
+function renderSheetFields(container, headers, record = {}, { create = false } = {}) {
+  container.replaceChildren();
+  headers.forEach((header) => {
+    const label = document.createElement('label');
+    label.textContent = header;
+    const value = record[header] == null ? '' : String(record[header]);
+    const longField = value.length > 120 || /خلاصه|توضیح|شرح|بازیگران|توضیحات|داستان/i.test(header);
+    const control = document.createElement(longField ? 'textarea' : 'input');
+    if (longField) control.rows = 4;
+    else control.type = 'text';
+    control.maxLength = 20000;
+    control.value = value;
+    control.dataset.sourceHeader = header;
+    control.setAttribute('aria-label', header);
+    if (header === 'کد سیستم' && !create) {
+      control.disabled = true;
+      control.title = 'شناسهٔ اصلی رکورد قابل تغییر نیست.';
+    }
+    if (header === 'کد سیستم' || header === 'اسم فیلم') control.required = true;
+    if (/Telegram|File ID|URL|لینک|شناسه|کد/i.test(header)) control.dir = 'ltr';
+    label.append(control);
+    container.append(label);
+  });
+}
+
+function readSheetFields(container, { create = false } = {}) {
+  const fields = {};
+  $$('[data-source-header]', container).forEach((control) => {
+    const header = control.dataset.sourceHeader;
+    if (!create && header === 'کد سیستم') return;
+    fields[header] = control.value;
+  });
+  return fields;
+}
+
+function renderSourceForm(source) {
+  selectedSource = source || null;
+  const form = $('#source-form');
+  if (!source || !hasPermission('catalog.metadata.write')) {
+    form.hidden = true;
+    return;
+  }
+  renderSheetFields($('#source-fields'), source.headers, source.record);
+  form.hidden = false;
 }
 
 async function saveSourceItem(event) {
   event.preventDefault();
-  if (!selectedItem || !hasPermission('catalog.metadata.write')) return;
-  const available = new Set(selectedItem.sourceAvailableFields || []);
-  const candidates = {
-    title: $('#source-title').value.trim(), synopsis: $('#source-synopsis').value,
-    cast: $('#source-cast').value, language: $('#source-language').value.trim(),
-    rating: $('#source-rating').value.trim(), trailerUrl: $('#source-trailer').value.trim(),
-    posterUrl: $('#source-poster').value.trim(),
-  };
-  const fields = Object.fromEntries(Object.entries(candidates).filter(([key]) => available.has(key)));
-  if (selectedItem.kind === 'movie') {
-    if (available.has('releaseYear')) fields.releaseYear = $('#source-release-year').value === '' ? '' : Number($('#source-release-year').value);
-  } else {
-    if (available.has('startYear')) fields.startYear = $('#source-start-year').value === '' ? '' : Number($('#source-start-year').value);
-    if (available.has('endYear')) fields.endYear = $('#source-end-year').value.trim();
-    if (available.has('seasonsAndEpisodes')) fields.seasonsAndEpisodes = $('#source-seasons').value.trim();
-  }
+  if (!selectedItem || !selectedSource || !hasPermission('catalog.metadata.write')) return;
+  const fields = readSheetFields($('#source-fields'));
   const button = $('#source-save');
   setBusy(button, true);
   try {
     const result = await api(API_ROOT + '/items/' + encodeURIComponent(selectedItem.id) + '/source', {
-      method: 'PUT', body: JSON.stringify({ sourceVersion: selectedItem.sourceVersion, fields }),
+      method: 'PUT',
+      body: JSON.stringify({ sourceVersion: selectedSource.sourceVersion, fields }),
     });
-    selectedItem = result.body.data;
-    renderSelectedContent();
-    renderSourceForm(selectedItem);
+    selectedSource = result.body.data;
+    renderSourceForm(selectedSource);
     await loadContent();
-    showToast('اطلاعات اصلی در Google Sheets ذخیره شد.');
+    showToast('تمام ستون‌های ویرایش‌شده در Google Sheets ذخیره شدند.');
   } catch (error) {
     if (error.status === 412) {
       await refreshSelectedContent('ردیف در Google Sheets تغییر کرده است؛ اطلاعات تازه بارگذاری شد و تغییر شما ذخیره نشد.');
@@ -800,6 +814,44 @@ async function saveSourceItem(event) {
     } else reportApiError(error);
   } finally { setBusy(button, false); }
 }
+
+async function openSourceCreate(kind) {
+  if (!hasPermission('catalog.metadata.write')) return;
+  creatingSourceKind = kind;
+  const title = kind === 'movie' ? 'افزودن فیلم سینمایی' : 'افزودن سریال';
+  setText($('#source-create-title'), title);
+  try {
+    const { body } = await api(`${API_ROOT}/source-schema/${kind}`);
+    renderSheetFields($('#source-create-fields'), body.data.headers, {}, { create: true });
+    $('#source-create-dialog').showModal();
+  } catch (error) { reportApiError(error); }
+}
+
+async function createSourceItem(event) {
+  event.preventDefault();
+  if (!creatingSourceKind || !hasPermission('catalog.metadata.write')) return;
+  const fields = readSheetFields($('#source-create-fields'), { create: true });
+  const button = $('#source-create-save');
+  setBusy(button, true);
+  try {
+    const { body } = await api(`${API_ROOT}/items/source`, {
+      method: 'POST',
+      body: JSON.stringify({ kind: creatingSourceKind, fields }),
+    });
+    $('#source-create-dialog').close();
+    creatingSourceKind = null;
+    contentPage = 1;
+    elements.contentKind.value = body.data.kind;
+    await loadContent();
+    showToast('عنوان جدید در Google Sheets ثبت شد. وضعیت اولیه: در انتظار تأیید و پیش‌نویس.');
+    const created = currentItems.find((item) => item.id === body.data.id);
+    if (created) await openContent(created);
+  } catch (error) {
+    if (error.status === 409) setGlobalMessage('کد سیستم تکراری است؛ یک شناسهٔ یکتا وارد کنید.');
+    else reportApiError(error);
+  } finally { setBusy(button, false); }
+}
+
 function renderSelectedContent() {
   if (!selectedItem) return;
   setText($('#dialog-kind'), selectedItem.kind === 'movie' ? 'سینمایی' : 'سریال');
@@ -818,11 +870,12 @@ function renderSelectedContent() {
   populateMultiSelect(elements.metadataGenres, genreTerms, selectedMetadata?.genreIds || []);
   populateMultiSelect(elements.metadataCategories, categoryTerms, selectedMetadata?.categoryIds || []);
   permissionControls();
-  renderSourceForm(selectedItem);
+  if (selectedSource) renderSourceForm(selectedSource);
 }
 
 async function openContent(item, notice) {
   selectedItem = item;
+  selectedSource = null;
   selectedMetadata = {
     contentId: item.id,
     approvalStatus: 'pending',
@@ -833,17 +886,19 @@ async function openContent(item, notice) {
   selectedEtag = null;
   elements.dialogMessage.hidden = true;
   try {
-    const [metadataResult, countriesResult, genresResult, categoriesResult] = await Promise.all([
+    const [metadataResult, countriesResult, genresResult, categoriesResult, sourceResult] = await Promise.all([
       api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`),
       api(`${API_ROOT}/taxonomies/country`),
       api(`${API_ROOT}/taxonomies/genre`),
       api(`${API_ROOT}/categories`),
+      hasPermission('catalog.metadata.write') ? api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/source`) : Promise.resolve(null),
     ]);
     selectedMetadata = metadataResult.body.data;
     selectedEtag = metadataResult.etag;
     countryTerms = countriesResult.body.data;
     genreTerms = genresResult.body.data;
     categoryTerms = categoriesResult.body.data;
+    selectedSource = sourceResult?.body?.data || null;
   } catch (error) {
     if (error.status === 404) {
       try {
@@ -1517,6 +1572,10 @@ function wireUi() {
   });
   elements.metadataForm.addEventListener('submit', (event) => void saveContentMetadata(event));
   $('#source-form').addEventListener('submit', (event) => void saveSourceItem(event));
+  $('#source-create-form').addEventListener('submit', (event) => void createSourceItem(event));
+  $('#source-create-close').addEventListener('click', () => $('#source-create-dialog').close());
+  $('#content-new-movie').addEventListener('click', () => void openSourceCreate('movie'));
+  $('#content-new-series').addEventListener('click', () => void openSourceCreate('series'));
   $$('[data-approval]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('approval', button.dataset.approval)));
   $$('[data-publication]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('publication', button.dataset.publication)));
   $('#category-new').addEventListener('click', openNewCategory);
