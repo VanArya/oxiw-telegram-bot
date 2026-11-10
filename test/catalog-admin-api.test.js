@@ -90,6 +90,42 @@ const sheetProvider = {
   },
 };
 
+test('content lifecycle supports versioned disable and restore with audit-safe metadata', async () => {
+  const store = createStore();
+  const app = createAdminApi(store);
+  await withServer(app, async (baseUrl) => {
+    const url = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/lifecycle`;
+    const disabled = await json(await fetch(url, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({ lifecycleStatus: 'disabled' }),
+    }));
+    assert.equal(disabled.status, 201);
+    assert.equal(disabled.body.data.lifecycleStatus, 'disabled');
+    assert.equal(typeof disabled.body.data.disabledAt, 'string');
+    assert.equal(disabled.body.data.disabledBy, 'fixture-admin');
+    assert.ok(disabled.etag);
+
+    const restored = await json(await fetch(url, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': disabled.etag },
+      body: JSON.stringify({ lifecycleStatus: 'active' }),
+    }));
+    assert.equal(restored.status, 200);
+    assert.equal(restored.body.data.lifecycleStatus, 'active');
+    assert.equal(Object.hasOwn(restored.body.data, 'disabledAt'), false);
+    assert.equal(Object.hasOwn(restored.body.data, 'disabledBy'), false);
+
+    const stale = await json(await fetch(url, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': disabled.etag },
+      body: JSON.stringify({ lifecycleStatus: 'disabled' }),
+    }));
+    assert.equal(stale.status, 412);
+    assert.equal(stale.body.error.code, 'PRECONDITION_FAILED');
+  });
+});
+
 test('admin API fails closed when authorization is absent or denied', async () => {
   const store = createStore();
   const unconfigured = createCatalogAdminApi({ writableProvider: store });
