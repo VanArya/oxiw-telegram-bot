@@ -7,7 +7,7 @@ const EVENT_KEYS = new Set([
 const OPERATIONS = new Set([
   'metadata.created', 'metadata.updated',
   'approval.pending', 'approval.approved', 'approval.rejected', 'approval.unknown',
-  'content.disabled', 'content.restored',
+  'content.disabled', 'content.restored', 'content.deleted',
   'publication.draft', 'publication.published', 'publication.archived', 'publication.unknown',
   'category.created', 'category.updated', 'category.deleted',
   'taxonomy.created', 'taxonomy.updated', 'taxonomy.deleted',
