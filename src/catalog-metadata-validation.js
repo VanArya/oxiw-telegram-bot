@@ -91,15 +91,15 @@ function validateCatalogContentMetadata(contentId, value) {
     (value.disabledBy !== undefined && (typeof value.disabledBy !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(value.disabledBy))) ||
     ((value.disabledAt === undefined) !== (value.disabledBy === undefined)) ||
     (value.lifecycleStatus === 'disabled' && value.disabledAt === undefined) ||
-    (value.lifecycleStatus === 'active' && value.disabledAt !== undefined)
+    (value.lifecycleStatus !== 'disabled' && value.disabledAt !== undefined)
   ) throw new CatalogInputError();
 
   const metadata = {
     contentId,
     approvalStatus: value.approvalStatus,
     publicationStatus: value.publicationStatus,
-    lifecycleStatus: value.lifecycleStatus ?? 'active',
   };
+  if (value.lifecycleStatus !== undefined) metadata.lifecycleStatus = value.lifecycleStatus;
   if (value.disabledAt !== undefined) metadata.disabledAt = value.disabledAt;
   if (value.disabledBy !== undefined) metadata.disabledBy = value.disabledBy;
   const countryIds = validateIdList(value.countryIds, 'country');
