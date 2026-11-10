@@ -228,6 +228,25 @@ test('lists versioned metadata for the authenticated admin catalog reader', asyn
   assert.equal(JSON.stringify(listed).includes('_version'), false);
 });
 
+test('moves content metadata transactionally when the system code identity changes', async () => {
+  const { firestore, provider } = setup();
+  const nextId = createCatalogContentId('movie', 'writable-fixture-renamed');
+  await provider.upsertContentMetadata(contentId, {
+    ...metadata, approvalStatus: 'approved', publicationStatus: 'draft',
+  }, { expectedVersion: 0, actorId: 'admin-test-1' });
+  const moved = await provider.moveContentMetadata(contentId, nextId, { actorId: 'admin-test-1' });
+  assert.equal(moved.value.contentId, nextId);
+  assert.equal(moved.value.approvalStatus, 'approved');
+  assert.deepEqual(moved.value.countryIds, ['IR']);
+  assert.equal(await provider.getContentMetadataWithVersion(contentId), null);
+  assert.deepEqual((await provider.getContentMetadataWithVersion(nextId)).value, moved.value);
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, event]) => event);
+  assert.equal(events.at(-1).operation, 'metadata.updated');
+  assert.deepEqual(events.at(-1).changedFields, ['contentId']);
+});
+
 test('metadata collection read failures expose only safe Firestore classification', async () => {
   const { firestore, provider } = setup();
   firestore.failReads = true;
