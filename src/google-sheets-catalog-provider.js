@@ -2,11 +2,7 @@
 
 const crypto = require('node:crypto');
 const SHEETS = new Set(['سینمایی', 'سریال']);
-const EDITABLE_COLUMNS = Object.freeze({
-  title: 'اسم فیلم', releaseYear: 'سال', startYear: 'سال شروع', endYear: 'سال پایان',
-  seasonsAndEpisodes: 'تعداد فصل و قسمت', synopsis: 'خلاصه داستان', cast: 'بازیگران',
-  language: 'زبان', rating: 'امتیاز', trailerUrl: 'لینک تریلر', posterUrl: 'پوستر فیلم',
-});
+
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const {
   classifyCatalogDependencyError,
