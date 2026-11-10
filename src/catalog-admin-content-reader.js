@@ -157,9 +157,11 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
           mapped = mapCatalogSheetRow(sheetName, record);
         } catch (cause) {
           const message = typeof cause?.message === 'string' ? cause.message : '';
-          const validationIssue = message.startsWith('Missing or invalid required field:')
+          const requiredFieldMatch = /^Missing or invalid required field: (.+)$/.exec(message);
+          const yearFieldMatch = /^Invalid year field: (.+)$/.exec(message);
+          const validationIssue = requiredFieldMatch
             ? 'required_field_invalid'
-            : message.startsWith('Invalid year field:')
+            : yearFieldMatch
               ? 'year_field_invalid'
               : message.includes('start year cannot be after end year')
                 ? 'series_year_range_invalid'
@@ -169,6 +171,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
             rowNumber: sourceRowNumber,
             stage: 'sheet_row_mapping',
             validationIssue,
+            ...(requiredFieldMatch ? { fieldName: requiredFieldMatch[1] } : {}),
+            ...(yearFieldMatch ? { fieldName: yearFieldMatch[1] } : {}),
           });
           invalidSourceRows.push(diagnostic);
           if (typeof onInvalidSourceRow === 'function') {
