@@ -694,7 +694,7 @@ test('admin API creates and edits categories and country/genre taxonomy with val
     assert.equal(invalidType.status, 400);
 
     const deleteAttempt = await json(await fetch(categoryUrl, { method: 'DELETE' }));
-    assert.equal(deleteAttempt.status, 404);
+    assert.equal(deleteAttempt.status, 428);
     assert.equal((await store.listCategories()).length, 1);
   });
 });
@@ -798,7 +798,7 @@ test('source editor API exposes all sheet columns, protects identity, and create
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ kind: 'movie', fields: { 'کد سیستم': 'new-record', 'اسم فیلم': 'فیلم تازه', 'سال': '2025', 'Telegram File ID': 'new-file' } }),
     }));
-    assert.equal(add.status, 201);
+    assert.equal(add.status, 201, JSON.stringify(add.body));
     assert.equal(created.fields['Telegram File ID'], 'new-file');
   });
 });
