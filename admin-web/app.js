@@ -612,6 +612,14 @@ function renderContentRows(items) {
     lifecycle.addEventListener('click', () => void changeContentLifecycle(item,
       item.lifecycleStatus === 'disabled' ? 'active' : 'disabled'));
     action.append(lifecycle);
+    if (item.lifecycleStatus === 'disabled' && (session?.roles || []).includes('administrator')) {
+      const permanentDelete = document.createElement('button');
+      permanentDelete.type = 'button';
+      permanentDelete.className = 'button button-small button-danger';
+      permanentDelete.textContent = 'حذف دائم';
+      permanentDelete.addEventListener('click', () => void permanentlyDeleteContent(item));
+      action.append(permanentDelete);
+    }
     row.append(selection, title, kind, code, year, approval, publication, metadata, action);
     elements.contentRows.append(row);
   });
@@ -732,6 +740,28 @@ async function changeContentLifecycle(item, lifecycleStatus) {
     if (error.status === 412) {
       showToast('اطلاعات هم‌زمان تغییر کرده است؛ فهرست را تازه‌سازی کنید.', 'error');
       await loadContent();
+    } else reportApiError(error);
+  }
+}
+
+async function permanentlyDeleteContent(item) {
+  if (!item || item.lifecycleStatus !== 'disabled' || !item.sourceVersion) return;
+  if (!window.confirm(`حذف دائم «${item.title}» انجام شود؟\\nاین عملیات قابل بازگشت نیست و اطلاعات منبع محتوا نیز حذف خواهد شد.`)) return;
+  try {
+    const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
+    await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': current.etag },
+      body: JSON.stringify({ sourceVersion: item.sourceVersion }),
+    });
+    showToast('محتوا به‌صورت دائم حذف شد.', 'success');
+    await loadContent();
+  } catch (error) {
+    if (error.status === 412) {
+      showToast('اطلاعات محتوا تغییر کرده است؛ فهرست را تازه‌سازی و دوباره بررسی کنید.', 'error');
+      await loadContent();
+    } else if (error.status === 403) {
+      showToast('حذف دائم فقط برای مالک سامانه مجاز است.', 'error');
     } else reportApiError(error);
   }
 }
