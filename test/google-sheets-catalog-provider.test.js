@@ -24,6 +24,7 @@ function mockSheetsClient(valuesBySheet, calls = []) {
         },
         async batchUpdate(args) { calls.push({ batchUpdate: args }); return { data: {} }; },
         async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'سینمایی'!A3:E3` } } }; },
+        async clear(args) { calls.push({ clear: args }); return { data: {} }; },
       },
     },
   };
@@ -55,7 +56,7 @@ test('reads headers and rows for both approved sheets using dynamic values.get a
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow', 'deleteCatalogRow']);
 });
 
 test('empty sheets and responses without values become empty snapshots', async () => {
@@ -65,6 +66,40 @@ test('empty sheets and responses without values become empty snapshots', async (
   });
   assert.deepEqual(await provider.readSheet('سینمایی'), { headers: [], rows: [] });
   assert.deepEqual(await provider.readSheet('سریال'), { headers: [], rows: [] });
+});
+
+test('permanently clears a source row only when its current version matches', async () => {
+  const values = {
+    "'سینمایی'": [
+      ['کد سیستم', 'اسم فیلم'],
+      ['delete-code', 'عنوان برای حذف'],
+    ],
+  };
+  const calls = [];
+  const client = {
+    spreadsheets: { values: {
+      async get({ range }) { return { data: { values: values[range] || [] } }; },
+      async append() { return { data: {} }; },
+      async batchUpdate() { return { data: {} }; },
+      async clear(args) { calls.push(args); return { data: {} }; },
+    } },
+  };
+  const provider = createGoogleSheetsCatalogProvider({ sheetsClient: client, spreadsheetId: spreadsheetIdFixture });
+  const snapshot = await provider.readSheet('سینمایی');
+  const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, snapshot.rows[0][index] ?? '']));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+
+  const deleted = await provider.deleteCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'delete-code', expectedVersion: version,
+  });
+  assert.deepEqual(deleted, { alreadyMissing: false, rowNumber: 2 });
+  assert.deepEqual(calls, [{
+    spreadsheetId: spreadsheetIdFixture,
+    range: "'سینمایی'!A2:ZZZ2",
+  }]);
+  await assert.rejects(provider.deleteCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'delete-code', expectedVersion: version,
+  }), (error) => error.code === 'ROW_NOT_FOUND' || error.code === 'VERSION_CONFLICT');
 });
 
 test('rejects invalid sheet names before calling the client', async () => {
