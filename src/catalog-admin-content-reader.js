@@ -124,6 +124,8 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
     ['بازیگران', 'cast', 2000],
     ['زبان', 'language', 200],
     ['امتیاز', 'rating', 100],
+    ['لینک تریلر', 'trailerUrl', 2000],
+    ['پوستر فیلم', 'posterUrl', 2000],
   ]) {
     const value = safeText(record, sourceField, maxLength);
     if (value !== undefined) dto[targetField] = value;
@@ -145,7 +147,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       const sheetName = SHEETS[sheetIndex];
       try { validateSnapshot(sheetName, snapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
       snapshot.rows.forEach((row, rowIndex) => {
-        const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index]]));
+        const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index] ?? '']));
         const mapped = (() => { try { return mapCatalogSheetRow(sheetName, record); } catch (cause) { const error = new Error('Catalog sheet row mapping failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_row_mapping'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; } })();
         if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) { const error = new TypeError('Catalog sheet identity validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'catalog'; error.stage = 'sheet_identity_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; throw error; }
         seen.add(mapped.content.id);
