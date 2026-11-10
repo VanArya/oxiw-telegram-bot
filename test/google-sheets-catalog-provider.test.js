@@ -150,6 +150,42 @@ test('updates only explicitly editable catalog cells after checking the source-r
   }), (error) => error.code === 'VERSION_CONFLICT');
 });
 
+test('updates the system code only when the new identity is unique', async () => {
+  const values = {
+    "'سینمایی'": [
+      ['کد سیستم', 'اسم فیلم'],
+      ['old-code', 'عنوان اول'],
+      ['taken-code', 'عنوان دوم'],
+    ],
+  };
+  const client = { spreadsheets: { values: {
+    async get({ range }) { return { data: { values: values[range] || [] } }; },
+    async append() { return { data: {} }; },
+    async batchUpdate({ requestBody }) {
+      for (const entry of requestBody.data) {
+        const match = /!([A-Z]+)([0-9]+)$/.exec(entry.range);
+        const col = match[1].charCodeAt(0) - 65;
+        values["'سینمایی'"][Number(match[2]) - 1][col] = entry.values[0][0];
+      }
+      return { data: {} };
+    },
+  } } };
+  const provider = createGoogleSheetsCatalogProvider({ sheetsClient: client, spreadsheetId: spreadsheetIdFixture });
+  const snapshot = await provider.readSheet('سینمایی');
+  const record = Object.fromEntries(snapshot.headers.map((header, i) => [header, snapshot.rows[0][i] ?? '']));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  await assert.rejects(provider.updateCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'old-code', expectedVersion: version,
+    fields: { 'کد سیستم': 'taken-code' },
+  }), (error) => error.code === 'ALREADY_EXISTS');
+  const updated = await provider.updateCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'old-code', expectedVersion: version,
+    fields: { 'کد سیستم': 'new-code' },
+  });
+  assert.equal(values["'سینمایی'"][1][0], 'new-code');
+  assert.match(updated.sourceVersion, /^[A-Za-z0-9_-]{40,64}$/);
+});
+
 test('appends a new record using the live sheet header order and RAW values', async () => {
   const values = { "'سینمایی'": [['کد سیستم', 'اسم فیلم', 'Telegram File ID']] };
   let appended;

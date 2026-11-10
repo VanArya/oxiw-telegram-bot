@@ -81,7 +81,13 @@ test('reader creates new movie and series rows using each sheet schema', async (
       return { rowNumber: rowIndex + 2, sourceVersion: hash(record) };
     },
   };
-  const writableProvider = createInMemoryWritableCatalogMetadataProvider({ contentMetadata: [], categories: [], taxonomies: { country: [], genre: [] } });
+  const writableProvider = createInMemoryWritableCatalogMetadataProvider({
+    contentMetadata: [{
+      contentId: 'movie:created-movie', approvalStatus: 'approved', publicationStatus: 'draft',
+      countryIds: ['IR'], genreIds: ['drama'],
+    }],
+    categories: [], taxonomies: { country: [{ id: 'IR', labelFa: 'ایران', enabled: true }], genre: [{ id: 'drama', labelFa: 'درام', enabled: true }] },
+  });
   const reader = createCatalogAdminContentReader({ sheetProvider: provider, writableProvider });
   const movie = await reader.createItemSource('movie', {
     'کد سیستم': 'created-movie', 'اسم فیلم': 'فیلم تازه', 'سال': '2025', 'Telegram File ID': 'new-file',
@@ -99,6 +105,15 @@ test('reader creates new movie and series rows using each sheet schema', async (
   });
   assert.equal(updated.record['Telegram File ID'], 'updated-file');
   assert.equal(updated.record['اسم فیلم'], 'عنوان ویرایش‌شده');
+  const renamed = await reader.updateItemSource(movie.id, {
+    sourceVersion: updated.sourceVersion, fields: { 'کد سیستم': 'created-movie-renamed' },
+  });
+  assert.equal(renamed.id, 'movie:created-movie-renamed');
+  assert.equal(await writableProvider.getContentMetadata('movie:created-movie'), null);
+  assert.deepEqual(await writableProvider.getContentMetadata(renamed.id), {
+    contentId: renamed.id, approvalStatus: 'approved', publicationStatus: 'draft',
+    countryIds: ['IR'], genreIds: ['drama'],
+  });
 });
 
 test('admin content reader searches title or system code and applies filters before pagination', async () => {

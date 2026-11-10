@@ -89,7 +89,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion) ||
         !fields || typeof fields !== 'object' || Array.isArray(fields) ||
         Object.keys(fields).length === 0 ||
-        Object.keys(fields).some((key) => typeof key !== 'string' || !key.trim() || key === 'کد سیستم' || key === '__proto__' ||
+        Object.keys(fields).some((key) => typeof key !== 'string' || !key.trim() || key === '__proto__' ||
           key.length > 200 || /[\u0000]/.test(key))) {
       throw Object.assign(new Error('Invalid catalog row update.'), { code: 'INVALID_INPUT' });
     }
@@ -104,6 +104,13 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const { row, index } = matches[0];
       const record = Object.fromEntries(snapshot.headers.map((header, i) => [header, row[i] ?? '']));
+      if (Object.hasOwn(fields, 'کد سیستم')) {
+        const nextCode = String(fields['کد سیستم']).normalize('NFC').trim();
+        if (!nextCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
+        const duplicate = snapshot.rows.some((candidate, rowIndex) => rowIndex !== index &&
+          String(candidate[codeIndex] ?? '').normalize('NFC').trim() === nextCode);
+        if (duplicate) throw Object.assign(new Error('System code already exists.'), { code: 'ALREADY_EXISTS' });
+      }
       const currentVersion = crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url');
       if (currentVersion !== expectedVersion) {
         throw Object.assign(new Error('Catalog row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
@@ -115,7 +122,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         if (columnIndex < 0) throw Object.assign(new Error('Editable catalog column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
         data.push({
           range: `${quoteSheetRange(sheetName)}!${columnLetter(columnIndex + 1)}${index + 2}`,
-          values: [[value]],
+          values: [[field === 'کد سیستم' ? String(value).normalize('NFC').trim() : value]],
         });
       }
       try {
@@ -127,7 +134,14 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         throw classifyCatalogDependencyError('sheets', 'sheet_write', error, 'Unable to update catalog row.');
       }
       const updatedRecord = { ...record };
-      for (const [field, value] of Object.entries(fields)) updatedRecord[field] = String(value);
+      for (const [field, value] of Object.entries(fields)) {
+        updatedRecord[field] = field === 'کد سیستم'
+          ? String(value).normalize('NFC').trim()
+          : String(value);
+      }
+      if (Object.hasOwn(updatedRecord, 'کد سیستم')) {
+        updatedRecord['کد سیستم'] = String(updatedRecord['کد سیستم']).normalize('NFC').trim();
+      }
       return {
         sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
         rowNumber: index + 2,
