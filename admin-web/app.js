@@ -50,6 +50,8 @@ let selectedMetadata = null;
 let selectedSource = null;
 let creatingSourceKind = null;
 let selectedEtag = null;
+let seriesStructure = [];
+let structureEditor = null;
 let countryTerms = [];
 let genreTerms = [];
 let categoryTerms = [];
@@ -573,7 +575,10 @@ function renderContentRows(items) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'content-row-select';
+    const isChildItem = item.kind === 'season' || item.kind === 'episode';
     checkbox.checked = selectedContentIds.has(item.id);
+    checkbox.disabled = isChildItem;
+    checkbox.hidden = isChildItem;
     checkbox.setAttribute('aria-label', `انتخاب ${item.title}`);
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) selectedContentIds.add(item.id);
@@ -584,7 +589,7 @@ function renderContentRows(items) {
     const title = document.createElement('td');
     title.textContent = item.title;
     const kind = document.createElement('td');
-    kind.textContent = item.kind === 'movie' ? 'سینمایی' : 'سریال';
+    kind.textContent = ({ movie: 'سینمایی', series: 'سریال', season: 'فصل', episode: 'قسمت' })[item.kind] || 'نامشخص';
     const code = document.createElement('td');
     code.className = 'mono';
     code.textContent = item.systemCode;
@@ -601,8 +606,8 @@ function renderContentRows(items) {
     const open = document.createElement('button');
     open.type = 'button';
     open.className = 'button button-small button-secondary';
-    open.textContent = 'مدیریت';
-    open.addEventListener('click', () => void openContent(item));
+    open.textContent = isChildItem ? 'سریال مادر' : 'مدیریت';
+    open.addEventListener('click', () => void (isChildItem ? openParentSeries(item) : openContent(item)));
     action.append(open);
     const lifecycle = document.createElement('button');
     lifecycle.type = 'button';
@@ -716,26 +721,37 @@ async function changeContentLifecycle(item, lifecycleStatus) {
   if (!item || !hasPermission('catalog.metadata.write')) return;
   const disabling = lifecycleStatus === 'disabled';
   const actionLabel = disabling ? 'غیرفعال‌سازی' : 'بازگردانی';
-  const warning = disabling
-    ? 'این عنوان از کاتالوگ عمومی خارج می‌شود. با پیاده‌سازی فصل‌ها و قسمت‌ها، همین عملیات به تمام اجزای سریال نیز اعمال خواهد شد.'
-    : 'این عنوان دوباره در کاتالوگ فعال قرار می‌گیرد.';
+  const warning = item.kind === 'series' && disabling
+    ? 'تمام فصل‌ها و قسمت‌های این سریال نیز از نمایش عمومی خارج می‌شوند و با بازگردانی سریال دوباره در دسترس قرار می‌گیرند؛ وضعیت مستقل فصل‌ها و قسمت‌ها حفظ می‌شود.'
+    : disabling ? 'این مورد از نمایش عمومی خارج می‌شود.' : 'این مورد دوباره فعال می‌شود.';
   if (!window.confirm(`${actionLabel} «${item.title}» انجام شود؟\n${warning}`)) return;
   try {
-    let etag = null;
-    try {
-      const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
+    let path;
+    let etag;
+    if (item.kind === 'season' || item.kind === 'episode') {
+      const base = `${API_ROOT}/items/${encodeURIComponent(item.parentContentId)}/seasons/${item.seasonNumber}`;
+      path = item.kind === 'season' ? base : `${base}/episodes/${item.episodeNumber}`;
+      const current = await api(path);
       etag = current.etag;
-    } catch (error) {
-      if (error.status !== 404) throw error;
+      path += '/lifecycle';
+    } else {
+      path = `${API_ROOT}/items/${encodeURIComponent(item.id)}/lifecycle`;
+      try {
+        const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
+        etag = current.etag;
+      } catch (error) {
+        if (error.status !== 404) throw error;
+      }
     }
-    const result = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/lifecycle`, {
+    await api(path, {
       method: 'PATCH',
       headers: etag ? { 'If-Match': etag } : { 'If-None-Match': '*' },
       body: JSON.stringify({ lifecycleStatus }),
     });
-    showToast(disabling ? 'محتوا غیرفعال شد.' : 'محتوا بازگردانی شد.', 'success');
+    showToast(disabling ? 'مورد غیرفعال شد.' : 'مورد بازگردانی شد.', 'success');
     selectedContentIds.delete(item.id);
     await loadContent();
+    if (selectedItem?.id === item.parentContentId || selectedItem?.id === item.id) await loadSeriesStructure();
   } catch (error) {
     if (error.status === 412) {
       showToast('اطلاعات هم‌زمان تغییر کرده است؛ فهرست را تازه‌سازی کنید.', 'error');
@@ -745,23 +761,32 @@ async function changeContentLifecycle(item, lifecycleStatus) {
 }
 
 async function permanentlyDeleteContent(item) {
-  if (!item || item.lifecycleStatus !== 'disabled' || !item.sourceVersion) return;
-  if (!window.confirm(`حذف دائم «${item.title}» انجام شود؟\nاین عملیات قابل بازگشت نیست و اطلاعات منبع محتوا نیز حذف خواهد شد.`)) return;
+  if (!item || item.lifecycleStatus !== 'disabled') return;
+  if ((item.kind === 'movie' || item.kind === 'series') && !item.sourceVersion) return;
+  if (!window.confirm(`حذف دائم «${item.title}» انجام شود؟\nاین عملیات قابل بازگشت نیست و اطلاعات وابسته نیز حذف خواهند شد.`)) return;
   try {
-    const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
-    await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}`, {
-      method: 'DELETE',
-      headers: { 'If-Match': current.etag },
-      body: JSON.stringify({ sourceVersion: item.sourceVersion }),
-    });
-    showToast('محتوا به‌صورت دائم حذف شد.', 'success');
+    if (item.kind === 'season' || item.kind === 'episode') {
+      const base = `${API_ROOT}/items/${encodeURIComponent(item.parentContentId)}/seasons/${item.seasonNumber}`;
+      const path = item.kind === 'season' ? base : `${base}/episodes/${item.episodeNumber}`;
+      const current = await api(path);
+      await api(path, { method: 'DELETE', headers: { 'If-Match': current.etag } });
+    } else {
+      const current = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/metadata`);
+      await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}`, {
+        method: 'DELETE',
+        headers: { 'If-Match': current.etag },
+        body: JSON.stringify({ sourceVersion: item.sourceVersion }),
+      });
+    }
+    showToast('مورد به‌صورت دائم حذف شد.', 'success');
     await loadContent();
+    if (selectedItem?.id === item.parentContentId) await loadSeriesStructure();
   } catch (error) {
     if (error.status === 412) {
       showToast('اطلاعات محتوا تغییر کرده است؛ فهرست را تازه‌سازی و دوباره بررسی کنید.', 'error');
       await loadContent();
     } else if (error.status === 403) {
-      showToast('حذف دائم فقط برای مالک سامانه مجاز است.', 'error');
+      showToast('حذف دائم این مورد مجاز نیست.', 'error');
     } else reportApiError(error);
   }
 }
