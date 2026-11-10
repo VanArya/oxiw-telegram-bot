@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { assertVersionedWritableCatalogMetadataProvider } = require('./catalog-writable-metadata-provider');
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const { assertCatalogAuditEventSink } = require('./catalog-audit-event-sink');
+const { validateEpisode, validateSeason } = require('./catalog-series-structure-validation');
 const { classifyCatalogDependencyError, createCatalogDataValidationError } = require('./catalog-operational-errors');
 const {
   CatalogConflictError,
@@ -473,6 +474,80 @@ function createFirestoreWritableCatalogMetadataProvider({
         projectExisting: (data) => projectContent(data, contentId),
         entityType: 'content',
         entityId: contentId,
+        referenceCheck: contentId.startsWith('series:') ? async (transaction) => {
+          const seasonsCollection = firestore.collection('catalogSeriesStructures')
+            .doc(contentId).collection('seasons');
+          const seasonsSnapshot = await transaction.get(seasonsCollection);
+          if (!seasonsSnapshot || !Array.isArray(seasonsSnapshot.docs)) throw new TypeError();
+          const seasonEntries = [];
+          const episodeEntries = [];
+          for (const seasonDocument of seasonsSnapshot.docs) {
+            const seasonData = seasonDocument.data();
+            const seasonNumber = Number(String(seasonDocument.id).replace(/^season-/, ''));
+            if (!Number.isSafeInteger(seasonNumber) || seasonNumber < 1 ||
+                !Number.isSafeInteger(seasonData?._version) || seasonData._version < 1) throw new TypeError();
+            const season = validateSeason({
+              seasonNumber,
+              ...(seasonData.title === undefined ? {} : { title: seasonData.title }),
+              ...(seasonData.description === undefined ? {} : { description: seasonData.description }),
+              lifecycleStatus: seasonData.lifecycleStatus,
+            });
+            const episodesCollection = seasonsCollection.doc(seasonDocument.id).collection('episodes');
+            const episodesSnapshot = await transaction.get(episodesCollection);
+            if (!episodesSnapshot || !Array.isArray(episodesSnapshot.docs)) throw new TypeError();
+            seasonEntries.push({ document: seasonDocument, season, version: seasonData._version });
+            for (const episodeDocument of episodesSnapshot.docs) {
+              const episodeData = episodeDocument.data();
+              const episodeNumber = Number(String(episodeDocument.id).replace(/^episode-/, ''));
+              if (!Number.isSafeInteger(episodeNumber) || episodeNumber < 1 ||
+                  !Number.isSafeInteger(episodeData?._version) || episodeData._version < 1) throw new TypeError();
+              const episode = validateEpisode({
+                episodeNumber,
+                ...(episodeData.title === undefined ? {} : { title: episodeData.title }),
+                ...(episodeData.description === undefined ? {} : { description: episodeData.description }),
+                ...(episodeData.releaseDate === undefined ? {} : { releaseDate: episodeData.releaseDate }),
+                lifecycleStatus: episodeData.lifecycleStatus,
+                downloadLinks: episodeData.downloadLinks,
+              });
+              episodeEntries.push({
+                document: episodeDocument,
+                episode,
+                seasonNumber,
+                version: episodeData._version,
+              });
+            }
+          }
+          if (seasonEntries.length + episodeEntries.length > 240) {
+            throw new CatalogConflictError('CASCADE_LIMIT_EXCEEDED');
+          }
+          for (const entry of episodeEntries) {
+            transaction.delete(entry.document.ref || seasonsCollection.doc(seasonDocumentId(entry.seasonNumber))
+              .collection('episodes').doc(episodeDocumentId(entry.episode.episodeNumber)));
+            await auditEventSink.appendInTransaction(transaction, eventFor({
+              operation: 'episode.deleted',
+              entityType: 'episode',
+              entityId: `${contentId}:season:${entry.seasonNumber}:episode:${entry.episode.episodeNumber}`,
+              options,
+              previousVersion: entry.version,
+              version: entry.version + 1,
+              fields: ['deleted'],
+              clock,
+            }));
+          }
+          for (const entry of seasonEntries) {
+            transaction.delete(entry.document.ref || seasonsCollection.doc(seasonDocumentId(entry.season.seasonNumber)));
+            await auditEventSink.appendInTransaction(transaction, eventFor({
+              operation: 'season.deleted',
+              entityType: 'season',
+              entityId: `${contentId}:season:${entry.season.seasonNumber}`,
+              options,
+              previousVersion: entry.version,
+              version: entry.version + 1,
+              fields: ['deleted'],
+              clock,
+            }));
+          }
+        } : undefined,
       });
     },
     async updateApprovalStatus(contentId, approvalStatus, options) {
