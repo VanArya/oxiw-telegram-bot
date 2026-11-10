@@ -11,6 +11,7 @@ const {
   ROLES,
 } = require('./catalog-admin-authorization');
 const { normalizeCatalogAdminRoles } = require('./catalog-admin-role-provider');
+const { CatalogSeriesStructureInputError } = require('./catalog-series-structure-validation');
 const {
   assertVersionedWritableCatalogMetadataProvider,
 } = require('./catalog-writable-metadata-provider');
@@ -978,6 +979,10 @@ function createCatalogAdminApi({
     const precondition = readIfMatch(req, res, 'season', structureEntityId(req.params.contentId, seasonNumber));
     if (!precondition || res.headersSent) return;
     try {
+      const current = await seriesStructureProvider.getSeasonWithVersion(req.params.contentId, seasonNumber);
+      if (!current) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
+      if (current.version !== precondition.expectedVersion) return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ فصل تغییر کرده است.');
+      if (current.value.lifecycleStatus !== 'disabled') return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا فصل را غیرفعال کنید.');
       const deleted = await seriesStructureProvider.deleteSeason(req.params.contentId, seasonNumber, {
         ...precondition,
         actorId: res.locals.catalogAdminPrincipal.subjectId,
@@ -1077,6 +1082,10 @@ function createCatalogAdminApi({
     const precondition = readIfMatch(req, res, 'episode', structureEntityId(req.params.contentId, seasonNumber, episodeNumber));
     if (!precondition || res.headersSent) return;
     try {
+      const current = await seriesStructureProvider.getEpisodeWithVersion(req.params.contentId, seasonNumber, episodeNumber);
+      if (!current) return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
+      if (current.version !== precondition.expectedVersion) return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ قسمت تغییر کرده است.');
+      if (current.value.lifecycleStatus !== 'disabled') return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا قسمت را غیرفعال کنید.');
       const deleted = await seriesStructureProvider.deleteEpisode(req.params.contentId, seasonNumber, episodeNumber, {
         ...precondition,
         actorId: res.locals.catalogAdminPrincipal.subjectId,
