@@ -756,7 +756,7 @@ test('source editor API exposes all sheet columns, allows identity changes, and 
     async getItemSource(id) { return id === item.id ? structuredClone(item) : null; },
     async getSheetSchema(kind) { return { kind, sheetName: kind === 'movie' ? 'سینمایی' : 'سریال', headers: item.headers }; },
     async updateItemSource(id, options) {
-      assert.equal(id, contentId);
+      assert.equal(id, item.id);
       assert.equal(options.sourceVersion, 'a'.repeat(43));
       assert.equal(options.actorId, 'fixture-admin');
       Object.assign(item.record, options.fields);
@@ -785,7 +785,7 @@ test('source editor API exposes all sheet columns, allows identity changes, and 
 
     const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sourceVersion: 'a'.repeat(43), fields: { 'اسم فیلم': 'عنوان تازه', 'Telegram File ID': 'new-file-id' } }),
+      body: JSON.stringify({ sourceVersion: 'a'.repeat(43), fields: { 'کد سیستم': 'changed', 'اسم فیلم': 'عنوان تازه', 'Telegram File ID': 'new-file-id' } }),
     }));
     assert.equal(result.status, 200);
     assert.equal(result.body.data.record['Telegram File ID'], 'new-file-id');
