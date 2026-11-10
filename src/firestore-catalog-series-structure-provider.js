@@ -95,15 +95,25 @@ function createFirestoreCatalogSeriesStructureProvider({
   firestore,
   auditEventSink,
   collection = DEFAULT_COLLECTION,
+  contentMetadataCollection = 'catalogContentMetadata',
   clock = () => new Date(),
 } = {}) {
   if (!firestore || typeof firestore.collection !== 'function' ||
       typeof firestore.runTransaction !== 'function' ||
       typeof collection !== 'string' || collection.trim() === '' ||
+      typeof contentMetadataCollection !== 'string' || contentMetadataCollection.trim() === '' ||
       typeof clock !== 'function') {
     throw new TypeError('Invalid series structure provider configuration.');
   }
   assertCatalogAuditEventSink(auditEventSink);
+
+  async function assertParentSeriesActive(transaction, seriesId) {
+    const parent = await transaction.get(firestore.collection(contentMetadataCollection).doc(validateSeriesId(seriesId)));
+    if (parent?.exists) {
+      const data = parent.data();
+      if (data?.lifecycleStatus === 'disabled') throw new CatalogConflictError('PARENT_DISABLED');
+    }
+  }
 
   function seriesRef(seriesId) {
     return firestore.collection(collection).doc(validateSeriesId(seriesId));
@@ -126,7 +136,7 @@ function createFirestoreCatalogSeriesStructureProvider({
     return stored ? { value: project(reference.path.split('/').at(-1), stored.data), version: stored.version } : null;
   }
 
-  async function writeRecord({ reference, options, validator, input, entityType, entityId, operationFor, fields }) {
+  async function writeRecord({ reference, options, validator, input, entityType, entityId, operationFor, fields, beforeWrite }) {
     const writeOptions = validateExpectedVersion(options);
     if (!writeOptions.actorId) throw new CatalogSeriesStructureInputError('ACTOR_REQUIRED');
     const timestamp = clock();
@@ -138,6 +148,7 @@ function createFirestoreCatalogSeriesStructureProvider({
         throw new CatalogConflictError('VERSION_CONFLICT');
       }
       const previous = stored ? validator(reference.path.split('/').at(-1), stored.data) : null;
+      if (beforeWrite) await beforeWrite(transaction, previous);
       const next = validator(reference.path.split('/').at(-1), input);
       const version = (stored?.version ?? 0) + 1;
       const now = timestamp.toISOString();
@@ -220,6 +231,7 @@ function createFirestoreCatalogSeriesStructureProvider({
         entityId: `${seriesId}:season:${season.seasonNumber}`,
         operationFor: () => 'season.created',
         fields: ['seasonNumber', 'title', 'description', 'lifecycleStatus'],
+        beforeWrite: (transaction) => assertParentSeriesActive(transaction, seriesId),
       });
     },
     async updateSeason(seriesId, seasonNumber, value, options) {
@@ -314,6 +326,7 @@ function createFirestoreCatalogSeriesStructureProvider({
         if (existing) throw new CatalogConflictError('ALREADY_EXISTS');
         const writeOptions = validateExpectedVersion(options);
         if (writeOptions.expectedVersion !== 0) throw new CatalogConflictError('ALREADY_EXISTS');
+        await assertParentSeriesActive(transaction, seriesId);
         if (!writeOptions.actorId) throw new CatalogSeriesStructureInputError('ACTOR_REQUIRED');
         const now = clock();
         if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError();
@@ -369,6 +382,21 @@ function createFirestoreCatalogSeriesStructureProvider({
         entityType: 'episode',
         entityId: `${seriesId}:season:${seasonNumber}:episode:${episodeNumber}`,
       });
+    },
+    async getStructureCounts(seriesId) {
+      validateSeriesId(seriesId);
+      const snapshot = await seasonsRef(seriesId).get();
+      if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
+      let episodes = 0;
+      for (const doc of snapshot.docs) {
+        const seasonNumber = Number(String(doc.id).replace(/^season-/, ''));
+        if (!Number.isSafeInteger(seasonNumber) || seasonNumber < 1) throw new TypeError();
+        const episodeSnapshot = await episodesRef(seriesId, seasonNumber).get();
+        if (!episodeSnapshot || !Array.isArray(episodeSnapshot.docs)) throw new TypeError();
+        episodes += episodeSnapshot.docs.length;
+      }
+      return { seasons: snapshot.docs.length, episodes, total: snapshot.docs.length + episodes,
+        maxAtomicDeleteItems: MAX_ATOMIC_CASCADE_ITEMS };
     },
     async listStructure(seriesId, { includeDisabled = false, parentLifecycleStatus = 'active' } = {}) {
       validateSeriesId(seriesId);
