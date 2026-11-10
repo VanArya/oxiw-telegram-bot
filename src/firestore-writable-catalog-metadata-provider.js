@@ -473,6 +473,7 @@ function createFirestoreWritableCatalogMetadataProvider({
       }));
     },
     async deleteCategory(categoryId, options) {
+      if (typeof categoryId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(categoryId)) throw new CatalogInputError('INVALID_CATEGORY_ID');
       return deleteVersionedRecord({
         reference: categoryRef(categoryId),
         options,
@@ -490,6 +491,10 @@ function createFirestoreWritableCatalogMetadataProvider({
     },
     async deleteTaxonomyTerm(type, termId, options) {
       if (!TAXONOMY_TYPES.has(type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+      const validId = type === 'country'
+        ? typeof termId === 'string' && /^[A-Z]{2}$/.test(termId)
+        : typeof termId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(termId);
+      if (!validId) throw new CatalogInputError('INVALID_TAXONOMY_ID');
       return deleteVersionedRecord({
         reference: taxonomyRef(type, termId),
         options,
