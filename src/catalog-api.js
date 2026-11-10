@@ -169,6 +169,7 @@ function createCatalogApi({
   provider,
   categories = [],
   metadataProvider,
+  seriesStructureProvider,
   logger = createCatalogOperationalLogger(),
 }) {
   const adapter = createCatalogSheetAdapter(provider, { metadataProvider });
@@ -236,6 +237,44 @@ function createCatalogApi({
       const item = items.find((candidate) => candidate.id === req.params.id);
       if (!item) throw new ApiError(404, 'NOT_FOUND', 'محتوا پیدا نشد.');
       return res.json({ data: item });
+    } catch (error) {
+      return sendError(res, error);
+    }
+  });
+
+  app.get(`${BASE_PATH}/items/:id/seasons`, async (req, res) => {
+    try {
+      if (!seriesStructureProvider || typeof seriesStructureProvider.listStructure !== 'function') {
+        throw new ApiError(503, 'SERIES_STRUCTURE_UNAVAILABLE', 'ساختار فصل و قسمت در دسترس نیست.');
+      }
+      const items = await adapter.listItems();
+      const item = items.find((candidate) => candidate.id === req.params.id);
+      if (!item) throw new ApiError(404, 'NOT_FOUND', 'سریال پیدا نشد.');
+      if (item.kind !== 'series') throw new ApiError(400, 'SERIES_REQUIRED', 'این محتوا سریال نیست.');
+      const metadata = await metadataProvider.getContentMetadata(item.id);
+      const structure = await seriesStructureProvider.listStructure(item.id, {
+        parentLifecycleStatus: metadata?.lifecycleStatus ?? 'active',
+      });
+      return res.json({
+        data: structure.map(({ value, episodes }) => ({
+          seasonNumber: value.seasonNumber,
+          ...(value.title === undefined ? {} : { title: value.title }),
+          ...(value.description === undefined ? {} : { description: value.description }),
+          episodes: episodes.map(({ value: episode }) => ({
+            episodeNumber: episode.episodeNumber,
+            ...(episode.title === undefined ? {} : { title: episode.title }),
+            ...(episode.description === undefined ? {} : { description: episode.description }),
+            ...(episode.releaseDate === undefined ? {} : { releaseDate: episode.releaseDate }),
+            downloadLinks: episode.downloadLinks.filter((link) => link.enabled).map((link) => ({
+              id: link.id,
+              label: link.label,
+              url: link.url,
+              ...(link.sizeBytes === undefined ? {} : { sizeBytes: link.sizeBytes }),
+              sortOrder: link.sortOrder,
+            })),
+          })),
+        })),
+      });
     } catch (error) {
       return sendError(res, error);
     }
