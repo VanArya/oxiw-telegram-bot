@@ -87,6 +87,10 @@
 
             <section id="view-content" class="view">
               <div class="page-heading"><div><p class="eyebrow">منبع: Sheets · وضعیت: Firestore</p><h1>فیلم‌ها و سریال‌ها</h1><p class="muted">همهٔ ردیف‌ها، از جمله پیش‌نویس‌ها و موارد فاقد metadata</p></div><div class="form-actions"><button id="content-new-movie" data-permission="catalog.metadata.write" class="button button-primary" type="button">افزودن فیلم</button><button id="content-new-series" data-permission="catalog.metadata.write" class="button button-primary" type="button">افزودن سریال</button><button class="button button-secondary refresh-button" data-refresh="content" type="button">به‌روزرسانی</button></div></div>
+              <div class="catalog-settings-tabs content-lifecycle-tabs" role="tablist" aria-label="وضعیت محتوا">
+                <button class="button button-primary" data-lifecycle-view="active" type="button" aria-pressed="true">محتوای فعال</button>
+                <button class="button button-secondary" data-lifecycle-view="disabled" type="button" aria-pressed="false">غیرفعال‌شده‌ها</button>
+              </div>
               <div class="panel toolbar">
                 <label class="search-control"><span>جست‌وجو</span><input id="content-search" type="search" maxlength="100" placeholder="عنوان یا کد سیستم"></label>
                 <label><span>نوع</span><select id="content-kind"><option value="">همه</option><option value="movie">سینمایی</option><option value="series">سریال</option></select></label>
