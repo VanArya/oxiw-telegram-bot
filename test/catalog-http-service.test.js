@@ -458,7 +458,7 @@ test('logs safe Sheets and Firestore diagnostics correlated with the public requ
           const error = new Error('apiKey=secret-key row=private-row header=private-header');
           error.response = { status: 403, data: { secret: 'private-response' } };
           throw error;
-        } } },
+        }, async batchUpdate() { return { data: {} }; } } },
       },
       spreadsheetId: 'sensitive-spreadsheet-id',
     });
@@ -545,7 +545,7 @@ test('logs safe Sheets and Firestore diagnostics correlated with the public requ
     const logger = { logFailure() { throw new Error('private logger failure'); } };
     const provider = createGoogleSheetsCatalogProvider({
       sheetsClient: {
-        spreadsheets: { values: { async get() { throw Object.assign(new Error('private api error'), { code: 'ETIMEDOUT' }); } } },
+        spreadsheets: { values: { async get() { throw Object.assign(new Error('private api error'), { code: 'ETIMEDOUT' }); }, async batchUpdate() { return { data: {} }; } } },
       },
       spreadsheetId: 'sensitive-spreadsheet-id',
     });
