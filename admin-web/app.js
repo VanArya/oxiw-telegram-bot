@@ -19,7 +19,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const elements = Object.fromEntries([
   'bootScreen', 'bootMessage', 'missingConfig', 'bootRetry', 'loginScreen', 'loginMessage',
   'noAccessScreen', 'noAccessMessage', 'noAccessEmail', 'noAccessUid', 'dashboard',
-  'globalMessage', 'contentRows', 'contentCount', 'contentPage', 'contentPrev', 'contentNext',
+  'globalMessage', 'contentRows', 'contentCount', 'contentPage', 'contentPrev', 'contentNext', 'contentSourceWarning',
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'contentCountry', 'contentGenre', 'contentCategory', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
@@ -708,6 +708,11 @@ async function loadContent() {
     for (const id of selectedContentIds) if (!visibleIds.has(id)) selectedContentIds.delete(id);
     contentTotal = body.meta.total;
     contentStats = body.meta.stats;
+    const invalidSourceRows = Number(body.meta.invalidSourceRows) || 0;
+    elements.contentSourceWarning.hidden = invalidSourceRows === 0;
+    setText(elements.contentSourceWarning, invalidSourceRows
+      ? `هشدار: ${invalidSourceRows.toLocaleString('fa-IR')} ردیف نامعتبر از شیت نادیده گرفته شد. فهرست موارد سالم نمایش داده شده است؛ برای شناسایی دقیق ردیف‌ها، لاگ سرویس را بررسی کنید.`
+      : '');
     renderContentRows(currentItems);
     updateBulkControls();
     setText(elements.contentCount, `${contentTotal.toLocaleString('fa-IR')} مورد`);

@@ -135,7 +135,7 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
   return Object.freeze(dto);
 }
 
-function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {}) {
+function createCatalogAdminContentReader({ sheetProvider, writableProvider, onInvalidSourceRow } = {}) {
   if (!sheetProvider || typeof sheetProvider.readSheet !== 'function' ||
       !writableProvider || typeof writableProvider.getContentMetadataWithVersion !== 'function') {
     throw new TypeError('Catalog admin content reader dependencies are incomplete.');
@@ -145,15 +145,40 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     const snapshots = await Promise.all(SHEETS.map((name) => atStage('sheet_read', () => sheetProvider.readSheet(name))));
     const seen = new Set();
     const sourceItems = [];
+    const invalidSourceRows = [];
     snapshots.forEach((snapshot, sheetIndex) => {
       const sheetName = SHEETS[sheetIndex];
       try { validateSnapshot(sheetName, snapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
       snapshot.rows.forEach((row, rowIndex) => {
         const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index] ?? '']));
-        const mapped = (() => { try { return mapCatalogSheetRow(sheetName, record); } catch (cause) { const error = new Error('Catalog sheet row mapping failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_row_mapping'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; } })();
+        const sourceRowNumber = rowIndex + 2;
+        let mapped;
+        try {
+          mapped = mapCatalogSheetRow(sheetName, record);
+        } catch (cause) {
+          const message = typeof cause?.message === 'string' ? cause.message : '';
+          const validationIssue = message.startsWith('Missing or invalid required field:')
+            ? 'required_field_invalid'
+            : message.startsWith('Invalid year field:')
+              ? 'year_field_invalid'
+              : message.includes('start year cannot be after end year')
+                ? 'series_year_range_invalid'
+                : 'row_mapping_invalid';
+          const diagnostic = Object.freeze({
+            sheetName,
+            rowNumber: sourceRowNumber,
+            stage: 'sheet_row_mapping',
+            validationIssue,
+          });
+          invalidSourceRows.push(diagnostic);
+          if (typeof onInvalidSourceRow === 'function') {
+            try { onInvalidSourceRow(diagnostic); } catch { /* diagnostics must not break reads */ }
+          }
+          return;
+        }
         if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) { const error = new TypeError('Catalog sheet identity validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'catalog'; error.stage = 'sheet_identity_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; throw error; }
         seen.add(mapped.content.id);
-        sourceItems.push({ mapped, record, sourceRowNumber: rowIndex + 2 });
+        sourceItems.push({ mapped, record, sourceRowNumber });
       });
     });
 
@@ -162,7 +187,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
         .map((entry) => [entry.value.contentId, entry])))
       : null;
 
-    return Promise.all(sourceItems.map(async ({ mapped, record, sourceRowNumber }) => {
+    const items = await Promise.all(sourceItems.map(async ({ mapped, record, sourceRowNumber }) => {
       const versioned = metadataById
         ? metadataById.get(mapped.content.id) ?? null
         : await writableProvider.getContentMetadataWithVersion(mapped.content.id);
@@ -179,6 +204,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       }
       return projectAdminItem(mapped, record, metadataRecord, sourceRowNumber);
     }));
+    return { items, invalidSourceRows };
   }
 
   async function readSourceRecord(kind, systemCode) {
@@ -203,11 +229,13 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
 
   return Object.freeze({
     async getItem(contentId) {
-      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
       return item || null;
     },
     async getItemSource(contentId) {
-      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
       if (!item) return null;
       const source = await readSourceRecord(item.kind, item.systemCode);
       return source ? Object.freeze({ id: item.id, kind: item.kind, systemCode: item.systemCode, ...source }) : null;
@@ -236,7 +264,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     },
     async updateItemSource(contentId, { sourceVersion, fields, actorId } = {}) {
       if (typeof sheetProvider.updateCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
-      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
       if (!item) return null;
       const current = await readSourceRecord(item.kind, item.systemCode);
       if (!current) return null;
@@ -257,7 +286,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     },
     async list(query) {
       const parsed = parseQuery(query);
-      const allItems = await readAllItems();
+      const { items: allItems, invalidSourceRows } = await readAllItems();
       const [categories, countries, genres] = await Promise.all([
         writableProvider.listCategories(),
         writableProvider.listTaxonomyTerms('country'),
@@ -312,6 +341,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
           pageSize: parsed.pageSize,
           total: filtered.length,
           stats: Object.freeze(stats),
+          invalidSourceRows: invalidSourceRows.length,
         }),
       });
     },
