@@ -743,45 +743,66 @@ test('only one concurrent write using the same ETag succeeds', async () => {
   });
 });
 
-test('source editor API enforces the editor permission and forwards versioned allowlisted fields', async () => {
+test('source editor API exposes all sheet columns, protects identity, and creates sheet rows', async () => {
   const store = createStore();
   const item = {
-    id: contentId, kind: 'movie', systemCode: 'admin-fixture-1', title: 'عنوان قدیمی',
-    sourceVersion: 'a'.repeat(43), sourceAvailableFields: ['title', 'releaseYear'],
+    id: contentId, kind: 'movie', systemCode: 'admin-fixture-1',
+    sourceVersion: 'a'.repeat(43),
+    headers: ['کد سیستم', 'اسم فیلم', 'سال', 'Telegram File ID'],
+    record: { 'کد سیستم': 'admin-fixture-1', 'اسم فیلم': 'عنوان قدیمی', 'سال': '2020', 'Telegram File ID': 'file-secret' },
   };
+  let created = null;
   const contentReader = {
-    async getItem(id) { return id === contentId ? { ...item } : null; },
+    async getItemSource(id) { return id === contentId ? structuredClone(item) : null; },
+    async getSheetSchema(kind) { return { kind, sheetName: kind === 'movie' ? 'سینمایی' : 'سریال', headers: item.headers }; },
     async updateItemSource(id, options) {
       assert.equal(id, contentId);
       assert.equal(options.sourceVersion, 'a'.repeat(43));
       assert.equal(options.actorId, 'fixture-admin');
-      item.title = options.fields.title;
+      Object.assign(item.record, options.fields);
       item.sourceVersion = 'b'.repeat(43);
-      return { ...item };
+      return structuredClone(item);
+    },
+    async createItemSource(kind, fields) {
+      created = { kind, fields };
+      return { id: `${kind}:new-record`, kind, systemCode: fields['کد سیستم'], record: fields };
     },
   };
   const app = createCatalogAdminApi({
-    writableProvider: store,
-    contentReader,
+    writableProvider: store, contentReader,
     verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
     roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
     authorizePermission: roleAuthorizer,
   });
   await withServer(app, async (baseUrl) => {
+    const read = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`));
+    assert.equal(read.status, 200);
+    assert.equal(read.body.data.record['Telegram File ID'], 'file-secret');
+
     const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sourceVersion: 'a'.repeat(43), fields: { title: 'عنوان تازه', releaseYear: 2024 } }),
+      body: JSON.stringify({ sourceVersion: 'a'.repeat(43), fields: { 'اسم فیلم': 'عنوان تازه', 'Telegram File ID': 'new-file-id' } }),
     }));
     assert.equal(result.status, 200);
-    assert.equal(result.body.data.title, 'عنوان تازه');
+    assert.equal(result.body.data.record['Telegram File ID'], 'new-file-id');
 
     const invalid = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
       method: 'PUT', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sourceVersion: 'b'.repeat(43), fields: { systemCode: 'changed' } }),
+      body: JSON.stringify({ sourceVersion: 'b'.repeat(43), fields: { 'کد سیستم': 'changed' } }),
     }));
     assert.equal(invalid.status, 400);
+
+    const schema = await json(await fetch(`${baseUrl}${ADMIN_PATH}/source-schema/movie`));
+    assert.equal(schema.status, 200);
+    const add = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/source`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'movie', fields: { 'کد سیستم': 'new-record', 'اسم فیلم': 'فیلم تازه', 'سال': '2025', 'Telegram File ID': 'new-file' } }),
+    }));
+    assert.equal(add.status, 201);
+    assert.equal(created.fields['Telegram File ID'], 'new-file');
   });
 });
+
 
 test('bulk approval and publication process selected records independently with approval gating', async () => {
   const secondId = createCatalogContentId('series', 'admin-fixture-2');
