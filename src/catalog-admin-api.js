@@ -119,7 +119,7 @@ function sendKnownError(res, error) {
     }
     const code = error.code === 'PUBLICATION_REQUIRES_APPROVAL'
       ? 'APPROVAL_REQUIRED'
-      : ['CATEGORY_IN_USE', 'CATEGORY_REFERENCE_INVALID', 'TAXONOMY_REFERENCE_INVALID'].includes(error.code)
+      : ['CATEGORY_IN_USE', 'TAXONOMY_TERM_IN_USE', 'CATEGORY_REFERENCE_INVALID', 'TAXONOMY_REFERENCE_INVALID'].includes(error.code)
         ? error.code
         : 'CONFLICT';
     const message = code === 'APPROVAL_REQUIRED'
@@ -847,6 +847,42 @@ function createCatalogAdminApi({
     return sendVersioned(res, precondition.isCreate ? 201 : 200,
       `taxonomy-${req.params.type}`, req.params.termId, saved,
       (value) => publicAdminTaxonomy(req.params.type, value));
+  }));
+
+  app.delete(`${BASE_PATH}/categories/:categoryId`, requirePermission(PERMISSIONS.CATEGORIES_MANAGE), asyncRoute(async (req, res) => {
+    const precondition = readIfMatch(req, res, 'category', req.params.categoryId);
+    if (!precondition || res.headersSent) return;
+    if (typeof provider.deleteCategory !== 'function') return sendError(res, 503, 'DELETE_NOT_CONFIGURED', 'حذف دسته‌بندی پیکربندی نشده است.');
+    try {
+      const deleted = await provider.deleteCategory(req.params.categoryId, {
+        ...precondition, actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.json({ data: { id: req.params.categoryId, deleted: true, version: deleted.version } });
+    } catch (error) {
+      if (error instanceof CatalogConflictError && error.code === 'CATEGORY_IN_USE') {
+        return sendError(res, 409, 'CATEGORY_IN_USE', 'این دسته‌بندی هنوز به محتوا اختصاص دارد و قابل حذف نیست.');
+      }
+      return sendKnownError(res, error);
+    }
+  }));
+
+  app.delete(`${BASE_PATH}/taxonomies/:type/:termId`, requirePermission(PERMISSIONS.TAXONOMIES_MANAGE), asyncRoute(async (req, res) => {
+    if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+    const resourceType = `taxonomy-${req.params.type}`;
+    const precondition = readIfMatch(req, res, resourceType, req.params.termId);
+    if (!precondition || res.headersSent) return;
+    if (typeof provider.deleteTaxonomyTerm !== 'function') return sendError(res, 503, 'DELETE_NOT_CONFIGURED', 'حذف اصطلاح پیکربندی نشده است.');
+    try {
+      const deleted = await provider.deleteTaxonomyTerm(req.params.type, req.params.termId, {
+        ...precondition, actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.json({ data: { id: req.params.termId, type: req.params.type, deleted: true, version: deleted.version } });
+    } catch (error) {
+      if (error instanceof CatalogConflictError && error.code === 'TAXONOMY_TERM_IN_USE') {
+        return sendError(res, 409, 'TAXONOMY_TERM_IN_USE', 'این مورد هنوز در فرادادهٔ محتوا استفاده شده و قابل حذف نیست.');
+      }
+      return sendKnownError(res, error);
+    }
   }));
 
   app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'مسیر درخواست پیدا نشد.'));
