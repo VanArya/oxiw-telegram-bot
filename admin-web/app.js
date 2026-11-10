@@ -711,7 +711,7 @@ async function changeContentLifecycle(item, lifecycleStatus) {
   const warning = disabling
     ? 'این عنوان از کاتالوگ عمومی خارج می‌شود. با پیاده‌سازی فصل‌ها و قسمت‌ها، همین عملیات به تمام اجزای سریال نیز اعمال خواهد شد.'
     : 'این عنوان دوباره در کاتالوگ فعال قرار می‌گیرد.';
-  if (!window.confirm(`${actionLabel} «${item.title}» انجام شود؟\\n${warning}`)) return;
+  if (!window.confirm(`${actionLabel} «${item.title}» انجام شود؟\n${warning}`)) return;
   try {
     let etag = null;
     try {
