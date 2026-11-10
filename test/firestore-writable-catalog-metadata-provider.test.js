@@ -428,6 +428,12 @@ test('permanent series deletion cascades through seasons and episodes in the met
     expectedVersion: 1,
     actorId: 'admin-test-1',
   });
+  const counts = await structureProvider.getStructureCounts(seriesId);
+  assert.deepEqual(counts, { seasons: 1, episodes: 1, total: 2, maxAtomicDeleteItems: 240 });
+  await assert.rejects(structureProvider.createSeason(seriesId, { seasonNumber: 2 }, {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  }), (error) => error.code === 'PARENT_DISABLED');
 
   await metadataProvider.deleteContentMetadata(seriesId, {
     expectedVersion: 2,
