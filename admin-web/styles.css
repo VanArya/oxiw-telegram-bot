@@ -163,3 +163,5 @@ tbody tr:hover { background: #fbfdfd; }
 .manager-role-options .fine-print { grid-column: 1 / -1; margin: .2rem 0 0; }
 
 .bulk-actions{display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.8rem 1rem;margin:0 0 .75rem}.bulk-actions strong{font-size:.82rem;color:var(--teal)}.content-row-select,#content-select-all{width:1rem;min-height:1rem;accent-color:var(--teal)}
+
+.record-button{display:flex;align-items:center;justify-content:space-between;gap:.8rem}.record-details{display:grid;gap:.18rem;min-width:0}.record-edit{flex:0 0 auto}
