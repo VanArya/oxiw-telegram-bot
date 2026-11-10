@@ -14,6 +14,10 @@ const DEFAULT_COLLECTION = 'catalogSeriesStructures';
 const INTERNAL_VERSION = '_version';
 const MAX_ATOMIC_CASCADE_ITEMS = 240;
 
+function safeStorageError() {
+  return new Error('Unable to access series structure storage.');
+}
+
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -164,7 +168,7 @@ function createFirestoreCatalogSeriesStructureProvider({
       return { value: validator(reference.path.split('/').at(-1), data), version };
     }).catch((error) => {
       if (error instanceof CatalogConflictError || error instanceof CatalogSeriesStructureInputError) throw error;
-      throw error;
+      throw safeStorageError();
     });
   }
 
@@ -236,8 +240,9 @@ function createFirestoreCatalogSeriesStructureProvider({
     async setSeasonLifecycleStatus(seriesId, seasonNumber, lifecycleStatus, options) {
       const current = await provider.getSeasonWithVersion(seriesId, seasonNumber);
       if (!current) throw new CatalogNotFoundError('SEASON_NOT_FOUND');
+      const { disabledAt, disabledBy, createdAt, updatedAt, ...editable } = current.value;
       return provider.updateSeason(seriesId, seasonNumber, {
-        ...current.value,
+        ...editable,
         lifecycleStatus,
       }, options);
     },
@@ -308,6 +313,7 @@ function createFirestoreCatalogSeriesStructureProvider({
         const existing = snapshotValue(await transaction.get(reference));
         if (existing) throw new CatalogConflictError('ALREADY_EXISTS');
         const writeOptions = validateExpectedVersion(options);
+        if (writeOptions.expectedVersion !== 0) throw new CatalogConflictError('ALREADY_EXISTS');
         if (!writeOptions.actorId) throw new CatalogSeriesStructureInputError('ACTOR_REQUIRED');
         const now = clock();
         if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError();
@@ -349,8 +355,9 @@ function createFirestoreCatalogSeriesStructureProvider({
       if (!['active', 'disabled'].includes(lifecycleStatus)) throw new CatalogSeriesStructureInputError('INVALID_LIFECYCLE_STATUS');
       const current = await provider.getEpisodeWithVersion(seriesId, seasonNumber, episodeNumber);
       if (!current) throw new CatalogNotFoundError('EPISODE_NOT_FOUND');
+      const { disabledAt, disabledBy, createdAt, updatedAt, ...editable } = current.value;
       return provider.updateEpisode(seriesId, seasonNumber, episodeNumber, {
-        ...current.value,
+        ...editable,
         lifecycleStatus,
       }, options);
     },
