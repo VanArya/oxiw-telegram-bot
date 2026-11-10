@@ -629,7 +629,7 @@ function createCatalogAdminApi({
       throw new CatalogInputError();
     }
     for (const [header, value] of Object.entries(fields)) {
-      if (!headers.includes(header) || (!create && header === 'کد سیستم') ||
+      if (!headers.includes(header) ||
           typeof value !== 'string' || value.length > 20000 || header.length > 200) {
         throw new CatalogInputError();
       }
@@ -637,6 +637,7 @@ function createCatalogAdminApi({
     if (create && (typeof fields['کد سیستم'] !== 'string' || !fields['کد سیستم'].trim() ||
         typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim())) throw new CatalogInputError();
     if (Object.hasOwn(fields, 'اسم فیلم') && !fields['اسم فیلم'].trim()) throw new CatalogInputError();
+    if (Object.hasOwn(fields, 'کد سیستم') && !fields['کد سیستم'].trim()) throw new CatalogInputError();
     for (const header of ['سال', 'سال شروع', 'سال پایان']) {
       if (Object.hasOwn(fields, header) && fields[header] !== '' &&
           !(header === 'سال پایان' && fields[header] === 'در حال پخش') &&
@@ -700,6 +701,8 @@ function createCatalogAdminApi({
       if (error?.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'اطلاعات در Google Sheets تغییر کرده است؛ دادهٔ تازه را بارگذاری کنید.');
       if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 404, 'NOT_FOUND', 'ردیف یکتای محتوا در Google Sheets پیدا نشد.');
       if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون موردنظر در شیت وجود ندارد.');
+      if (error?.code === 'ALREADY_EXISTS') return sendError(res, 409, 'ALREADY_EXISTS', 'کد سیستم جدید از قبل ثبت شده است.');
+      if (error?.code === 'IDENTITY_METADATA_MIGRATION_FAILED') return sendError(res, 503, 'IDENTITY_METADATA_MIGRATION_FAILED', 'کد سیستم در شیت تغییر کرد، اما انتقال فراداده کامل نشد؛ با پشتیبانی تماس بگیرید.');
       throw error;
     }
   }));
