@@ -95,7 +95,8 @@ function validMetadata(value, countryIds, genreIds) {
     !Object.hasOwn(value, 'approvalStatus') ||
     !Object.hasOwn(value, 'publicationStatus') ||
     !APPROVAL_STATUSES.has(value.approvalStatus) ||
-    !PUBLICATION_STATUSES.has(value.publicationStatus)
+    !PUBLICATION_STATUSES.has(value.publicationStatus) ||
+    (value.lifecycleStatus !== undefined && !['active', 'disabled'].includes(value.lifecycleStatus))
   ) return false;
 
   for (const [field, allowed] of [['countryIds', countryIds], ['genreIds', genreIds]]) {
@@ -214,6 +215,7 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
           return content;
         }
 
+        if (metadata.lifecycleStatus === 'disabled') return null;
         if (metadata.countryIds !== undefined) content.countryIds = [...metadata.countryIds];
         if (metadata.genreIds !== undefined) content.genreIds = [...metadata.genreIds];
         content.categoryIds = metadata.categoryIds ? [...metadata.categoryIds] : [];
@@ -227,7 +229,7 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
         );
       }
     }));
-    return { contents: resolvedContents, countryLabels, genreLabels };
+    return { contents: resolvedContents.filter(Boolean), countryLabels, genreLabels };
   }
 
   return Object.freeze({
