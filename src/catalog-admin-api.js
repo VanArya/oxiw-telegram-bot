@@ -624,14 +624,58 @@ function createCatalogAdminApi({
   bulkContentStatus('publication', PERMISSIONS.CONTENT_PUBLISH,
     new Set(['published', 'draft', 'archived']), 'publicationStatus', 'updatePublicationStatus');
 
-  const SOURCE_EDITABLE_FIELDS = Object.freeze({
-    title: 500, releaseYear: 4, startYear: 4, endYear: 4, seasonsAndEpisodes: 120,
-    synopsis: 10000, cast: 3000, language: 100, rating: 40, trailerUrl: 2000, posterUrl: 2000,
-  });
-  app.get(`${BASE_PATH}/items/:contentId/source`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+  const validateSourceFields = (fields, headers, { create = false } = {}) => {
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) {
+      throw new CatalogInputError();
+    }
+    for (const [header, value] of Object.entries(fields)) {
+      if (!headers.includes(header) || (!create && header === 'کد سیستم') ||
+          typeof value !== 'string' || value.length > 20000 || header.length > 200) {
+        throw new CatalogInputError();
+      }
+    }
+    if (create && (typeof fields['کد سیستم'] !== 'string' || !fields['کد سیستم'].trim() ||
+        typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim())) throw new CatalogInputError();
+    if (Object.hasOwn(fields, 'اسم فیلم') && !fields['اسم فیلم'].trim()) throw new CatalogInputError();
+    for (const header of ['سال', 'سال شروع', 'سال پایان']) {
+      if (Object.hasOwn(fields, header) && fields[header] !== '' &&
+          !(header === 'سال پایان' && fields[header] === 'در حال پخش') &&
+          (!/^\\d{4}$/.test(fields[header]) || Number(fields[header]) < 1800 || Number(fields[header]) > 3000)) {
+        throw new CatalogInputError();
+      }
+    }
+  };
+
+  app.get(`${BASE_PATH}/source-schema/:kind`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
+    if (!['movie', 'series'].includes(req.params.kind) || typeof contentReader?.getSheetSchema !== 'function') {
+      return sendError(res, 400, 'INVALID_INPUT', 'نوع شیت معتبر نیست.');
+    }
+    const schema = await contentReader.getSheetSchema(req.params.kind);
+    if (!schema || !Array.isArray(schema.headers)) return sendError(res, 503, 'SOURCE_SCHEMA_UNAVAILABLE', 'ساختار شیت در دسترس نیست.');
+    return res.json({ data: schema });
+  }));
+
+  app.post(`${BASE_PATH}/items/source`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    try {
+      requireBodyKeys(req.body, ['kind', 'fields']);
+      if (!['movie', 'series'].includes(req.body.kind) || typeof contentReader?.getSheetSchema !== 'function' ||
+          typeof contentReader?.createItemSource !== 'function') throw new CatalogInputError();
+      const schema = await contentReader.getSheetSchema(req.body.kind);
+      validateSourceFields(req.body.fields, schema.headers, { create: true });
+      const created = await contentReader.createItemSource(req.body.kind, req.body.fields);
+      return res.status(201).json({ data: created });
+    } catch (error) {
+      if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات عنوان جدید معتبر نیست.');
+      if (error?.code === 'ALREADY_EXISTS') return sendError(res, 409, 'ALREADY_EXISTS', 'کد سیستم از قبل ثبت شده است.');
+      if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های ضروری شیت در دسترس نیستند.');
+      throw error;
+    }
+  }));
+
+  app.get(`${BASE_PATH}/items/:contentId/source`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
-    if (typeof contentReader?.getItem !== 'function') return sendError(res, 503, 'SOURCE_READ_UNAVAILABLE', 'منبع اصلی محتوا در دسترس نیست.');
-    const item = await contentReader.getItem(req.params.contentId);
+    if (typeof contentReader?.getItemSource !== 'function') return sendError(res, 503, 'SOURCE_READ_UNAVAILABLE', 'منبع اصلی محتوا در دسترس نیست.');
+    const item = await contentReader.getItemSource(req.params.contentId);
     if (!item) return sendError(res, 404, 'NOT_FOUND', 'محتوا پیدا نشد.');
     return res.json({ data: item });
   }));
@@ -642,24 +686,10 @@ function createCatalogAdminApi({
       requireBodyKeys(req.body, ['sourceVersion', 'fields']);
       const { sourceVersion, fields } = req.body;
       if (typeof sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(sourceVersion) ||
-          !fields || typeof fields !== 'object' || Array.isArray(fields) ||
-          Object.keys(fields).length === 0) throw new CatalogInputError();
-      const current = await contentReader.getItem(req.params.contentId);
+          !fields || typeof fields !== 'object' || Array.isArray(fields)) throw new CatalogInputError();
+      const current = await contentReader.getItemSource(req.params.contentId);
       if (!current) return sendError(res, 404, 'NOT_FOUND', 'محتوا پیدا نشد.');
-      const allowed = current.kind === 'movie'
-        ? new Set(['title', 'releaseYear', 'synopsis', 'cast', 'language', 'rating', 'trailerUrl', 'posterUrl'])
-        : new Set(['title', 'startYear', 'endYear', 'seasonsAndEpisodes', 'synopsis', 'cast', 'language', 'rating', 'trailerUrl', 'posterUrl']);
-      for (const [field, value] of Object.entries(fields)) {
-        if (!allowed.has(field) || !Object.hasOwn(SOURCE_EDITABLE_FIELDS, field)) throw new CatalogInputError();
-        if (field === 'endYear' && current.kind === 'series') {
-          if (value !== '' && value !== 'در حال پخش' && (!/^\\d{4}$/.test(String(value)) || Number(value) < 1800 || Number(value) > 3000)) throw new CatalogInputError();
-        } else if (field === 'releaseYear' || field === 'startYear') {
-          if (value !== '' && (!Number.isInteger(value) || value < 1800 || value > 3000)) throw new CatalogInputError();
-        } else if (typeof value !== 'string' || value.length > SOURCE_EDITABLE_FIELDS[field] ||
-            (field === 'title' && value.trim() === '')) throw new CatalogInputError();
-        if (['trailerUrl', 'posterUrl'].includes(field) && value !== '' &&
-            !/^https?:\/\//i.test(value)) throw new CatalogInputError();
-      }
+      validateSourceFields(fields, current.headers);
       const updated = await contentReader.updateItemSource(req.params.contentId, {
         sourceVersion, fields, actorId: res.locals.catalogAdminPrincipal.subjectId,
       });
