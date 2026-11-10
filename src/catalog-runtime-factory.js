@@ -3,6 +3,7 @@
 const { createCatalogHttpService } = require('./catalog-http-service');
 const { createFirestoreCatalogAuditEventSink } = require('./firestore-catalog-audit-event-sink');
 const { createFirestoreCatalogAuditReader } = require('./firestore-catalog-audit-reader');
+const { createFirestoreCatalogAdminRoleAuditReader } = require('./firestore-catalog-admin-role-audit-reader');
 const { createFirestoreCatalogMetadataProvider } = require('./firestore-catalog-metadata-provider');
 const { createFirestoreWritableCatalogMetadataProvider } = require('./firestore-writable-catalog-metadata-provider');
 const { createFirestoreCatalogSeriesStructureProvider } = require('./firestore-catalog-series-structure-provider');
@@ -97,6 +98,7 @@ async function createCatalogRuntime({
   let metadataProvider;
   let auditEventSink;
   let auditReader;
+  let roleAuditReader;
   let writableProvider;
   let seriesStructureProvider;
   try {
@@ -111,6 +113,7 @@ async function createCatalogRuntime({
       firestore,
       ...(auditCollection === undefined ? {} : { collection: auditCollection }),
     });
+    roleAuditReader = createFirestoreCatalogAdminRoleAuditReader({ firestore });
     writableProvider = createFirestoreWritableCatalogMetadataProvider({
       firestore,
       auditEventSink,
@@ -136,6 +139,7 @@ async function createCatalogRuntime({
       writableProvider,
       seriesStructureProvider,
       auditReader,
+      roleAuditReader,
       verifyAdminPrincipal,
       roleProvider,
       reportRoleResolutionFailure,
@@ -160,6 +164,7 @@ async function createCatalogRuntime({
     seriesStructureProvider,
     auditEventSink,
     auditReader,
+    roleAuditReader,
     verifyAdminPrincipal,
     roleProvider,
     reportRoleResolutionFailure,
