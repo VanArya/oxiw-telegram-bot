@@ -120,8 +120,7 @@ function createCatalogHttpService({
 
   const app = express();
   app.disable('x-powered-by');
-  // Firebase signInWithPopup must retain a usable opener relationship across
-  // the Google auth popup. The default same-origin policy can sever that link.
+  // Keep the opener relationship available for Firebase's cross-origin auth popup.
   app.use((req, res, next) => {
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
     next();
