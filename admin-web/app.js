@@ -909,6 +909,12 @@ async function openContent(item, notice) {
         countryTerms = countriesResult.body.data;
         genreTerms = genresResult.body.data;
         categoryTerms = categoriesResult.body.data;
+        if (hasPermission('catalog.metadata.write')) {
+          try {
+            const sourceResult = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/source`);
+            selectedSource = sourceResult.body.data;
+          } catch (sourceError) { reportApiError(sourceError); }
+        }
       } catch (taxonomyError) { reportApiError(taxonomyError); return; }
       if (notice) setDialogMessage(notice, 'warning');
     } else { reportApiError(error); return; }
