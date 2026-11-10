@@ -749,7 +749,7 @@ function createCatalogAdminApi({
       ...req.body,
       categoryIds: Object.hasOwn(req.body || {}, 'categoryIds')
         ? req.body.categoryIds : (current.value.categoryIds || []),
-      lifecycleStatus: current.value.lifecycleStatus || 'active',
+      ...(current.value.lifecycleStatus === undefined ? {} : { lifecycleStatus: current.value.lifecycleStatus }),
       ...(current.value.disabledAt ? { disabledAt: current.value.disabledAt, disabledBy: current.value.disabledBy } : {}),
     } : req.body;
     const body = validateCatalogContentMetadata(req.params.contentId, requestBody);
