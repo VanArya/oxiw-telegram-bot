@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { assertVersionedWritableCatalogMetadataProvider } = require('./catalog-writable-metadata-provider');
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const { assertCatalogAuditEventSink } = require('./catalog-audit-event-sink');
-const { validateEpisode, validateSeason } = require('./catalog-series-structure-validation');
+const { episodeDocumentId, seasonDocumentId, validateEpisode, validateSeason } = require('./catalog-series-structure-validation');
 const { classifyCatalogDependencyError, createCatalogDataValidationError } = require('./catalog-operational-errors');
 const {
   CatalogConflictError,
@@ -521,7 +521,7 @@ function createFirestoreWritableCatalogMetadataProvider({
             throw new CatalogConflictError('CASCADE_LIMIT_EXCEEDED');
           }
           for (const entry of episodeEntries) {
-            transaction.delete(entry.document.ref || seasonsCollection.doc(seasonDocumentId(entry.seasonNumber))
+            transaction.delete(seasonsCollection.doc(seasonDocumentId(entry.seasonNumber))
               .collection('episodes').doc(episodeDocumentId(entry.episode.episodeNumber)));
             await auditEventSink.appendInTransaction(transaction, eventFor({
               operation: 'episode.deleted',
@@ -535,7 +535,7 @@ function createFirestoreWritableCatalogMetadataProvider({
             }));
           }
           for (const entry of seasonEntries) {
-            transaction.delete(entry.document.ref || seasonsCollection.doc(seasonDocumentId(entry.season.seasonNumber)));
+            transaction.delete(seasonsCollection.doc(seasonDocumentId(entry.season.seasonNumber)));
             await auditEventSink.appendInTransaction(transaction, eventFor({
               operation: 'season.deleted',
               entityType: 'season',
