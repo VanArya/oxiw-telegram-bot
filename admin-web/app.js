@@ -765,10 +765,6 @@ function renderSheetFields(container, headers, record = {}, { create = false } =
     control.value = value;
     control.dataset.sourceHeader = header;
     control.setAttribute('aria-label', header);
-    if (header === 'کد سیستم' && !create) {
-      control.disabled = true;
-      control.title = 'شناسهٔ اصلی رکورد قابل تغییر نیست.';
-    }
     if (header === 'کد سیستم' || header === 'اسم فیلم') control.required = true;
     if (/Telegram|File ID|URL|لینک|شناسه|کد/i.test(header)) control.dir = 'ltr';
     label.append(control);
@@ -780,7 +776,6 @@ function readSheetFields(container, { create = false } = {}) {
   const fields = {};
   $$('[data-source-header]', container).forEach((control) => {
     const header = control.dataset.sourceHeader;
-    if (!create && header === 'کد سیستم') return;
     fields[header] = control.value;
   });
   return fields;
