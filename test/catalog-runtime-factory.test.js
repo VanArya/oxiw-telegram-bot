@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   CatalogRuntimeConfigurationError,
-  GOOGLE_SHEETS_READONLY_SCOPE,
+  GOOGLE_SHEETS_SCOPE,
   createCatalogRuntime,
 } = require('../src/catalog-runtime-factory');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
@@ -75,6 +75,7 @@ function makeGoogle({ failAuth = false } = {}) {
               state.getCalls.push(params);
               return { data: { values: [['کد سیستم', 'اسم فیلم'], ['101', 'Fixture']] } };
             },
+            async batchUpdate() { return { data: {} }; },
           },
         },
       };
@@ -115,7 +116,7 @@ test('factory composes injected Google Sheets, shared Firestore providers, audit
   assert.equal(getCatalogProviderKind(runtime.provider), 'google-sheets');
   assert.equal(getCatalogProviderKind(runtime.metadataProvider), 'firestore-read');
   assert.equal(getCatalogProviderKind(runtime.writableProvider), 'firestore-write');
-  assert.deepEqual(state.authOptions, { scopes: [GOOGLE_SHEETS_READONLY_SCOPE] });
+  assert.deepEqual(state.authOptions, { scopes: [GOOGLE_SHEETS_SCOPE] });
   assert.deepEqual(state.sheetsOptions, { version: 'v4', auth: state.authClient });
   assert.deepEqual(state.getCalls, [], 'client construction must not read a Sheet');
 
