@@ -113,12 +113,14 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
     sourceSheet: mapped.sourceSheet,
     sourceRowNumber,
     sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
+    sourceAvailableFields: Object.entries({ title: 'اسم فیلم', releaseYear: 'سال', startYear: 'سال شروع',
+      endYear: 'سال پایان', seasonsAndEpisodes: 'تعداد فصل و قسمت', synopsis: 'خلاصه داستان',
+      cast: 'بازیگران', language: 'زبان', rating: 'امتیاز', trailerUrl: 'لینک تریلر', posterUrl: 'پوستر فیلم' })
+      .filter(([, header]) => Object.hasOwn(record, header)).map(([field]) => field),
   };
   if (Number.isInteger(content.releaseYear)) dto.releaseYear = content.releaseYear;
   if (content.kind === 'series') dto.seriesMetadata = { ...content.seriesMetadata };
-  // These optional detail fields are returned only as plain text. URL-like values
-  // and the Telegram File ID are deliberately excluded because their source
-  // formats and display policies have not been confirmed.
+  // Only a strict allowlist of editable, non-credential source columns is projected.
   for (const [sourceField, targetField, maxLength] of [
     ['خلاصه داستان', 'synopsis', 10000],
     ['بازیگران', 'cast', 2000],
