@@ -860,6 +860,16 @@ function createCatalogAdminApi({
       if (current.value.lifecycleStatus !== 'disabled') {
         return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا محتوا را غیرفعال کنید.');
       }
+      if (req.params.contentId.startsWith('series:')) {
+        if (typeof seriesStructureProvider?.getStructureCounts !== 'function') {
+          return sendError(res, 503, 'SERIES_STRUCTURE_NOT_CONFIGURED', 'حذف ساختار فصل و قسمت پیکربندی نشده است.');
+        }
+        const counts = await seriesStructureProvider.getStructureCounts(req.params.contentId);
+        if (counts.total > counts.maxAtomicDeleteItems) {
+          return sendError(res, 409, 'CASCADE_LIMIT_EXCEEDED',
+            `حذف یکجای این سریال بیش از حد مجاز است؛ ابتدا فصل‌ها یا قسمت‌ها را جداگانه حذف کنید. (مجموع: ${counts.total})`);
+        }
+      }
       await contentReader.deleteItemSource(req.params.contentId, {
         sourceVersion: req.body.sourceVersion,
       });
@@ -872,6 +882,9 @@ function createCatalogAdminApi({
       if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات حذف معتبر نیست.');
       if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') {
         return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
+      }
+      if (error instanceof CatalogConflictError && error.code === 'CASCADE_LIMIT_EXCEEDED') {
+        return sendError(res, 409, 'CASCADE_LIMIT_EXCEEDED', 'تعداد فصل‌ها و قسمت‌ها از حد حذف اتمیک بیشتر است.');
       }
       if (error instanceof CatalogNotFoundError) {
         return sendError(res, 404, 'NOT_FOUND', 'محتوا پیدا نشد.');
@@ -982,7 +995,10 @@ function createCatalogAdminApi({
       const current = await seriesStructureProvider.getSeasonWithVersion(req.params.contentId, seasonNumber);
       if (!current) return sendError(res, 404, 'NOT_FOUND', 'فصل پیدا نشد.');
       if (current.version !== precondition.expectedVersion) return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ فصل تغییر کرده است.');
-      if (current.value.lifecycleStatus !== 'disabled') return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا فصل را غیرفعال کنید.');
+      const parentMetadata = await provider.getContentMetadata(req.params.contentId);
+      if (current.value.lifecycleStatus !== 'disabled' && parentMetadata?.lifecycleStatus !== 'disabled') {
+        return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا فصل یا سریال مادر را غیرفعال کنید.');
+      }
       const deleted = await seriesStructureProvider.deleteSeason(req.params.contentId, seasonNumber, {
         ...precondition,
         actorId: res.locals.catalogAdminPrincipal.subjectId,
@@ -1085,7 +1101,13 @@ function createCatalogAdminApi({
       const current = await seriesStructureProvider.getEpisodeWithVersion(req.params.contentId, seasonNumber, episodeNumber);
       if (!current) return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
       if (current.version !== precondition.expectedVersion) return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ قسمت تغییر کرده است.');
-      if (current.value.lifecycleStatus !== 'disabled') return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا قسمت را غیرفعال کنید.');
+      const parentMetadata = await provider.getContentMetadata(req.params.contentId);
+      const parentSeason = await seriesStructureProvider.getSeasonWithVersion(req.params.contentId, seasonNumber);
+      if (current.value.lifecycleStatus !== 'disabled' &&
+          parentSeason?.value.lifecycleStatus !== 'disabled' &&
+          parentMetadata?.lifecycleStatus !== 'disabled') {
+        return sendError(res, 409, 'CONTENT_MUST_BE_DISABLED', 'برای حذف دائم، ابتدا قسمت، فصل یا سریال مادر را غیرفعال کنید.');
+      }
       const deleted = await seriesStructureProvider.deleteEpisode(req.params.contentId, seasonNumber, episodeNumber, {
         ...precondition,
         actorId: res.locals.catalogAdminPrincipal.subjectId,
