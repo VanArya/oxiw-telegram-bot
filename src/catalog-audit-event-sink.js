@@ -8,12 +8,13 @@ const OPERATIONS = new Set([
   'metadata.created', 'metadata.updated',
   'approval.pending', 'approval.approved', 'approval.rejected', 'approval.unknown',
   'publication.draft', 'publication.published', 'publication.archived', 'publication.unknown',
-  'category.created', 'category.updated', 'taxonomy.created', 'taxonomy.updated',
+  'category.created', 'category.updated', 'category.deleted',
+  'taxonomy.created', 'taxonomy.updated', 'taxonomy.deleted',
 ]);
 const ENTITY_TYPES = new Set(['content', 'category', 'taxonomy']);
 const CHANGED_FIELDS = new Set([
   'approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds',
-  'slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder', 'mode', 'labelFa',
+  'slug', 'localizedTitle', 'filters', 'enabled', 'sortOrder', 'mode', 'labelFa', 'deleted',
 ]);
 
 function assertCatalogAuditEventSink(sink) {
