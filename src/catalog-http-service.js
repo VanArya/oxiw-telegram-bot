@@ -120,6 +120,11 @@ function createCatalogHttpService({
 
   const app = express();
   app.disable('x-powered-by');
+  // Keep the opener relationship available for Firebase's cross-origin auth popup.
+  app.use((req, res, next) => {
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    next();
+  });
 
   const adminWebRoot = path.resolve(__dirname, '..', 'admin-web');
   const sendAdminIndex = (req, res) => {

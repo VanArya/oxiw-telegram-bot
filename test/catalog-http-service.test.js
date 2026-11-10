@@ -106,7 +106,12 @@ test('serves the isolated admin shell and a controlled public Firebase config er
 
     const page = await fetch(`${baseUrl}/admin/`);
     assert.equal(page.status, 200);
+    assert.equal(page.headers.get('cross-origin-opener-policy'), 'same-origin-allow-popups');
     assert.match(await page.text(), /lang="fa" dir="rtl"/);
+
+    const adminScript = await fetch(`${baseUrl}/admin/app.js`);
+    assert.equal(adminScript.status, 200);
+    assert.equal(adminScript.headers.get('cross-origin-opener-policy'), 'same-origin-allow-popups');
 
     const refreshedPage = await fetch(`${baseUrl}/admin/items/movie`);
     assert.equal(refreshedPage.status, 200);
