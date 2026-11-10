@@ -1890,7 +1890,15 @@ function renderRoleAudit(events) {
     });
     elements.roleAuditRows.append(row);
   });
-  if (!events.length) elements.roleAuditRows.append(emptyRow('رویدادی برای تغییر نقش مدیران ثبت نشده است.'));
+  if (!events.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 8;
+    cell.className = 'empty-message';
+    cell.textContent = 'رویدادی برای تغییر نقش مدیران ثبت نشده است.';
+    row.append(cell);
+    elements.roleAuditRows.append(row);
+  }
 }
 
 async function loadRoleAudit() {
