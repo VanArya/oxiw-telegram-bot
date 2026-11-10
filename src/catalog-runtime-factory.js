@@ -5,6 +5,7 @@ const { createFirestoreCatalogAuditEventSink } = require('./firestore-catalog-au
 const { createFirestoreCatalogAuditReader } = require('./firestore-catalog-audit-reader');
 const { createFirestoreCatalogMetadataProvider } = require('./firestore-catalog-metadata-provider');
 const { createFirestoreWritableCatalogMetadataProvider } = require('./firestore-writable-catalog-metadata-provider');
+const { createFirestoreCatalogSeriesStructureProvider } = require('./firestore-catalog-series-structure-provider');
 const { createGoogleSheetsCatalogProvider } = require('./google-sheets-catalog-provider');
 const { assertCatalogAdminRoleProvider } = require('./catalog-admin-role-provider');
 
@@ -97,6 +98,7 @@ async function createCatalogRuntime({
   let auditEventSink;
   let auditReader;
   let writableProvider;
+  let seriesStructureProvider;
   try {
     assertCatalogAdminRoleProvider(roleProvider);
     provider = createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId });
@@ -115,6 +117,11 @@ async function createCatalogRuntime({
       ...(collections === undefined ? {} : { collections }),
       ...(clock === undefined ? {} : { clock }),
     });
+    seriesStructureProvider = createFirestoreCatalogSeriesStructureProvider({
+      firestore,
+      auditEventSink,
+      ...(clock === undefined ? {} : { clock }),
+    });
   } catch {
     throw new CatalogRuntimeConfigurationError();
   }
@@ -125,6 +132,7 @@ async function createCatalogRuntime({
       provider,
       metadataProvider,
       writableProvider,
+      seriesStructureProvider,
       auditReader,
       verifyAdminPrincipal,
       roleProvider,
@@ -147,6 +155,7 @@ async function createCatalogRuntime({
     provider,
     metadataProvider,
     writableProvider,
+    seriesStructureProvider,
     auditEventSink,
     auditReader,
     verifyAdminPrincipal,
