@@ -191,3 +191,43 @@ test('admin content reader preserves a Firestore metadata validation diagnostic 
       error.errorCode === 'FIRESTORE_DATA_VALIDATION',
   );
 });
+
+
+test('admin content reader skips invalid source rows and reports safe row diagnostics', async () => {
+  const source = structuredClone(sheets);
+  const invalidRow = [...source['سینمایی'].rows[0]];
+  const titleIndex = source['سینمایی'].headers.indexOf('اسم فیلم');
+  invalidRow[titleIndex] = '';
+  source['سینمایی'].rows.splice(1, 0, invalidRow);
+  const diagnostics = [];
+  const writableProvider = createInMemoryWritableCatalogMetadataProvider({
+    contentMetadata: [], categories: [],
+    taxonomies: { country: [], genre: [] },
+  });
+  const reader = createCatalogAdminContentReader({
+    sheetProvider: createFixtureProvider(source),
+    writableProvider,
+    onInvalidSourceRow: (diagnostic) => diagnostics.push(diagnostic),
+  });
+
+  const result = await reader.list(new URLSearchParams('pageSize=100'));
+  assert.equal(result.meta.stats.total, 8);
+  assert.equal(result.meta.total, 8);
+  assert.equal(result.meta.invalidSourceRows, 1);
+  assert.equal(diagnostics.length, 1);
+  assert.deepEqual(diagnostics[0], {
+    sheetName: 'سینمایی',
+    rowNumber: 3,
+    stage: 'sheet_row_mapping',
+    validationIssue: 'required_field_invalid',
+  });
+  assert.equal(JSON.stringify(diagnostics).includes('fixture-movie-ir'), false);
+});
+
+test('admin content reader still rejects duplicate identities rather than silently skipping them', async () => {
+  const duplicateSource = structuredClone(sheets);
+  duplicateSource['سینمایی'].rows.push([...duplicateSource['سینمایی'].rows[0]]);
+  const reader = makeReader({ source: duplicateSource });
+  await assert.rejects(reader.list(new URLSearchParams()), (error) =>
+    error.name === 'CatalogAdminListStageError' && error.stage === 'sheet_identity_validation');
+});
