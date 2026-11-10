@@ -30,12 +30,14 @@ function createAdminApi(writableProvider, {
   reportRoleResolutionFailure,
   authorizePermission = roleAuthorizer,
   authorizeOwner,
+  contentReader,
   targetResolver,
   resolveManagerEmail,
   directCategoryWritesEnabled,
 } = {}) {
   return createCatalogAdminApi({
     writableProvider,
+    contentReader,
     verifyAdminPrincipal: verifyAdminPrincipal || (() => ({ authenticated: true, subjectId })),
     roleProvider,
     reportRoleResolutionFailure,
@@ -123,6 +125,43 @@ test('content lifecycle supports versioned disable and restore with audit-safe m
     }));
     assert.equal(stale.status, 412);
     assert.equal(stale.body.error.code, 'PRECONDITION_FAILED');
+  });
+});
+
+test('permanent content deletion requires owner access and a disabled versioned record', async () => {
+  const store = createStore();
+  const deletedSources = [];
+  const contentReader = {
+    async deleteItemSource(id, options) {
+      deletedSources.push({ id, ...options });
+      return { alreadyMissing: false, rowNumber: 2 };
+    },
+  };
+  const app = createAdminApi(store, { authorizeOwner: () => true, contentReader });
+  await store.updateContentLifecycleStatus(contentId, 'disabled', {
+    expectedVersion: 0,
+    actorId: 'fixture-admin',
+  });
+  await withServer(app, async (baseUrl) => {
+    const metadata = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/metadata`,
+    ));
+    assert.equal(metadata.status, 200);
+    const response = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          'content-type': 'application/json',
+          'if-match': metadata.etag,
+        },
+        body: JSON.stringify({ sourceVersion: 'A'.repeat(43) }),
+      },
+    ));
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body.data, { contentId, deleted: true });
+    assert.deepEqual(deletedSources, [{ id: contentId, sourceVersion: 'A'.repeat(43) }]);
+    assert.equal(await store.getContentMetadata(contentId), null);
   });
 });
 
