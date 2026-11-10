@@ -70,6 +70,7 @@ function makeGoogle(state) {
         spreadsheets: {
           values: {
             async get() { return { data: { values: [] } }; },
+            async batchUpdate() { return { data: {} }; },
           },
         },
       };
@@ -172,7 +173,7 @@ test('builds operational runtime with Firebase Admin, revoked-token verifier, sh
   assert.equal(firebase.state.appName, FIREBASE_APP_NAME);
   assert.equal(firebase.state.firestoreArgs[1], 'catalog-db');
   assert.deepEqual(state.googleAuthOptions, {
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 
   const principal = await runtime.verifyAdminPrincipal({

@@ -22,6 +22,7 @@ function mockSheetsClient(valuesBySheet, calls = []) {
             ? { data: { values: valuesBySheet[args.range] } }
             : { data: {} };
         },
+        async batchUpdate(args) { calls.push({ batchUpdate: args }); return { data: {} }; },
       },
     },
   };
@@ -53,7 +54,7 @@ test('reads headers and rows for both approved sheets using values.get only', as
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow']);
 });
 
 test('empty sheets and responses without values become empty snapshots', async () => {
@@ -69,7 +70,7 @@ test('rejects invalid sheet names before calling the client', async () => {
   let calls = 0;
   const provider = createGoogleSheetsCatalogProvider({
     sheetsClient: {
-      spreadsheets: { values: { async get() { calls += 1; return { data: {} }; } } },
+      spreadsheets: { values: { async get() { calls += 1; return { data: {} }; }, async batchUpdate() { return { data: {} }; } } },
     },
     spreadsheetId: spreadsheetIdFixture,
   });
@@ -87,6 +88,7 @@ test('sanitizes client errors and rejects malformed responses without exposing v
             error.response = { status: 401 };
             throw error;
           },
+          async batchUpdate() { return { data: {} }; },
         },
       },
     },
@@ -104,6 +106,45 @@ test('sanitizes client errors and rejects malformed responses without exposing v
     spreadsheetId: spreadsheetIdFixture,
   });
   await assert.rejects(malformedProvider.readSheet('سینمایی'), /Invalid catalog sheet response/);
+});
+
+test('updates only explicitly editable catalog cells after checking the source-row version', async () => {
+  const values = {
+    "'سینمایی'": [
+      ['کد سیستم', 'اسم فیلم', 'سال', 'خلاصه داستان', 'Telegram File ID'],
+      ['safe-code', 'عنوان قدیمی', '2020', 'خلاصه', 'do-not-touch'],
+    ],
+  };
+  const writes = [];
+  const client = {
+    spreadsheets: { values: {
+      async get({ range }) { return { data: { values: values[range] || [] } }; },
+      async batchUpdate(args) {
+        writes.push(args);
+        for (const entry of args.requestBody.data) {
+          const match = /!([A-Z]+)([0-9]+)$/.exec(entry.range);
+          const col = match[1].charCodeAt(0) - 65;
+          const row = Number(match[2]) - 1;
+          values["'سینمایی'"][row][col] = entry.values[0][0];
+        }
+        return { data: {} };
+      },
+    } },
+  };
+  const provider = createGoogleSheetsCatalogProvider({ sheetsClient: client, spreadsheetId: spreadsheetIdFixture });
+  const before = await provider.readSheet('سینمایی');
+  const record = Object.fromEntries(before.headers.map((header, index) => [header, before.rows[0][index] ?? '']));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const result = await provider.updateCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'safe-code', expectedVersion: version, fields: { title: 'عنوان تازه' },
+  });
+  assert.equal(values["'سینمایی'"][1][1], 'عنوان تازه');
+  assert.equal(values["'سینمایی'"][1][4], 'do-not-touch');
+  assert.equal(writes[0].requestBody.valueInputOption, 'RAW');
+  assert.equal(result.rowNumber, 2);
+  await assert.rejects(provider.updateCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'safe-code', expectedVersion: version, fields: { title: 'عنوان stale' },
+  }), (error) => error.code === 'VERSION_CONFLICT');
 });
 
 test('legacy rows remain mappable without country and internal Telegram IDs stay private', async () => {
@@ -136,7 +177,7 @@ test('legacy rows remain mappable without country and internal Telegram IDs stay
 test('provider rejects missing client or Spreadsheet ID at construction', () => {
   assert.throws(
     () => createGoogleSheetsCatalogProvider({ sheetsClient: {}, spreadsheetId: spreadsheetIdFixture }),
-    /read-only Sheets values client/,
+    /Sheets values client with read and batch-update access/,
   );
   assert.throws(
     () => createGoogleSheetsCatalogProvider({

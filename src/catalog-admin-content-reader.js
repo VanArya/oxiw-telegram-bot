@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { mapCatalogSheetRow } = require('./catalog-sheet-mapper');
 const { assertFilter, matchesFilter } = require('./catalog-core');
 const { isCanonicalContentId, validateCatalogContentMetadata } = require('./catalog-metadata-validation');
@@ -95,7 +96,7 @@ function safeText(record, field, maxLength = 10000) {
   return value.length <= maxLength ? value : value.slice(0, maxLength);
 }
 
-function projectAdminItem(mapped, record, metadataRecord) {
+function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
   const content = mapped.content;
   const metadata = metadataRecord?.value ?? null;
   const dto = {
@@ -109,17 +110,24 @@ function projectAdminItem(mapped, record, metadataRecord) {
     genreIds: metadata?.genreIds ? [...metadata.genreIds] : [],
     directCategoryIds: metadata?.categoryIds ? [...metadata.categoryIds] : [],
     hasMetadata: Boolean(metadata),
+    sourceSheet: mapped.sourceSheet,
+    sourceRowNumber,
+    sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
+    sourceAvailableFields: Object.entries({ title: 'اسم فیلم', releaseYear: 'سال', startYear: 'سال شروع',
+      endYear: 'سال پایان', seasonsAndEpisodes: 'تعداد فصل و قسمت', synopsis: 'خلاصه داستان',
+      cast: 'بازیگران', language: 'زبان', rating: 'امتیاز', trailerUrl: 'لینک تریلر', posterUrl: 'پوستر فیلم' })
+      .filter(([, header]) => Object.hasOwn(record, header)).map(([field]) => field),
   };
   if (Number.isInteger(content.releaseYear)) dto.releaseYear = content.releaseYear;
   if (content.kind === 'series') dto.seriesMetadata = { ...content.seriesMetadata };
-  // These optional detail fields are returned only as plain text. URL-like values
-  // and the Telegram File ID are deliberately excluded because their source
-  // formats and display policies have not been confirmed.
+  // Only a strict allowlist of editable, non-credential source columns is projected.
   for (const [sourceField, targetField, maxLength] of [
     ['خلاصه داستان', 'synopsis', 10000],
     ['بازیگران', 'cast', 2000],
     ['زبان', 'language', 200],
     ['امتیاز', 'rating', 100],
+    ['لینک تریلر', 'trailerUrl', 2000],
+    ['پوستر فیلم', 'posterUrl', 2000],
   ]) {
     const value = safeText(record, sourceField, maxLength);
     if (value !== undefined) dto[targetField] = value;
@@ -140,12 +148,12 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     snapshots.forEach((snapshot, sheetIndex) => {
       const sheetName = SHEETS[sheetIndex];
       try { validateSnapshot(sheetName, snapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
-      snapshot.rows.forEach((row) => {
-        const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index]]));
+      snapshot.rows.forEach((row, rowIndex) => {
+        const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index] ?? '']));
         const mapped = (() => { try { return mapCatalogSheetRow(sheetName, record); } catch (cause) { const error = new Error('Catalog sheet row mapping failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_row_mapping'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; } })();
         if (!isCanonicalContentId(mapped.content.id) || seen.has(mapped.content.id)) { const error = new TypeError('Catalog sheet identity validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'catalog'; error.stage = 'sheet_identity_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; throw error; }
         seen.add(mapped.content.id);
-        sourceItems.push({ mapped, record });
+        sourceItems.push({ mapped, record, sourceRowNumber: rowIndex + 2 });
       });
     });
 
@@ -154,7 +162,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
         .map((entry) => [entry.value.contentId, entry])))
       : null;
 
-    return Promise.all(sourceItems.map(async ({ mapped, record }) => {
+    return Promise.all(sourceItems.map(async ({ mapped, record, sourceRowNumber }) => {
       const versioned = metadataById
         ? metadataById.get(mapped.content.id) ?? null
         : await writableProvider.getContentMetadataWithVersion(mapped.content.id);
@@ -169,7 +177,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
           const error = new Error('Catalog metadata validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'firestore'; error.stage = 'metadata_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error;
         }
       }
-      return projectAdminItem(mapped, record, metadataRecord);
+      return projectAdminItem(mapped, record, metadataRecord, sourceRowNumber);
     }));
   }
 
@@ -177,6 +185,59 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     async getItem(contentId) {
       const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
       return item || null;
+    },
+    async updateItemSource(contentId, { sourceVersion, fields, actorId } = {}) {
+      if (typeof sheetProvider.updateCatalogRow !== 'function') {
+        throw new Error('Catalog source writer is not configured.');
+      }
+      const items = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
+      if (!item) return null;
+      const kind = item.kind;
+      const systemCode = item.systemCode;
+      const result = await sheetProvider.updateCatalogRow({
+        sheetName: item.sourceSheet,
+        systemCode,
+        expectedVersion: sourceVersion,
+        fields,
+        actorId,
+      });
+      const updated = {
+        ...item,
+        sourceVersion: result.sourceVersion,
+        sourceRowNumber: result.rowNumber,
+      };
+      if (Object.hasOwn(fields, 'title')) updated.title = fields.title;
+      if (Object.hasOwn(fields, 'releaseYear')) {
+        if (fields.releaseYear === '') delete updated.releaseYear;
+        else updated.releaseYear = fields.releaseYear;
+      }
+      if (kind === 'series') {
+        const seriesMetadata = { ...(item.seriesMetadata || {}) };
+        if (Object.hasOwn(fields, 'startYear')) {
+          if (fields.startYear === '') delete seriesMetadata.startYear;
+          else seriesMetadata.startYear = fields.startYear;
+        }
+        if (Object.hasOwn(fields, 'endYear')) {
+          if (fields.endYear === 'در حال پخش') {
+            delete seriesMetadata.endYear;
+            seriesMetadata.isOngoing = true;
+          } else if (fields.endYear === '') {
+            delete seriesMetadata.endYear;
+            delete seriesMetadata.isOngoing;
+          } else {
+            seriesMetadata.endYear = Number(fields.endYear);
+            seriesMetadata.isOngoing = false;
+          }
+        }
+        if (Object.hasOwn(fields, 'seasonsAndEpisodes')) seriesMetadata.seasonsAndEpisodes = fields.seasonsAndEpisodes;
+        updated.seriesMetadata = seriesMetadata;
+      }
+      for (const [field, target] of [
+        ['synopsis', 'synopsis'], ['cast', 'cast'], ['language', 'language'],
+        ['rating', 'rating'], ['trailerUrl', 'trailerUrl'], ['posterUrl', 'posterUrl'],
+      ]) if (Object.hasOwn(fields, field)) updated[target] = fields[field];
+      return Object.freeze(updated);
     },
     async list(query) {
       const parsed = parseQuery(query);

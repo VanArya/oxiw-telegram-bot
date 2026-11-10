@@ -43,6 +43,7 @@ let auditHasMore = false;
 let contentStats = null;
 let contentFilterOptionsLoaded = false;
 let currentItems = [];
+const selectedContentIds = new Set();
 let selectedItem = null;
 let selectedMetadata = null;
 let selectedEtag = null;
@@ -565,6 +566,18 @@ function renderContentRows(items) {
   elements.contentRows.replaceChildren();
   items.forEach((item) => {
     const row = document.createElement('tr');
+    const selection = document.createElement('td');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'content-row-select';
+    checkbox.checked = selectedContentIds.has(item.id);
+    checkbox.setAttribute('aria-label', `انتخاب ${item.title}`);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedContentIds.add(item.id);
+      else selectedContentIds.delete(item.id);
+      updateBulkControls();
+    });
+    selection.append(checkbox);
     const title = document.createElement('td');
     title.textContent = item.title;
     const kind = document.createElement('td');
@@ -588,9 +601,58 @@ function renderContentRows(items) {
     open.textContent = 'مدیریت';
     open.addEventListener('click', () => void openContent(item));
     action.append(open);
-    row.append(title, kind, code, year, approval, publication, metadata, action);
+    row.append(selection, title, kind, code, year, approval, publication, metadata, action);
     elements.contentRows.append(row);
   });
+}
+
+function updateBulkControls() {
+  const count = selectedContentIds.size;
+  const bar = $('#content-bulk-actions');
+  if (bar) bar.hidden = count === 0;
+  setText($('#content-selected-count'), `${count.toLocaleString('fa-IR')} مورد انتخاب شده`);
+  const all = $('#content-select-all');
+  if (all) {
+    const visible = currentItems.map((item) => item.id);
+    all.checked = visible.length > 0 && visible.every((id) => selectedContentIds.has(id));
+    all.indeterminate = visible.some((id) => selectedContentIds.has(id)) && !all.checked;
+  }
+  $('#bulk-approve').disabled = !hasPermission('catalog.content.approve') || count === 0;
+  $('#bulk-publish').disabled = !hasPermission('catalog.content.publish') || count === 0;
+}
+
+async function runBulkStatus(kind, status) {
+  const ids = [...selectedContentIds];
+  if (!ids.length) return;
+  const label = kind === 'approval' ? 'تأیید' : 'انتشار';
+  if (!window.confirm(`${ids.length} عنوان انتخاب‌شده برای عملیات «${label}» پردازش شوند؟\nانتشار فقط برای موارد تأییدشده امکان‌پذیر است.`)) return;
+  const button = kind === 'approval' ? $('#bulk-approve') : $('#bulk-publish');
+  setBusy(button, true);
+  try {
+    const field = kind === 'approval' ? 'approvalStatus' : 'publicationStatus';
+    const { body } = await api(`${API_ROOT}/items/bulk/${kind}`, {
+      method: 'POST',
+      body: JSON.stringify({ contentIds: ids, [field]: status }),
+    });
+    const succeeded = body.meta?.succeeded || 0;
+    const failed = body.meta?.failed || 0;
+    body.data.filter((item) => item.success).forEach((item) => selectedContentIds.delete(item.contentId));
+    await loadContent();
+    updateBulkControls();
+    showToast(`${succeeded} مورد موفق، ${failed} مورد ناموفق. جزئیات موارد ناموفق در پیام زیر نمایش داده می‌شود.`, failed ? 'error' : 'success');
+    const failures = body.data.filter((item) => !item.success);
+    if (failures.length) {
+      const reasons = failures.slice(0, 8).map((item) => {
+        const reason = item.code === 'APPROVAL_REQUIRED' ? 'ابتدا باید تأیید شود'
+          : item.code === 'METADATA_REQUIRED' ? 'فرادادهٔ پایه ثبت نشده'
+            : item.code === 'PRECONDITION_FAILED' ? 'هم‌زمان تغییر کرده'
+              : 'خطای ذخیره‌سازی';
+        return `${item.contentId}: ${reason}`;
+      });
+      setGlobalMessage(reasons.join(' · '), { tone: 'warning' });
+    }
+  } catch (error) { reportApiError(error); }
+  finally { setBusy(button, false); }
 }
 
 function contentQuery() {
@@ -640,9 +702,12 @@ async function loadContent() {
     }
     const { body } = await api(`${API_ROOT}/items?${contentQuery()}`);
     currentItems = body.data;
+    const visibleIds = new Set(currentItems.map((item) => item.id));
+    for (const id of selectedContentIds) if (!visibleIds.has(id)) selectedContentIds.delete(id);
     contentTotal = body.meta.total;
     contentStats = body.meta.stats;
     renderContentRows(currentItems);
+    updateBulkControls();
     setText(elements.contentCount, `${contentTotal.toLocaleString('fa-IR')} مورد`);
     setText(elements.contentPage, `صفحهٔ ${body.meta.page.toLocaleString('fa-IR')}`);
     elements.contentPrev.disabled = contentPage <= 1;
@@ -679,6 +744,62 @@ function permissionControls() {
   $('#publication-actions').hidden = !hasPermission('catalog.content.publish');
 }
 
+function renderSourceForm(item) {
+  $('#source-title').value = item.title || '';
+  $('#source-release-year').value = item.releaseYear ?? '';
+  $('#source-start-year').value = item.seriesMetadata?.startYear ?? '';
+  $('#source-end-year').value = item.seriesMetadata?.isOngoing ? 'در حال پخش' : (item.seriesMetadata?.endYear ?? '');
+  $('#source-seasons').value = item.seriesMetadata?.seasonsAndEpisodes ?? '';
+  $('#source-synopsis').value = item.synopsis || '';
+  $('#source-cast').value = item.cast || '';
+  $('#source-language').value = item.language || '';
+  $('#source-rating').value = item.rating || '';
+  $('#source-trailer').value = item.trailerUrl || '';
+  $('#source-poster').value = item.posterUrl || '';
+  const available = new Set(item.sourceAvailableFields || []);
+  const labels = { title: 'source-title', releaseYear: 'source-release-year-label', startYear: 'source-start-year-label',
+    endYear: 'source-end-year-label', seasonsAndEpisodes: 'source-seasons-label', synopsis: 'source-synopsis',
+    cast: 'source-cast', language: 'source-language', rating: 'source-rating', trailerUrl: 'source-trailer', posterUrl: 'source-poster' };
+  Object.entries(labels).forEach(([field, id]) => { const control = $('#'+id); const label = control.tagName === 'LABEL' ? control : control.closest('label'); if (label) label.hidden = !available.has(field); });
+  $('#source-form').hidden = !hasPermission('catalog.metadata.write');
+}
+
+async function saveSourceItem(event) {
+  event.preventDefault();
+  if (!selectedItem || !hasPermission('catalog.metadata.write')) return;
+  const available = new Set(selectedItem.sourceAvailableFields || []);
+  const candidates = {
+    title: $('#source-title').value.trim(), synopsis: $('#source-synopsis').value,
+    cast: $('#source-cast').value, language: $('#source-language').value.trim(),
+    rating: $('#source-rating').value.trim(), trailerUrl: $('#source-trailer').value.trim(),
+    posterUrl: $('#source-poster').value.trim(),
+  };
+  const fields = Object.fromEntries(Object.entries(candidates).filter(([key]) => available.has(key)));
+  if (selectedItem.kind === 'movie') {
+    if (available.has('releaseYear')) fields.releaseYear = $('#source-release-year').value === '' ? '' : Number($('#source-release-year').value);
+  } else {
+    if (available.has('startYear')) fields.startYear = $('#source-start-year').value === '' ? '' : Number($('#source-start-year').value);
+    if (available.has('endYear')) fields.endYear = $('#source-end-year').value.trim();
+    if (available.has('seasonsAndEpisodes')) fields.seasonsAndEpisodes = $('#source-seasons').value.trim();
+  }
+  const button = $('#source-save');
+  setBusy(button, true);
+  try {
+    const result = await api(API_ROOT + '/items/' + encodeURIComponent(selectedItem.id) + '/source', {
+      method: 'PUT', body: JSON.stringify({ sourceVersion: selectedItem.sourceVersion, fields }),
+    });
+    selectedItem = result.body.data;
+    renderSelectedContent();
+    renderSourceForm(selectedItem);
+    await loadContent();
+    showToast('اطلاعات اصلی در Google Sheets ذخیره شد.');
+  } catch (error) {
+    if (error.status === 412) {
+      await refreshSelectedContent('ردیف در Google Sheets تغییر کرده است؛ اطلاعات تازه بارگذاری شد و تغییر شما ذخیره نشد.');
+      showToast('تعارض نسخه؛ اطلاعات را بازبینی و دوباره ذخیره کنید.', 'error');
+    } else reportApiError(error);
+  } finally { setBusy(button, false); }
+}
 function renderSelectedContent() {
   if (!selectedItem) return;
   setText($('#dialog-kind'), selectedItem.kind === 'movie' ? 'سینمایی' : 'سریال');
@@ -697,6 +818,7 @@ function renderSelectedContent() {
   populateMultiSelect(elements.metadataGenres, genreTerms, selectedMetadata?.genreIds || []);
   populateMultiSelect(elements.metadataCategories, categoryTerms, selectedMetadata?.categoryIds || []);
   permissionControls();
+  renderSourceForm(selectedItem);
 }
 
 async function openContent(item, notice) {
@@ -813,16 +935,22 @@ async function updateItemStatus(kind, value) {
 }
 
 function makeRecordButton(primary, secondary, onClick) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'record-button';
+  const record = document.createElement('div');
+  record.className = 'record-button';
+  const details = document.createElement('div');
+  details.className = 'record-details';
   const title = document.createElement('strong');
   title.textContent = primary;
   const detail = document.createElement('span');
   detail.textContent = secondary;
-  button.append(title, detail);
-  button.addEventListener('click', onClick);
-  return button;
+  details.append(title, detail);
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'button button-small button-secondary record-edit';
+  edit.textContent = 'ویرایش';
+  edit.addEventListener('click', onClick);
+  record.append(details, edit);
+  return record;
 }
 
 async function loadCategories() {
@@ -1354,6 +1482,21 @@ function wireUi() {
     elements.managerForm.hidden = true;
   }));
   elements.managerForm.addEventListener('submit', (event) => void addManager(event));
+  $('#content-select-all').addEventListener('change', (event) => {
+    currentItems.forEach((item) => {
+      if (event.currentTarget.checked) selectedContentIds.add(item.id);
+      else selectedContentIds.delete(item.id);
+    });
+    renderContentRows(currentItems);
+    updateBulkControls();
+  });
+  $('#bulk-approve').addEventListener('click', () => void runBulkStatus('approval', 'approved'));
+  $('#bulk-publish').addEventListener('click', () => void runBulkStatus('publication', 'published'));
+  $('#content-clear-selection').addEventListener('click', () => {
+    selectedContentIds.clear();
+    renderContentRows(currentItems);
+    updateBulkControls();
+  });
   $('#content-search-button').addEventListener('click', () => { contentPage = 1; void loadContent(); });
   $('#content-filter-reset').addEventListener('click', () => {
     [elements.contentSearch, elements.contentApproval, elements.contentPublication, elements.contentCountry, elements.contentGenre, elements.contentCategory].forEach((control) => { control.value = ''; });
@@ -1373,6 +1516,7 @@ function wireUi() {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
   });
   elements.metadataForm.addEventListener('submit', (event) => void saveContentMetadata(event));
+  $('#source-form').addEventListener('submit', (event) => void saveSourceItem(event));
   $$('[data-approval]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('approval', button.dataset.approval)));
   $$('[data-publication]').forEach((button) => button.addEventListener('click', () => void updateItemStatus('publication', button.dataset.publication)));
   $('#category-new').addEventListener('click', openNewCategory);

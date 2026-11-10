@@ -580,6 +580,99 @@ function createCatalogAdminApi({
     }
   }));
 
+  const bulkContentStatus = (kind, permission, allowedStatuses, statusField, updateMethod) => {
+    app.post(`${BASE_PATH}/items/bulk/${kind}`, requirePermission(permission), parseJson, asyncRoute(async (req, res) => {
+      try {
+        requireBodyKeys(req.body, ['contentIds', statusField]);
+        const ids = req.body.contentIds;
+        const status = req.body[statusField];
+        if (!Array.isArray(ids) || ids.length < 1 || ids.length > 50 ||
+            ids.some((id) => !isCanonicalContentId(id)) || new Set(ids).size !== ids.length ||
+            !allowedStatuses.has(status)) throw new CatalogInputError();
+        const actorId = res.locals.catalogAdminPrincipal.subjectId;
+        const results = [];
+        for (const contentId of ids) {
+          try {
+            const current = await writableProvider.getContentMetadataWithVersion(contentId);
+            if (!current) {
+              results.push({ contentId, success: false, code: 'METADATA_REQUIRED' });
+              continue;
+            }
+            const saved = await writableProvider[updateMethod](contentId, status, {
+              expectedVersion: current.version,
+              actorId,
+            });
+            results.push({ contentId, success: true, version: saved.version });
+          } catch (error) {
+            const code = error instanceof CatalogConflictError
+              ? (error.code === 'PUBLICATION_REQUIRES_APPROVAL' ? 'APPROVAL_REQUIRED'
+                : error.code === 'VERSION_CONFLICT' ? 'PRECONDITION_FAILED' : 'CONFLICT')
+              : error instanceof CatalogNotFoundError ? 'METADATA_REQUIRED' : 'INTERNAL_ERROR';
+            results.push({ contentId, success: false, code });
+          }
+        }
+        const succeeded = results.filter((item) => item.success).length;
+        return res.json({ data: results, meta: { total: results.length, succeeded, failed: results.length - succeeded } });
+      } catch (error) {
+        if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'فهرست موارد یا وضعیت انتخاب‌شده معتبر نیست.');
+        throw error;
+      }
+    }));
+  };
+  bulkContentStatus('approval', PERMISSIONS.CONTENT_APPROVE,
+    new Set(['approved', 'rejected', 'pending']), 'approvalStatus', 'updateApprovalStatus');
+  bulkContentStatus('publication', PERMISSIONS.CONTENT_PUBLISH,
+    new Set(['published', 'draft', 'archived']), 'publicationStatus', 'updatePublicationStatus');
+
+  const SOURCE_EDITABLE_FIELDS = Object.freeze({
+    title: 500, releaseYear: 4, startYear: 4, endYear: 4, seasonsAndEpisodes: 120,
+    synopsis: 10000, cast: 3000, language: 100, rating: 40, trailerUrl: 2000, posterUrl: 2000,
+  });
+  app.get(`${BASE_PATH}/items/:contentId/source`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    if (typeof contentReader?.getItem !== 'function') return sendError(res, 503, 'SOURCE_READ_UNAVAILABLE', 'منبع اصلی محتوا در دسترس نیست.');
+    const item = await contentReader.getItem(req.params.contentId);
+    if (!item) return sendError(res, 404, 'NOT_FOUND', 'محتوا پیدا نشد.');
+    return res.json({ data: item });
+  }));
+
+  app.put(`${BASE_PATH}/items/:contentId/source`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    try {
+      requireBodyKeys(req.body, ['sourceVersion', 'fields']);
+      const { sourceVersion, fields } = req.body;
+      if (typeof sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(sourceVersion) ||
+          !fields || typeof fields !== 'object' || Array.isArray(fields) ||
+          Object.keys(fields).length === 0) throw new CatalogInputError();
+      const current = await contentReader.getItem(req.params.contentId);
+      if (!current) return sendError(res, 404, 'NOT_FOUND', 'محتوا پیدا نشد.');
+      const allowed = current.kind === 'movie'
+        ? new Set(['title', 'releaseYear', 'synopsis', 'cast', 'language', 'rating', 'trailerUrl', 'posterUrl'])
+        : new Set(['title', 'startYear', 'endYear', 'seasonsAndEpisodes', 'synopsis', 'cast', 'language', 'rating', 'trailerUrl', 'posterUrl']);
+      for (const [field, value] of Object.entries(fields)) {
+        if (!allowed.has(field) || !Object.hasOwn(SOURCE_EDITABLE_FIELDS, field)) throw new CatalogInputError();
+        if (field === 'endYear' && current.kind === 'series') {
+          if (value !== '' && value !== 'در حال پخش' && (!/^\\d{4}$/.test(String(value)) || Number(value) < 1800 || Number(value) > 3000)) throw new CatalogInputError();
+        } else if (field === 'releaseYear' || field === 'startYear') {
+          if (value !== '' && (!Number.isInteger(value) || value < 1800 || value > 3000)) throw new CatalogInputError();
+        } else if (typeof value !== 'string' || value.length > SOURCE_EDITABLE_FIELDS[field] ||
+            (field === 'title' && value.trim() === '')) throw new CatalogInputError();
+        if (['trailerUrl', 'posterUrl'].includes(field) && value !== '' &&
+            !/^https?:\/\//i.test(value)) throw new CatalogInputError();
+      }
+      const updated = await contentReader.updateItemSource(req.params.contentId, {
+        sourceVersion, fields, actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return res.json({ data: updated });
+    } catch (error) {
+      if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'فیلدهای ویرایش‌شده معتبر نیستند.');
+      if (error?.code === 'VERSION_CONFLICT') return sendError(res, 412, 'PRECONDITION_FAILED', 'اطلاعات در Google Sheets تغییر کرده است؛ دادهٔ تازه را بارگذاری کنید.');
+      if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 404, 'NOT_FOUND', 'ردیف یکتای محتوا در Google Sheets پیدا نشد.');
+      if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون موردنظر در شیت وجود ندارد.');
+      throw error;
+    }
+  }));
+
   app.get(`${BASE_PATH}/items/:contentId/metadata`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
     const metadata = await provider.getContentMetadataWithVersion(req.params.contentId);
