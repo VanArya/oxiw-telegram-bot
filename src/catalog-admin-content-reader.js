@@ -193,7 +193,6 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
       const items = await readAllItems();
       const item = items.find((candidate) => candidate.id === contentId);
       if (!item) return null;
-      const { createCatalogContentId } = require('./catalog-content-identity');
       const kind = item.kind;
       const systemCode = item.systemCode;
       const result = await sheetProvider.updateCatalogRow({
@@ -203,9 +202,42 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
         fields,
         actorId,
       });
-      const refreshed = await readAllItems();
-      const updated = refreshed.find((candidate) => candidate.id === createCatalogContentId(kind, systemCode));
-      return updated || { ...item, sourceVersion: result.sourceVersion, sourceRowNumber: result.rowNumber };
+      const updated = {
+        ...item,
+        sourceVersion: result.sourceVersion,
+        sourceRowNumber: result.rowNumber,
+      };
+      if (Object.hasOwn(fields, 'title')) updated.title = fields.title;
+      if (Object.hasOwn(fields, 'releaseYear')) {
+        if (fields.releaseYear === '') delete updated.releaseYear;
+        else updated.releaseYear = fields.releaseYear;
+      }
+      if (kind === 'series') {
+        const seriesMetadata = { ...(item.seriesMetadata || {}) };
+        if (Object.hasOwn(fields, 'startYear')) {
+          if (fields.startYear === '') delete seriesMetadata.startYear;
+          else seriesMetadata.startYear = fields.startYear;
+        }
+        if (Object.hasOwn(fields, 'endYear')) {
+          if (fields.endYear === 'در حال پخش') {
+            delete seriesMetadata.endYear;
+            seriesMetadata.isOngoing = true;
+          } else if (fields.endYear === '') {
+            delete seriesMetadata.endYear;
+            delete seriesMetadata.isOngoing;
+          } else {
+            seriesMetadata.endYear = Number(fields.endYear);
+            seriesMetadata.isOngoing = false;
+          }
+        }
+        if (Object.hasOwn(fields, 'seasonsAndEpisodes')) seriesMetadata.seasonsAndEpisodes = fields.seasonsAndEpisodes;
+        updated.seriesMetadata = seriesMetadata;
+      }
+      for (const [field, target] of [
+        ['synopsis', 'synopsis'], ['cast', 'cast'], ['language', 'language'],
+        ['rating', 'rating'], ['trailerUrl', 'trailerUrl'], ['posterUrl', 'posterUrl'],
+      ]) if (Object.hasOwn(fields, field)) updated[target] = fields[field];
+      return Object.freeze(updated);
     },
     async list(query) {
       const parsed = parseQuery(query);
