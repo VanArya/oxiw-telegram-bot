@@ -234,7 +234,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       return item || null;
     },
     async getItemSource(contentId) {
-      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
       if (!item) return null;
       const source = await readSourceRecord(item.kind, item.systemCode);
       return source ? Object.freeze({ id: item.id, kind: item.kind, systemCode: item.systemCode, ...source }) : null;
@@ -263,7 +264,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     },
     async updateItemSource(contentId, { sourceVersion, fields, actorId } = {}) {
       if (typeof sheetProvider.updateCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
-      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
       if (!item) return null;
       const current = await readSourceRecord(item.kind, item.systemCode);
       if (!current) return null;
