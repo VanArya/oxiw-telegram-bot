@@ -159,6 +159,31 @@ function createInMemoryWritableCatalogMetadataProvider({
       metadataVersions.set(contentId, version);
       return { value: clone(record), version };
     },
+    async updateContentLifecycleStatus(contentId, lifecycleStatus, options) {
+      if (typeof contentId !== 'string' || !['active', 'disabled'].includes(lifecycleStatus)) {
+        throw new CatalogConflictError('INVALID_CONTENT_LIFECYCLE');
+      }
+      const version = checkExpectedVersion(metadataVersions, contentId, options);
+      const current = metadata.get(contentId) || {
+        contentId,
+        approvalStatus: 'unknown',
+        publicationStatus: 'unknown',
+        countryIds: [],
+        genreIds: [],
+        lifecycleStatus: 'active',
+      };
+      const updated = lifecycleStatus === 'disabled'
+        ? { ...current, lifecycleStatus, disabledAt: new Date().toISOString(), disabledBy: options.actorId }
+        : { ...current, lifecycleStatus, disabledAt: undefined, disabledBy: undefined };
+      if (lifecycleStatus === 'disabled' && !options.actorId) throw new CatalogConflictError('INVALID_ACTOR');
+      if (lifecycleStatus === 'active') {
+        delete updated.disabledAt;
+        delete updated.disabledBy;
+      }
+      metadata.set(contentId, updated);
+      metadataVersions.set(contentId, version);
+      return { value: clone(updated), version };
+    },
     async updateApprovalStatus(contentId, approvalStatus, options) {
       const current = metadata.get(contentId);
       if (!current) throw new CatalogNotFoundError('CONTENT_METADATA_NOT_FOUND');
