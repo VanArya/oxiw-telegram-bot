@@ -31,6 +31,7 @@ function createAdminApi(writableProvider, {
   authorizePermission = roleAuthorizer,
   authorizeOwner,
   contentReader,
+  seriesStructureProvider,
   targetResolver,
   resolveManagerEmail,
   directCategoryWritesEnabled,
@@ -38,6 +39,7 @@ function createAdminApi(writableProvider, {
   return createCatalogAdminApi({
     writableProvider,
     contentReader,
+    seriesStructureProvider,
     verifyAdminPrincipal: verifyAdminPrincipal || (() => ({ authenticated: true, subjectId })),
     roleProvider,
     reportRoleResolutionFailure,
@@ -162,6 +164,63 @@ test('permanent content deletion requires owner access and a disabled versioned 
     assert.deepEqual(response.body.data, { contentId, deleted: true });
     assert.deepEqual(deletedSources, [{ id: contentId, sourceVersion: 'A'.repeat(43) }]);
     assert.equal(await store.getContentMetadata(contentId), null);
+  });
+});
+
+test('admin API lists seasons and creates and disables a season with version preconditions', async () => {
+  const store = createStore();
+  const seriesId = createCatalogContentId('series', 'admin-series-fixture');
+  let season = null;
+  let version = 0;
+  const contentReader = {
+    async getItem(id) {
+      return id === seriesId ? { id, kind: 'series', title: 'سریال آزمایشی' } : null;
+    },
+  };
+  const seriesStructureProvider = {
+    async listStructure() {
+      return season ? [{ value: season, version, episodes: [] }] : [];
+    },
+    async createSeason(id, value, options) {
+      assert.equal(id, seriesId);
+      assert.equal(options.expectedVersion, 0);
+      season = { ...value, lifecycleStatus: 'active' };
+      version = 1;
+      return { value: season, version };
+    },
+    async getSeasonWithVersion() {
+      return season ? { value: season, version } : null;
+    },
+    async setSeasonLifecycleStatus(id, number, status, options) {
+      assert.equal(options.expectedVersion, version);
+      season = { ...season, seasonNumber: number, lifecycleStatus: status };
+      version += 1;
+      return { value: season, version };
+    },
+  };
+  const app = createAdminApi(store, { contentReader, seriesStructureProvider });
+  await withServer(app, async (baseUrl) => {
+    const base = `${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(seriesId)}/seasons`;
+    const listed = await json(await fetch(base));
+    assert.equal(listed.status, 200);
+    assert.deepEqual(listed.body.data, []);
+
+    const created = await json(await fetch(base, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'if-none-match': '*' },
+      body: JSON.stringify({ seasonNumber: 1, title: 'فصل اول' }),
+    }));
+    assert.equal(created.status, 201);
+    assert.equal(created.body.data.seasonNumber, 1);
+    assert.ok(created.etag);
+
+    const disabled = await json(await fetch(`${base}/1/lifecycle`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'if-match': created.etag },
+      body: JSON.stringify({ lifecycleStatus: 'disabled' }),
+    }));
+    assert.equal(disabled.status, 200);
+    assert.equal(disabled.body.data.lifecycleStatus, 'disabled');
   });
 });
 
