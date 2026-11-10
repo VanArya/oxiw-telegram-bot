@@ -34,6 +34,24 @@ test('reads movie and series snapshots through the replaceable provider interfac
   assert.equal(results.find((item) => item.id === 'movie:fixture-movie-ir').kind, 'movie');
 });
 
+test('disabled published content is excluded from public catalog results', async () => {
+  const disabledId = createCatalogContentId('movie', 'fixture-movie-ir');
+  const metadata = createFixtureMetadataProvider({
+    [disabledId]: {
+      approvalStatus: 'approved',
+      publicationStatus: 'published',
+      lifecycleStatus: 'disabled',
+      disabledAt: '2026-11-10T12:00:00.000Z',
+      disabledBy: 'fixture-admin',
+      countryIds: ['IR'],
+      genreIds: ['drama'],
+    },
+  });
+  const adapter = createAdapter(createFixtureProvider(), metadata);
+  const results = await adapter.listItems();
+  assert.equal(results.some((item) => item.id === disabledId), false);
+});
+
 test('uses existing Core category filters for Iranian movies and series', async () => {
   const adapter = createAdapter();
   const movieCategory = categories.find((category) => category.slug === 'iranian-movies');
