@@ -128,9 +128,8 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       } catch (error) {
         throw classifyCatalogDependencyError('sheets', 'sheet_write', error, 'Unable to update catalog row.');
       }
-      const updated = await provider.readSheet(sheetName);
-      const updatedRow = updated.rows[index];
-      const updatedRecord = Object.fromEntries(updated.headers.map((header, i) => [header, updatedRow[i] ?? '']));
+      const updatedRecord = { ...record };
+      for (const [field, value] of Object.entries(fields)) updatedRecord[EDITABLE_COLUMNS[field]] = value;
       return {
         sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
         rowNumber: index + 2,
