@@ -22,6 +22,7 @@ function mockSheetsClient(valuesBySheet, calls = []) {
             ? { data: { values: valuesBySheet[args.range] } }
             : { data: {} };
         },
+        async batchUpdate(args) { calls.push({ batchUpdate: args }); return { data: {} }; },
       },
     },
   };
@@ -53,7 +54,7 @@ test('reads headers and rows for both approved sheets using values.get only', as
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow']);
 });
 
 test('empty sheets and responses without values become empty snapshots', async () => {
@@ -136,7 +137,7 @@ test('legacy rows remain mappable without country and internal Telegram IDs stay
 test('provider rejects missing client or Spreadsheet ID at construction', () => {
   assert.throws(
     () => createGoogleSheetsCatalogProvider({ sheetsClient: {}, spreadsheetId: spreadsheetIdFixture }),
-    /read-only Sheets values client/,
+    /Sheets values client with read and batch-update access/,
   );
   assert.throws(
     () => createGoogleSheetsCatalogProvider({
