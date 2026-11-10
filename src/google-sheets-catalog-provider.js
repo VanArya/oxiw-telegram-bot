@@ -17,9 +17,10 @@ function assertSheetClient(sheetsClient) {
   if (
     !sheetsClient ||
     typeof sheetsClient.spreadsheets?.values?.get !== 'function' ||
-    typeof sheetsClient.spreadsheets?.values?.batchUpdate !== 'function'
+    typeof sheetsClient.spreadsheets?.values?.batchUpdate !== 'function' ||
+    typeof sheetsClient.spreadsheets?.values?.append !== 'function'
   ) {
-    throw new TypeError('A Sheets values client with read and batch-update access is required.');
+    throw new TypeError('A Sheets values client with read, append, and batch-update access is required.');
   }
 }
 
@@ -92,7 +93,8 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion) ||
         !fields || typeof fields !== 'object' || Array.isArray(fields) ||
         Object.keys(fields).length === 0 ||
-        Object.keys(fields).some((key) => !Object.hasOwn(EDITABLE_COLUMNS, key))) {
+        Object.keys(fields).some((key) => typeof key !== 'string' || !key.trim() || key === 'کد سیستم' ||
+          key.length > 200 || !Object.hasOwn(EDITABLE_COLUMNS, key) && key.includes('\\u0000'))) {
       throw Object.assign(new Error('Invalid catalog row update.'), { code: 'INVALID_INPUT' });
     }
     const operation = async () => {
@@ -112,7 +114,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const data = [];
       for (const [field, value] of Object.entries(fields)) {
-        const header = EDITABLE_COLUMNS[field];
+        const header = field;
         const columnIndex = snapshot.headers.indexOf(header);
         if (columnIndex < 0) throw Object.assign(new Error('Editable catalog column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
         data.push({
@@ -129,11 +131,58 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         throw classifyCatalogDependencyError('sheets', 'sheet_write', error, 'Unable to update catalog row.');
       }
       const updatedRecord = { ...record };
-      for (const [field, value] of Object.entries(fields)) updatedRecord[EDITABLE_COLUMNS[field]] = String(value);
+      for (const [field, value] of Object.entries(fields)) updatedRecord[field] = String(value);
       return {
         sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
         rowNumber: index + 2,
       };
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+  provider.getSheetSchema = async function getSheetSchema(sheetName) {
+    const snapshot = await provider.readSheet(sheetName);
+    return Object.freeze([...snapshot.headers]);
+  };
+  provider.createCatalogRow = async function createCatalogRow({ sheetName, fields } = {}) {
+    if (!SHEETS.has(sheetName) || !fields || typeof fields !== 'object' || Array.isArray(fields) ||
+        typeof fields['کد سیستم'] !== 'string' || !fields['کد سیستم'].trim() ||
+        typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim()) {
+      throw Object.assign(new Error('Invalid new catalog row.'), { code: 'INVALID_INPUT' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet(sheetName);
+      if (!snapshot.headers.includes('کد سیستم') || !snapshot.headers.includes('اسم فیلم')) {
+        throw Object.assign(new Error('Required catalog columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      }
+      if (Object.keys(fields).some((header) => !snapshot.headers.includes(header) || header === '__proto__')) {
+        throw Object.assign(new Error('Unknown catalog column.'), { code: 'INVALID_INPUT' });
+      }
+      const code = fields['کد سیستم'].normalize('NFC').trim();
+      const codeIndex = snapshot.headers.indexOf('کد سیستم');
+      if (snapshot.rows.some((row) => String(row[codeIndex] ?? '').normalize('NFC').trim() === code)) {
+        throw Object.assign(new Error('Catalog system code already exists.'), { code: 'ALREADY_EXISTS' });
+      }
+      const values = snapshot.headers.map((header) => fields[header] === undefined ? '' : String(fields[header]));
+      try {
+        const response = await sheetsClient.spreadsheets.values.append({
+          spreadsheetId,
+          range: quoteSheetRange(sheetName),
+          valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [values] },
+        });
+        const updatedRecord = Object.fromEntries(snapshot.headers.map((header, index) => [header, values[index]]));
+        const rowNumber = Number(/!A(\\d+):/.exec(response?.data?.updates?.updatedRange || '')?.[1]) || snapshot.rows.length + 2;
+        return {
+          sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
+          rowNumber,
+          record: updatedRecord,
+        };
+      } catch (error) {
+        throw classifyCatalogDependencyError('sheets', 'sheet_append', error, 'Unable to create catalog row.');
+      }
     };
     const result = writeQueue.then(operation, operation);
     writeQueue = result.catch(() => undefined);
