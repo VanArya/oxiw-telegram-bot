@@ -184,6 +184,14 @@ function createInMemoryWritableCatalogMetadataProvider({
       metadataVersions.set(contentId, version);
       return { value: clone(updated), version };
     },
+    async deleteContentMetadata(contentId, options) {
+      const current = metadata.get(contentId);
+      if (!current) throw new CatalogNotFoundError('CONTENT_METADATA_NOT_FOUND');
+      const version = checkExpectedVersion(metadataVersions, contentId, options);
+      metadata.delete(contentId);
+      metadataVersions.delete(contentId);
+      return { value: clone(current), version };
+    },
     async updateApprovalStatus(contentId, approvalStatus, options) {
       const current = metadata.get(contentId);
       if (!current) throw new CatalogNotFoundError('CONTENT_METADATA_NOT_FOUND');
