@@ -90,6 +90,7 @@ function createCatalogHttpService({
   const adminContentReader = createCatalogAdminContentReader({
     sheetProvider: provider,
     writableProvider,
+    seriesStructureProvider,
     onInvalidSourceRow(diagnostic) {
       // Only bounded, non-content metadata is logged. Never include row values,
       // system codes, file IDs, or raw validation messages.
