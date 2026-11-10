@@ -170,6 +170,22 @@
       <div id="dialog-message" class="notice" hidden></div>
       <div class="detail-grid"><div><span>سال</span><strong id="dialog-year">—</strong></div><div><span>وضعیت تأیید</span><strong id="dialog-approval">—</strong></div><div><span>وضعیت انتشار</span><strong id="dialog-publication">—</strong></div></div>
       <p id="dialog-series" class="muted"></p><p id="dialog-synopsis" class="detail-copy"></p><p id="dialog-cast" class="muted"></p>
+      <form id="source-form" class="editor-form inline-editor">
+      <div class="panel-heading"><h3>ویرایش اطلاعات اصلی (Google Sheets)</h3></div>
+      <label>عنوان<input id="source-title" required maxlength="500"></label>
+      <label id="source-release-year-label">سال انتشار<input id="source-release-year" type="number" min="1800" max="3000"></label>
+      <label id="source-start-year-label">سال شروع<input id="source-start-year" type="number" min="1800" max="3000"></label>
+      <label id="source-end-year-label">سال پایان / وضعیت<input id="source-end-year" maxlength="20" placeholder="سال یا در حال پخش"></label>
+      <label id="source-seasons-label">تعداد فصل و قسمت<input id="source-seasons" maxlength="120"></label>
+      <label>خلاصه داستان<textarea id="source-synopsis" rows="4" maxlength="10000"></textarea></label>
+      <label>بازیگران<textarea id="source-cast" rows="3" maxlength="3000"></textarea></label>
+      <label>زبان<input id="source-language" maxlength="100"></label>
+      <label>امتیاز<input id="source-rating" maxlength="40"></label>
+      <label>لینک تریلر<input id="source-trailer" type="url" maxlength="2000" dir="ltr"></label>
+      <label>لینک پوستر<input id="source-poster" type="url" maxlength="2000" dir="ltr"></label>
+      <p class="fine-print">کد سیستم و شناسهٔ ردیف قابل تغییر نیستند. ذخیره‌سازی مستقیماً در Google Sheets انجام می‌شود.</p>
+      <button id="source-save" class="button button-primary" type="submit">ذخیرهٔ اطلاعات اصلی</button>
+      </form>
       <form id="metadata-form" class="editor-form inline-editor">
         <div class="panel-heading"><h3>فرادادهٔ قابل ویرایش</h3></div>
         <label>کشورها<select id="metadata-countries" multiple size="4"></select></label>
