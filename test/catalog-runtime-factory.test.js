@@ -76,6 +76,7 @@ function makeGoogle({ failAuth = false } = {}) {
               return { data: { values: [['کد سیستم', 'اسم فیلم'], ['101', 'Fixture']] } };
             },
             async batchUpdate() { return { data: {} }; },
+            async append() { return { data: {} }; },
             async batchUpdate() { return { data: {} }; },
           },
         },
