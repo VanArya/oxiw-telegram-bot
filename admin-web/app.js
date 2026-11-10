@@ -631,13 +631,14 @@ function renderContentRows(items) {
 }
 
 function updateBulkControls() {
-  const count = selectedContentIds.size;
+  const selectableIds = currentItems.filter((item) => item.kind === 'movie' || item.kind === 'series').map((item) => item.id);
+  const count = contentLifecycleStatus === 'active' ? selectedContentIds.size : 0;
   const bar = $('#content-bulk-actions');
-  if (bar) bar.hidden = count === 0;
+  if (bar) bar.hidden = count === 0 || contentLifecycleStatus !== 'active';
   setText($('#content-selected-count'), `${count.toLocaleString('fa-IR')} مورد انتخاب شده`);
   const all = $('#content-select-all');
   if (all) {
-    const visible = currentItems.map((item) => item.id);
+    const visible = selectableIds;
     all.checked = visible.length > 0 && visible.every((id) => selectedContentIds.has(id));
     all.indeterminate = visible.some((id) => selectedContentIds.has(id)) && !all.checked;
   }
@@ -2009,8 +2010,8 @@ function wireUi() {
   }));
   elements.managerForm.addEventListener('submit', (event) => void addManager(event));
   $('#content-select-all').addEventListener('change', (event) => {
-    currentItems.forEach((item) => {
-      if (event.currentTarget.checked) selectedContentIds.add(item.id);
+    currentItems.filter((item) => item.kind === 'movie' || item.kind === 'series').forEach((item) => {
+      if (event.currentTarget.checked && contentLifecycleStatus === 'active') selectedContentIds.add(item.id);
       else selectedContentIds.delete(item.id);
     });
     renderContentRows(currentItems);
