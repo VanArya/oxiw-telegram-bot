@@ -32,6 +32,7 @@ function createAdminApi(writableProvider, {
   authorizeOwner,
   contentReader,
   seriesStructureProvider,
+  roleAuditReader,
   targetResolver,
   resolveManagerEmail,
   directCategoryWritesEnabled,
@@ -40,6 +41,7 @@ function createAdminApi(writableProvider, {
     writableProvider,
     contentReader,
     seriesStructureProvider,
+    roleAuditReader,
     verifyAdminPrincipal: verifyAdminPrincipal || (() => ({ authenticated: true, subjectId })),
     roleProvider,
     reportRoleResolutionFailure,
@@ -221,6 +223,51 @@ test('admin API lists seasons and creates and disables a season with version pre
     }));
     assert.equal(disabled.status, 200);
     assert.equal(disabled.body.data.lifecycleStatus, 'disabled');
+  });
+});
+
+test('role audit history is owner-only and paginated', async () => {
+  const store = createStore();
+  const roleAuditReader = {
+    async list(options) {
+      assert.deepEqual(options, { page: '1', pageSize: '20' });
+      return {
+        data: [{
+          eventId: '12345678-1234-4234-8234-123456789012',
+          operation: 'assignment.created',
+          occurredAt: '2026-11-10T12:00:00.000Z',
+          outcome: 'committed',
+          actorId: 'fixture-owner',
+          targetSubjectId: 'fixture-manager',
+          rolesBefore: [],
+          rolesAfter: ['content_editor'],
+          activeBefore: false,
+          activeAfter: true,
+          previousVersion: 0,
+          version: 1,
+        }],
+        meta: { page: 1, pageSize: 20, hasMore: false },
+      };
+    },
+  };
+  const app = createAdminApi(store, {
+    roleAuditReader,
+    authorizeOwner: () => true,
+  });
+  await withServer(app, async (baseUrl) => {
+    const response = await json(await fetch(`${baseUrl}${ADMIN_PATH}/role-audit?page=1&pageSize=20`));
+    assert.equal(response.status, 200);
+    assert.equal(response.body.data[0].targetSubjectId, 'fixture-manager');
+    assert.equal(response.body.meta.hasMore, false);
+  });
+
+  const deniedApp = createAdminApi(createStore(), {
+    roleAuditReader,
+    authorizeOwner: () => false,
+  });
+  await withServer(deniedApp, async (baseUrl) => {
+    const response = await json(await fetch(`${baseUrl}${ADMIN_PATH}/role-audit`));
+    assert.equal(response.status, 403);
   });
 });
 
