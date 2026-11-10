@@ -458,7 +458,7 @@ test('logs safe Sheets and Firestore diagnostics correlated with the public requ
           const error = new Error('apiKey=secret-key row=private-row header=private-header');
           error.response = { status: 403, data: { secret: 'private-response' } };
           throw error;
-        }, async batchUpdate() { return { data: {} }; } } },
+        }, async batchUpdate() { return { data: {} }; }, async append() { return { data: {} }; } } },
       },
       spreadsheetId: 'sensitive-spreadsheet-id',
     });
