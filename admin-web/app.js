@@ -1571,12 +1571,16 @@ async function startFirebase() {
         await authModule.signInWithPopup(auth, new authModule.GoogleAuthProvider());
       } catch (error) {
         const messages = {
-          'auth/popup-blocked': 'مرورگر پنجره ورود را مسدود کرد.',
-          'auth/popup-closed-by-user': 'پنجره ورود بسته شد؛ دوباره تلاش کنید.',
+          'auth/popup-blocked': 'مرورگر پنجره ورود را مسدود کرد؛ اجازهٔ بازشدن پنجره‌ها را برای این سایت فعال کنید.',
+          'auth/popup-closed-by-user': 'پنجرهٔ ورود پیش از تکمیل تأیید هویت بسته شد؛ دوباره تلاش کنید. اگر پس از انتخاب حساب این پیام تکرار شد، اتصال به سرویس Google یا تنظیمات پنجرهٔ ورود را بررسی می‌کنیم.',
+          'auth/cancelled-popup-request': 'درخواست ورود دیگری هم‌زمان فعال است؛ چند لحظه صبر کنید و دوباره تلاش کنید.',
+          'auth/network-request-failed': 'ارتباط با سرویس احراز هویت Google برقرار نشد؛ اتصال شبکه یا محدودیت دسترسی به سرویس‌های Google را بررسی کنید.',
+          'auth/internal-error': 'سرویس احراز هویت پاسخ معتبر نداد؛ چند لحظه بعد دوباره تلاش کنید.',
+          'auth/timeout': 'مهلت ارتباط با سرویس احراز هویت تمام شد؛ اتصال شبکه را بررسی و دوباره تلاش کنید.',
           'auth/unauthorized-domain': 'دامنهٔ این سرویس در Firebase مجاز نشده است.',
           'auth/operation-not-allowed': 'ورود Google در Firebase فعال نشده است.',
         };
-        setText(elements.loginMessage, messages[error?.code] || 'ورود انجام نشد؛ تنظیمات Authentication را بررسی کنید.');
+        setText(elements.loginMessage, messages[error?.code] || 'ورود انجام نشد؛ تنظیمات Authentication و اتصال شبکه را بررسی کنید.');
       } finally { setBusy(button, false); }
     });
     $('#sign-out').addEventListener('click', () => void signOutCurrentUser());
