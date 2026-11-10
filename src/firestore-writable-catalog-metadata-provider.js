@@ -465,6 +465,16 @@ function createFirestoreWritableCatalogMetadataProvider({
         },
       });
     },
+    async deleteContentMetadata(contentId, options) {
+      if (!isCanonicalContentId(contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+      return deleteVersionedRecord({
+        reference: contentRef(contentId),
+        options,
+        projectExisting: (data) => projectContent(data, contentId),
+        entityType: 'content',
+        entityId: contentId,
+      });
+    },
     async updateApprovalStatus(contentId, approvalStatus, options) {
       validateExpectedVersion(options);
       const current = await provider.getContentMetadataWithVersion(contentId);
