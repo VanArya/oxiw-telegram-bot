@@ -977,6 +977,296 @@ async function createSourceItem(event) {
   } finally { setBusy(button, false); }
 }
 
+function structureApiPath(seasonNumber, episodeNumber) {
+  const base = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons/${seasonNumber}`;
+  return episodeNumber === undefined ? base : `${base}/episodes/${episodeNumber}`;
+}
+
+function addStructureAction(parent, label, handler, variant = 'button-secondary') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `button button-small ${variant}`;
+  button.textContent = label;
+  button.disabled = !hasPermission('catalog.metadata.write');
+  button.addEventListener('click', () => void handler());
+  parent.append(button);
+  return button;
+}
+
+function renderSeriesStructure() {
+  const panel = $('#series-structure-panel');
+  const list = $('#series-season-list');
+  if (!panel || !list) return;
+  panel.hidden = selectedItem?.kind !== 'series';
+  if (panel.hidden) return;
+  list.replaceChildren();
+  if (seriesStructure.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'هنوز فصلی برای این سریال ثبت نشده است.';
+    list.append(empty);
+    return;
+  }
+  for (const season of seriesStructure) {
+    const card = document.createElement('section');
+    card.className = 'series-season-card panel';
+    const heading = document.createElement('div');
+    heading.className = 'panel-heading';
+    const title = document.createElement('h4');
+    title.textContent = season.title || `فصل ${season.seasonNumber}`;
+    const status = statusBadge(season.lifecycleStatus);
+    heading.append(title, status);
+    card.append(heading);
+    const seasonActions = document.createElement('div');
+    seasonActions.className = 'form-actions';
+    addStructureAction(seasonActions, 'ویرایش فصل', () => openStructureEditor({
+      kind: 'season', mode: 'edit', seasonNumber: season.seasonNumber, value: season,
+    }));
+    addStructureAction(seasonActions, 'افزودن قسمت', () => openStructureEditor({
+      kind: 'episode', mode: 'create', seasonNumber: season.seasonNumber,
+    }), 'button-primary');
+    addStructureAction(seasonActions, season.lifecycleStatus === 'disabled' ? 'بازگردانی فصل' : 'غیرفعال‌سازی فصل',
+      () => changeStructureLifecycle('season', season.seasonNumber, undefined,
+        season.lifecycleStatus === 'disabled' ? 'active' : 'disabled'),
+      season.lifecycleStatus === 'disabled' ? 'button-primary' : 'button-danger');
+    if (season.lifecycleStatus === 'disabled') {
+      addStructureAction(seasonActions, 'حذف دائم فصل', () => permanentlyDeleteStructure('season', season.seasonNumber), 'button-danger');
+    }
+    card.append(seasonActions);
+    const episodes = document.createElement('div');
+    episodes.className = 'series-episode-list';
+    for (const episode of season.episodes || []) {
+      const row = document.createElement('div');
+      row.className = 'series-episode-row';
+      const info = document.createElement('div');
+      const episodeTitle = document.createElement('strong');
+      episodeTitle.textContent = episode.title || `قسمت ${episode.episodeNumber}`;
+      const details = document.createElement('p');
+      details.className = 'fine-print';
+      const links = episode.downloadLinks || [];
+      details.textContent = `قسمت ${episode.episodeNumber} · ${links.length} لینک دانلود${episode.releaseDate ? ` · ${episode.releaseDate}` : ''}`;
+      info.append(episodeTitle, details);
+      const episodeActions = document.createElement('div');
+      episodeActions.className = 'form-actions';
+      addStructureAction(episodeActions, 'ویرایش', () => openStructureEditor({
+        kind: 'episode', mode: 'edit', seasonNumber: season.seasonNumber,
+        episodeNumber: episode.episodeNumber, value: episode,
+      }));
+      addStructureAction(episodeActions, episode.lifecycleStatus === 'disabled' ? 'بازگردانی' : 'غیرفعال‌سازی',
+        () => changeStructureLifecycle('episode', season.seasonNumber, episode.episodeNumber,
+          episode.lifecycleStatus === 'disabled' ? 'active' : 'disabled'),
+        episode.lifecycleStatus === 'disabled' ? 'button-primary' : 'button-danger');
+      if (episode.lifecycleStatus === 'disabled') {
+        addStructureAction(episodeActions, 'حذف دائم', () => permanentlyDeleteStructure('episode', season.seasonNumber, episode.episodeNumber), 'button-danger');
+      }
+      row.append(info, episodeActions);
+      episodes.append(row);
+    }
+    if ((season.episodes || []).length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'fine-print';
+      empty.textContent = 'قسمتی ثبت نشده است.';
+      episodes.append(empty);
+    }
+    card.append(episodes);
+    list.append(card);
+  }
+}
+
+async function loadSeriesStructure() {
+  if (!selectedItem || selectedItem.kind !== 'series') {
+    seriesStructure = [];
+    renderSeriesStructure();
+    return;
+  }
+  try {
+    const result = await api(`${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons`);
+    seriesStructure = result.body.data || [];
+    renderSeriesStructure();
+  } catch (error) {
+    seriesStructure = [];
+    renderSeriesStructure();
+    const message = $('#series-structure-message');
+    if (message) {
+      message.hidden = false;
+      message.textContent = error.message || 'ساختار فصل‌ها و قسمت‌ها بارگذاری نشد.';
+    }
+  }
+}
+
+function addDownloadLinkEditorRow(link = {}) {
+  const container = $('#structure-download-links');
+  const row = document.createElement('div');
+  row.className = 'structure-download-row';
+  row.dataset.linkId = link.id || crypto.randomUUID();
+  const label = document.createElement('input');
+  label.type = 'text';
+  label.maxLength = 80;
+  label.placeholder = 'عنوان یا کیفیت (مثلاً 720p)';
+  label.value = link.label || '';
+  label.setAttribute('aria-label', 'عنوان لینک دانلود');
+  const url = document.createElement('input');
+  url.type = 'text';
+  url.maxLength = 2000;
+  url.placeholder = 'آدرس یا شناسه دانلود';
+  url.value = link.url || '';
+  url.setAttribute('aria-label', 'آدرس لینک دانلود');
+  const size = document.createElement('input');
+  size.type = 'number';
+  size.min = '0';
+  size.step = '1';
+  size.placeholder = 'حجم (بایت)';
+  size.value = link.sizeBytes == null ? '' : String(link.sizeBytes);
+  size.setAttribute('aria-label', 'حجم فایل به بایت');
+  const enabledLabel = document.createElement('label');
+  enabledLabel.className = 'check-label';
+  const enabled = document.createElement('input');
+  enabled.type = 'checkbox';
+  enabled.checked = link.enabled !== false;
+  enabledLabel.append(enabled, document.createTextNode('فعال'));
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'button button-small button-danger';
+  remove.textContent = 'حذف لینک';
+  remove.addEventListener('click', () => row.remove());
+  row.append(label, url, size, enabledLabel, remove);
+  container.append(row);
+}
+
+function openStructureEditor({ kind, mode, seasonNumber, episodeNumber, value = {} }) {
+  structureEditor = { kind, mode, seasonNumber, episodeNumber };
+  setText($('#structure-editor-kind'), kind === 'season' ? 'مدیریت فصل' : 'مدیریت قسمت');
+  setText($('#structure-editor-title'), `${mode === 'create' ? 'افزودن' : 'ویرایش'} ${kind === 'season' ? 'فصل' : 'قسمت'}`);
+  const numberField = $('#structure-number-field');
+  const numberInput = $('#structure-number');
+  setText(numberField.querySelector('label'), '');
+  numberInput.value = mode === 'edit' ? String(kind === 'season' ? seasonNumber : episodeNumber) : '';
+  numberInput.readOnly = mode === 'edit';
+  numberField.firstChild.textContent = kind === 'season' ? 'شماره فصل' : 'شماره قسمت';
+  $('#structure-title').value = value.title || '';
+  $('#structure-description').value = value.description || '';
+  $('#structure-release-field').hidden = kind !== 'episode';
+  $('#structure-release-date').value = value.releaseDate || '';
+  $('#structure-links-field').hidden = kind !== 'episode';
+  $('#structure-download-links').replaceChildren();
+  if (kind === 'episode') {
+    const links = value.downloadLinks || [];
+    if (links.length) links.forEach(addDownloadLinkEditorRow);
+    else addDownloadLinkEditorRow();
+  }
+  $('#series-structure-editor').showModal();
+}
+
+async function saveSeriesStructure(event) {
+  event.preventDefault();
+  if (!selectedItem || selectedItem.kind !== 'series' || !structureEditor ||
+      !hasPermission('catalog.metadata.write')) return;
+  const { kind, mode, seasonNumber, episodeNumber } = structureEditor;
+  const number = Number($('#structure-number').value);
+  if (!Number.isSafeInteger(number) || number < 1) {
+    showToast('شماره فصل یا قسمت معتبر نیست.', 'error');
+    return;
+  }
+  const title = $('#structure-title').value.trim();
+  const description = $('#structure-description').value.trim();
+  const body = {
+    [kind === 'season' ? 'seasonNumber' : 'episodeNumber']: number,
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+  };
+  let path;
+  let method;
+  let headers;
+  if (kind === 'season') {
+    path = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons`;
+    method = mode === 'create' ? 'POST' : 'PUT';
+    if (mode === 'edit') {
+      const current = await api(`${path}/${seasonNumber}`);
+      path += `/${seasonNumber}`;
+      headers = { 'If-Match': current.etag };
+      delete body.seasonNumber;
+    } else headers = { 'If-None-Match': '*' };
+  } else {
+    const base = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons/${seasonNumber}/episodes`;
+    path = mode === 'create' ? base : `${base}/${episodeNumber}`;
+    method = mode === 'create' ? 'POST' : 'PUT';
+    body.releaseDate = $('#structure-release-date').value || undefined;
+    const links = $('#structure-download-links .structure-download-row').map((row, index) => {
+      const fields = row.querySelectorAll('input');
+      const sizeBytes = fields[2].value === '' ? undefined : Number(fields[2].value);
+      return {
+        id: row.dataset.linkId,
+        label: fields[0].value.trim(),
+        url: fields[1].value.trim(),
+        ...(sizeBytes === undefined ? {} : { sizeBytes }),
+        sortOrder: index,
+        enabled: fields[3].checked,
+      };
+    });
+    if (!links.length || links.some((link) => !link.label || !link.url ||
+        (link.sizeBytes !== undefined && (!Number.isSafeInteger(link.sizeBytes) || link.sizeBytes < 0)))) {
+      showToast('برای هر قسمت حداقل یک لینک معتبر لازم است.', 'error');
+      return;
+    }
+    body.downloadLinks = links;
+    if (mode === 'edit') {
+      const current = await api(path);
+      headers = { 'If-Match': current.etag };
+    } else headers = { 'If-None-Match': '*' };
+  }
+  const button = $('#structure-save');
+  setBusy(button, true);
+  try {
+    await api(path, { method, headers, body: JSON.stringify(body) });
+    $('#series-structure-editor').close();
+    structureEditor = null;
+    await loadSeriesStructure();
+    await loadContent();
+    showToast(kind === 'season' ? 'اطلاعات فصل ذخیره شد.' : 'اطلاعات قسمت ذخیره شد.', 'success');
+  } catch (error) {
+    if (error.status === 409) showToast('شماره فصل یا قسمت تکراری است.', 'error');
+    else reportApiError(error);
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function changeStructureLifecycle(kind, seasonNumber, episodeNumber, lifecycleStatus) {
+  const path = structureApiPath(seasonNumber, episodeNumber);
+  try {
+    const current = await api(path);
+    const result = await api(`${path}/lifecycle`, {
+      method: 'PATCH',
+      headers: { 'If-Match': current.etag },
+      body: JSON.stringify({ lifecycleStatus }),
+    });
+    await loadSeriesStructure();
+    await loadContent();
+    showToast(lifecycleStatus === 'disabled' ? 'مورد غیرفعال شد.' : 'مورد بازگردانی شد.', 'success');
+  } catch (error) { reportApiError(error); }
+}
+
+async function permanentlyDeleteStructure(kind, seasonNumber, episodeNumber) {
+  const path = structureApiPath(seasonNumber, kind === 'episode' ? episodeNumber : undefined);
+  if (!window.confirm('این مورد و اطلاعات وابسته به آن برای همیشه حذف شوند؟')) return;
+  try {
+    const current = await api(path);
+    await api(path, { method: 'DELETE', headers: { 'If-Match': current.etag } });
+    await loadSeriesStructure();
+    await loadContent();
+    showToast('مورد حذف دائم شد.', 'success');
+  } catch (error) { reportApiError(error); }
+}
+
+async function openParentSeries(item) {
+  try {
+    const result = await api(`${API_ROOT}/items?q=${encodeURIComponent(item.systemCode)}&lifecycleStatus=active&pageSize=100`);
+    const parent = result.body.data.find((entry) => entry.id === item.parentContentId);
+    if (!parent) throw new Error('سریال مادر در فهرست فعال پیدا نشد.');
+    await openContent(parent);
+  } catch (error) { reportApiError(error); }
+}
+
 function renderSelectedContent() {
   if (!selectedItem) return;
   setText($('#dialog-kind'), selectedItem.kind === 'movie' ? 'سینمایی' : 'سریال');
@@ -986,6 +1276,7 @@ function renderSelectedContent() {
   setText($('#dialog-approval'), STATUS_LABELS[selectedMetadata?.approvalStatus] || 'نامشخص');
   setText($('#dialog-publication'), STATUS_LABELS[selectedMetadata?.publicationStatus] || 'نامشخص');
   const series = selectedItem.seriesMetadata || {};
+  $('#series-structure-panel').hidden = selectedItem.kind !== 'series';
   setText($('#dialog-series'), selectedItem.kind === 'series'
     ? `فصل و قسمت: ${series.seasonsAndEpisodes || 'ثبت نشده'}${series.isOngoing ? ' · در حال پخش' : ''}`
     : '');
@@ -1000,6 +1291,7 @@ function renderSelectedContent() {
 
 async function openContent(item, notice) {
   selectedItem = item;
+  seriesStructure = [];
   selectedSource = null;
   selectedMetadata = {
     contentId: item.id,
@@ -1046,6 +1338,7 @@ async function openContent(item, notice) {
   }
   renderSelectedContent();
   elements.contentDialog.showModal();
+  if (selectedItem.kind === 'series') await loadSeriesStructure();
 }
 
 async function refreshSelectedContent(message) {
