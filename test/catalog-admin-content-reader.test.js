@@ -220,6 +220,7 @@ test('admin content reader skips invalid source rows and reports safe row diagno
     rowNumber: 3,
     stage: 'sheet_row_mapping',
     validationIssue: 'required_field_invalid',
+    fieldName: 'اسم فیلم',
   });
   assert.equal(JSON.stringify(diagnostics).includes('fixture-movie-ir'), false);
 });
