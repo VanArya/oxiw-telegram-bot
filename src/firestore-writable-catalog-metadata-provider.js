@@ -261,6 +261,32 @@ function createFirestoreWritableCatalogMetadataProvider({
     }
   }
 
+  async function deleteVersionedRecord({ reference, projectExisting, entityType, entityId, options, referenceCheck }) {
+    const writeOptions = validateExpectedVersion(options);
+    try {
+      return await firestore.runTransaction(async (transaction) => {
+        const stored = readSnapshot(await transaction.get(reference));
+        if (!stored) throw new CatalogNotFoundError('NOT_FOUND');
+        if (stored.version !== writeOptions.expectedVersion) throw new CatalogConflictError('VERSION_CONFLICT');
+        const previous = projectExisting(stored.data);
+        if (referenceCheck) await referenceCheck(transaction);
+        transaction.delete(reference);
+        const version = stored.version + 1;
+        const event = eventFor({
+          operation: `${entityType}.deleted`, entityType, entityId,
+          options: writeOptions, previousVersion: stored.version, version,
+          fields: ['deleted'], clock,
+        });
+        await auditEventSink.appendInTransaction(transaction, event);
+        return { value: previous, version };
+      });
+    } catch (error) {
+      if (error instanceof CatalogConflictError || error instanceof CatalogInputError ||
+          error instanceof CatalogNotFoundError) throw error;
+      throw safeStorageError();
+    }
+  }
+
   const provider = {
     async getContentMetadata(contentId) {
       if (!isCanonicalContentId(contentId)) return null;
@@ -445,6 +471,45 @@ function createFirestoreWritableCatalogMetadataProvider({
           }
         },
       }));
+    },
+    async deleteCategory(categoryId, options) {
+      if (typeof categoryId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(categoryId)) throw new CatalogInputError('INVALID_CATEGORY_ID');
+      return deleteVersionedRecord({
+        reference: categoryRef(categoryId),
+        options,
+        projectExisting: (data) => projectCategory({ id: categoryId }, data),
+        entityType: 'category',
+        entityId: categoryId,
+        referenceCheck: async (transaction) => {
+          const references = await transaction.get(
+            firestore.collection(collections.contentMetadata).where('categoryIds', 'array-contains', categoryId),
+          );
+          if (!references || !Array.isArray(references.docs)) throw new TypeError();
+          if (references.docs.length > 0) throw new CatalogConflictError('CATEGORY_IN_USE');
+        },
+      });
+    },
+    async deleteTaxonomyTerm(type, termId, options) {
+      if (!TAXONOMY_TYPES.has(type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+      const validId = type === 'country'
+        ? typeof termId === 'string' && /^[A-Z]{2}$/.test(termId)
+        : typeof termId === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(termId);
+      if (!validId) throw new CatalogInputError('INVALID_TAXONOMY_ID');
+      return deleteVersionedRecord({
+        reference: taxonomyRef(type, termId),
+        options,
+        projectExisting: (data) => projectTaxonomy(type, { id: termId }, data),
+        entityType: 'taxonomy',
+        entityId: `${type}:${termId}`,
+        referenceCheck: async (transaction) => {
+          const field = type === 'country' ? 'countryIds' : 'genreIds';
+          const references = await transaction.get(
+            firestore.collection(collections.contentMetadata).where(field, 'array-contains', termId),
+          );
+          if (!references || !Array.isArray(references.docs)) throw new TypeError();
+          if (references.docs.length > 0) throw new CatalogConflictError('TAXONOMY_TERM_IN_USE');
+        },
+      });
     },
   };
 

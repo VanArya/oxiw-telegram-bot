@@ -52,12 +52,19 @@ class FakeFirestore {
           if (this.failWrites) throw new Error('synthetic-private-write-error');
           staged.push({ mode: 'create', path: reference.path, value: copy(value) });
         },
+        delete: (reference) => {
+          if (this.failWrites) throw new Error('synthetic-private-write-error');
+          staged.push({ mode: 'delete', path: reference.path });
+        },
       };
       const result = await callback(transaction);
       if (staged.some(({ mode, path }) => mode === 'create' && this.documents.has(path))) {
         throw new Error('synthetic-private-create-conflict');
       }
-      for (const write of staged) this.documents.set(write.path, write.value);
+      for (const write of staged) {
+        if (write.mode === 'delete') this.documents.delete(write.path);
+        else this.documents.set(write.path, write.value);
+      }
       return result;
     } finally {
       releaseTransaction();
@@ -334,6 +341,45 @@ test('creates and edits categories and taxonomy terms with version checks', asyn
   assert.deepEqual(operations, [
     'category.created', 'category.updated', 'taxonomy.created', 'taxonomy.updated',
   ]);
+});
+
+test('hard deletes unused categories and taxonomy terms with transactional audit events', async () => {
+  const { firestore, provider } = setup();
+  await provider.upsertCategory('unused-category', {
+    slug: 'unused-category', localizedTitle: { fa: 'دستهٔ بدون استفاده' }, enabled: true,
+  }, { expectedVersion: 0, actorId: 'owner-test' });
+  const deletedCategory = await provider.deleteCategory('unused-category', {
+    expectedVersion: 1, actorId: 'owner-test',
+  });
+  assert.equal(deletedCategory.version, 2);
+  assert.equal(await provider.getCategoryWithVersion('unused-category'), null);
+
+  await provider.upsertTaxonomyTerm('genre', 'unused-genre', {
+    labelFa: 'ژانر بدون استفاده', enabled: true,
+  }, { expectedVersion: 0, actorId: 'owner-test' });
+  const deletedGenre = await provider.deleteTaxonomyTerm('genre', 'unused-genre', {
+    expectedVersion: 1, actorId: 'owner-test',
+  });
+  assert.equal(deletedGenre.version, 2);
+  assert.equal(await provider.getTaxonomyTermWithVersion('genre', 'unused-genre'), null);
+
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, event]) => event);
+  assert.deepEqual(events.slice(-3).map((event) => event.operation), ['category.deleted', 'taxonomy.created', 'taxonomy.deleted']);
+  assert.deepEqual(events.slice(-2).map((event) => event.actorId), ['owner-test', 'owner-test']);
+});
+
+test('refuses hard deletion when a category or taxonomy term is referenced', async () => {
+  const { provider } = setup();
+  const category = { slug: 'used-category', localizedTitle: { fa: 'دستهٔ استفاده‌شده' }, enabled: true };
+  await provider.upsertCategory('used-category', category, { expectedVersion: 0 });
+  await provider.upsertContentMetadata(contentId, { ...metadata, categoryIds: ['used-category'] }, { expectedVersion: 0 });
+  await assert.rejects(provider.deleteCategory('used-category', { expectedVersion: 1 }),
+    (error) => error instanceof CatalogConflictError && error.code === 'CATEGORY_IN_USE');
+
+  await assert.rejects(provider.deleteTaxonomyTerm('country', 'IR', { expectedVersion: 1 }),
+    (error) => error instanceof CatalogConflictError && error.code === 'TAXONOMY_TERM_IN_USE');
 });
 
 test('rejects duplicate category slugs and disabling taxonomy used by content', async () => {

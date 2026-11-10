@@ -86,7 +86,7 @@
             </section>
 
             <section id="view-content" class="view">
-              <div class="page-heading"><div><p class="eyebrow">منبع: Sheets · وضعیت: Firestore</p><h1>فیلم‌ها و سریال‌ها</h1><p class="muted">همهٔ ردیف‌ها، از جمله پیش‌نویس‌ها و موارد فاقد metadata</p></div><button class="button button-secondary refresh-button" data-refresh="content" type="button">به‌روزرسانی</button></div>
+              <div class="page-heading"><div><p class="eyebrow">منبع: Sheets · وضعیت: Firestore</p><h1>فیلم‌ها و سریال‌ها</h1><p class="muted">همهٔ ردیف‌ها، از جمله پیش‌نویس‌ها و موارد فاقد metadata</p></div><div class="form-actions"><button id="content-new-movie" data-permission="catalog.metadata.write" class="button button-primary" type="button">افزودن فیلم</button><button id="content-new-series" data-permission="catalog.metadata.write" class="button button-primary" type="button">افزودن سریال</button><button class="button button-secondary refresh-button" data-refresh="content" type="button">به‌روزرسانی</button></div></div>
               <div class="panel toolbar">
                 <label class="search-control"><span>جست‌وجو</span><input id="content-search" type="search" maxlength="100" placeholder="عنوان یا کد سیستم"></label>
                 <label><span>نوع</span><select id="content-kind"><option value="">همه</option><option value="movie">سینمایی</option><option value="series">سریال</option></select></label>
@@ -171,20 +171,10 @@
       <div class="detail-grid"><div><span>سال</span><strong id="dialog-year">—</strong></div><div><span>وضعیت تأیید</span><strong id="dialog-approval">—</strong></div><div><span>وضعیت انتشار</span><strong id="dialog-publication">—</strong></div></div>
       <p id="dialog-series" class="muted"></p><p id="dialog-synopsis" class="detail-copy"></p><p id="dialog-cast" class="muted"></p>
       <form id="source-form" class="editor-form inline-editor">
-      <div class="panel-heading"><h3>ویرایش اطلاعات اصلی (Google Sheets)</h3></div>
-      <label>عنوان<input id="source-title" required maxlength="500"></label>
-      <label id="source-release-year-label">سال انتشار<input id="source-release-year" type="number" min="1800" max="3000"></label>
-      <label id="source-start-year-label">سال شروع<input id="source-start-year" type="number" min="1800" max="3000"></label>
-      <label id="source-end-year-label">سال پایان / وضعیت<input id="source-end-year" maxlength="20" placeholder="سال یا در حال پخش"></label>
-      <label id="source-seasons-label">تعداد فصل و قسمت<input id="source-seasons" maxlength="120"></label>
-      <label>خلاصه داستان<textarea id="source-synopsis" rows="4" maxlength="10000"></textarea></label>
-      <label>بازیگران<textarea id="source-cast" rows="3" maxlength="3000"></textarea></label>
-      <label>زبان<input id="source-language" maxlength="100"></label>
-      <label>امتیاز<input id="source-rating" maxlength="40"></label>
-      <label>لینک تریلر<input id="source-trailer" type="url" maxlength="2000" dir="ltr"></label>
-      <label>لینک پوستر<input id="source-poster" type="url" maxlength="2000" dir="ltr"></label>
-      <p class="fine-print">کد سیستم و شناسهٔ ردیف قابل تغییر نیستند. ذخیره‌سازی مستقیماً در Google Sheets انجام می‌شود.</p>
-      <button id="source-save" class="button button-primary" type="submit">ذخیرهٔ اطلاعات اصلی</button>
+        <div class="panel-heading"><h3>ویرایش تمام ستون‌های Google Sheets</h3></div>
+        <div id="source-fields" class="source-fields"></div>
+        <p class="fine-print">تمام ستون‌های شیت نمایش داده می‌شوند. کد سیستم شناسهٔ ثابت رکورد است و پس از ایجاد قابل تغییر نیست.</p>
+        <button id="source-save" class="button button-primary" type="submit">ذخیرهٔ اطلاعات اصلی</button>
       </form>
       <form id="metadata-form" class="editor-form inline-editor">
         <div class="panel-heading"><h3>فرادادهٔ قابل ویرایش</h3></div>
@@ -198,6 +188,14 @@
         <div id="approval-actions" class="operation-group"><strong>تأیید محتوا</strong><button class="button button-small button-secondary" data-approval="approved" type="button">تأیید</button><button class="button button-small button-danger" data-approval="rejected" type="button">رد</button><button class="button button-small button-quiet" data-approval="pending" type="button">بازگشت به انتظار</button></div>
         <div id="publication-actions" class="operation-group"><strong>انتشار</strong><button class="button button-small button-primary" data-publication="published" type="button">انتشار</button><button class="button button-small button-secondary" data-publication="draft" type="button">پیش‌نویس</button><button class="button button-small button-danger" data-publication="archived" type="button">بایگانی</button></div>
       </div>
+    </dialog>
+    <dialog id="source-create-dialog" class="content-dialog">
+      <div class="dialog-heading"><div><p class="eyebrow">ثبت رکورد جدید در Google Sheets</p><h2 id="source-create-title">افزودن عنوان</h2></div><button id="source-create-close" class="icon-button" type="button" aria-label="بستن">×</button></div>
+      <form id="source-create-form" class="editor-form">
+        <div id="source-create-fields" class="source-fields"></div>
+        <p class="fine-print">فیلدهای موجود دقیقاً از سرستون‌های شیت خوانده می‌شوند. پس از ثبت، عنوان با وضعیت تأیید «در انتظار» و انتشار «پیش‌نویس» وارد فهرست می‌شود؛ فراداده را می‌توانید جداگانه تکمیل کنید.</p>
+        <button id="source-create-save" class="button button-primary" type="submit">ثبت در شیت</button>
+      </form>
     </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
     <script src="/admin/auth-session-coordinator.js"></script>

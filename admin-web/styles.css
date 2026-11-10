@@ -165,3 +165,6 @@ tbody tr:hover { background: #fbfdfd; }
 .bulk-actions{display:flex;align-items:center;justify-content:space-between;gap:.8rem;padding:.8rem 1rem;margin:0 0 .75rem}.bulk-actions strong{font-size:.82rem;color:var(--teal)}.content-row-select,#content-select-all{width:1rem;min-height:1rem;accent-color:var(--teal)}
 
 .record-button{display:flex;align-items:center;justify-content:space-between;gap:.8rem}.record-details{display:grid;gap:.18rem;min-width:0}.record-edit{flex:0 0 auto}
+
+.source-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.source-fields label{display:grid;gap:.35rem;min-width:0}.source-fields input,.source-fields textarea{width:100%;min-width:0}.source-fields textarea{resize:vertical;min-height:5rem}.record-delete{flex:0 0 auto}.record-button{flex-wrap:wrap}
+@media(max-width:720px){.source-fields{grid-template-columns:1fr}}

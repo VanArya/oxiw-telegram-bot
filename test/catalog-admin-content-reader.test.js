@@ -50,6 +50,57 @@ test('admin content reader lists unpublished Sheet rows with metadata status and
   assert.equal(JSON.stringify(item).includes('sourceRecord'), false);
 });
 
+test('protected source reader returns every sheet column while normal list projection keeps file IDs private', async () => {
+  const reader = makeReader();
+  const source = await reader.getItemSource(createCatalogContentId('movie', 'fixture-movie-ir'));
+  assert.deepEqual(source.headers, sheets['سینمایی'].headers);
+  assert.equal(source.record['Telegram File ID'], 'fake-file-movie');
+  assert.equal(source.record['اسم فیلم'], 'فیلم ایرانی ساختگی');
+  const list = await reader.list(new URLSearchParams('pageSize=100'));
+  assert.equal(JSON.stringify(list).includes('fake-file-movie'), false);
+});
+
+test('reader creates new movie and series rows using each sheet schema', async () => {
+  const source = structuredClone(sheets);
+  const hash = (record) => require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const provider = {
+    async readSheet(name) { return { headers: [...source[name].headers], rows: source[name].rows.map((row) => [...row]) }; },
+    async getSheetSchema(name) { return [...source[name].headers]; },
+    async createCatalogRow({ sheetName, fields }) {
+      const record = Object.fromEntries(source[sheetName].headers.map((header) => [header, fields[header] ?? '']));
+      source[sheetName].rows.push(source[sheetName].headers.map((header) => record[header]));
+      return { record, rowNumber: source[sheetName].rows.length + 1, sourceVersion: hash(record) };
+    },
+    async updateCatalogRow({ sheetName, systemCode, expectedVersion, fields }) {
+      const codeIndex = source[sheetName].headers.indexOf('کد سیستم');
+      const rowIndex = source[sheetName].rows.findIndex((row) => row[codeIndex] === systemCode);
+      const record = Object.fromEntries(source[sheetName].headers.map((header, index) => [header, source[sheetName].rows[rowIndex][index] ?? '']));
+      assert.equal(hash(record), expectedVersion);
+      for (const [header, value] of Object.entries(fields)) record[header] = value;
+      source[sheetName].rows[rowIndex] = source[sheetName].headers.map((header) => record[header]);
+      return { rowNumber: rowIndex + 2, sourceVersion: hash(record) };
+    },
+  };
+  const writableProvider = createInMemoryWritableCatalogMetadataProvider({ contentMetadata: [], categories: [], taxonomies: { country: [], genre: [] } });
+  const reader = createCatalogAdminContentReader({ sheetProvider: provider, writableProvider });
+  const movie = await reader.createItemSource('movie', {
+    'کد سیستم': 'created-movie', 'اسم فیلم': 'فیلم تازه', 'سال': '2025', 'Telegram File ID': 'new-file',
+  });
+  assert.equal(movie.id, 'movie:created-movie');
+  assert.equal(movie.record['Telegram File ID'], 'new-file');
+  const series = await reader.createItemSource('series', {
+    'کد سیستم': 'created-series', 'اسم فیلم': 'سریال تازه', 'سال شروع': '2023',
+    'سال پایان': 'در حال پخش', 'تعداد فصل و قسمت': '۱ فصل، ۸ قسمت',
+  });
+  assert.equal(series.id, 'series:created-series');
+  assert.equal(series.record['سال پایان'], 'در حال پخش');
+  const updated = await reader.updateItemSource(movie.id, {
+    sourceVersion: movie.sourceVersion, fields: { 'Telegram File ID': 'updated-file', 'اسم فیلم': 'عنوان ویرایش‌شده' },
+  });
+  assert.equal(updated.record['Telegram File ID'], 'updated-file');
+  assert.equal(updated.record['اسم فیلم'], 'عنوان ویرایش‌شده');
+});
+
 test('admin content reader searches title or system code and applies filters before pagination', async () => {
   const reader = makeReader();
   const byTitle = await reader.list(new URLSearchParams('q=%D8%B3%D8%B1%DB%8C%D8%A7%D9%84&kind=series'));
