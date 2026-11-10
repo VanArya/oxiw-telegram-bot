@@ -756,26 +756,31 @@ function renderSourceForm(item) {
   $('#source-rating').value = item.rating || '';
   $('#source-trailer').value = item.trailerUrl || '';
   $('#source-poster').value = item.posterUrl || '';
-  $('#source-release-year-label').hidden = item.kind !== 'movie';
-  ['source-start-year-label', 'source-end-year-label', 'source-seasons-label'].forEach((id) => { $('#'+id).hidden = item.kind !== 'series'; });
+  const available = new Set(item.sourceAvailableFields || []);
+  const labels = { title: 'source-title', releaseYear: 'source-release-year-label', startYear: 'source-start-year-label',
+    endYear: 'source-end-year-label', seasonsAndEpisodes: 'source-seasons-label', synopsis: 'source-synopsis',
+    cast: 'source-cast', language: 'source-language', rating: 'source-rating', trailerUrl: 'source-trailer', posterUrl: 'source-poster' };
+  Object.entries(labels).forEach(([field, id]) => { const control = $('#'+id); const label = control.tagName === 'LABEL' ? control : control.closest('label'); if (label) label.hidden = !available.has(field); });
   $('#source-form').hidden = !hasPermission('catalog.metadata.write');
 }
 
 async function saveSourceItem(event) {
   event.preventDefault();
   if (!selectedItem || !hasPermission('catalog.metadata.write')) return;
-  const fields = {
+  const available = new Set(selectedItem.sourceAvailableFields || []);
+  const candidates = {
     title: $('#source-title').value.trim(), synopsis: $('#source-synopsis').value,
     cast: $('#source-cast').value, language: $('#source-language').value.trim(),
     rating: $('#source-rating').value.trim(), trailerUrl: $('#source-trailer').value.trim(),
     posterUrl: $('#source-poster').value.trim(),
   };
+  const fields = Object.fromEntries(Object.entries(candidates).filter(([key]) => available.has(key)));
   if (selectedItem.kind === 'movie') {
-    fields.releaseYear = $('#source-release-year').value === '' ? '' : Number($('#source-release-year').value);
+    if (available.has('releaseYear')) fields.releaseYear = $('#source-release-year').value === '' ? '' : Number($('#source-release-year').value);
   } else {
-    fields.startYear = $('#source-start-year').value === '' ? '' : Number($('#source-start-year').value);
-    fields.endYear = $('#source-end-year').value.trim();
-    fields.seasonsAndEpisodes = $('#source-seasons').value.trim();
+    if (available.has('startYear')) fields.startYear = $('#source-start-year').value === '' ? '' : Number($('#source-start-year').value);
+    if (available.has('endYear')) fields.endYear = $('#source-end-year').value.trim();
+    if (available.has('seasonsAndEpisodes')) fields.seasonsAndEpisodes = $('#source-seasons').value.trim();
   }
   const button = $('#source-save');
   setBusy(button, true);
