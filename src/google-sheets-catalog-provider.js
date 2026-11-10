@@ -129,7 +129,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         throw classifyCatalogDependencyError('sheets', 'sheet_write', error, 'Unable to update catalog row.');
       }
       const updatedRecord = { ...record };
-      for (const [field, value] of Object.entries(fields)) updatedRecord[EDITABLE_COLUMNS[field]] = value;
+      for (const [field, value] of Object.entries(fields)) updatedRecord[EDITABLE_COLUMNS[field]] = String(value);
       return {
         sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
         rowNumber: index + 2,
