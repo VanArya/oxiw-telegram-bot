@@ -1165,62 +1165,62 @@ async function saveSeriesStructure(event) {
   event.preventDefault();
   if (!selectedItem || selectedItem.kind !== 'series' || !structureEditor ||
       !hasPermission('catalog.metadata.write')) return;
-  const { kind, mode, seasonNumber, episodeNumber } = structureEditor;
-  const number = Number($('#structure-number').value);
-  if (!Number.isSafeInteger(number) || number < 1) {
-    showToast('شماره فصل یا قسمت معتبر نیست.', 'error');
-    return;
-  }
-  const title = $('#structure-title').value.trim();
-  const description = $('#structure-description').value.trim();
-  const body = {
-    [kind === 'season' ? 'seasonNumber' : 'episodeNumber']: number,
-    ...(title ? { title } : {}),
-    ...(description ? { description } : {}),
-  };
-  let path;
-  let method;
-  let headers;
-  if (kind === 'season') {
-    path = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons`;
-    method = mode === 'create' ? 'POST' : 'PUT';
-    if (mode === 'edit') {
-      const current = await api(`${path}/${seasonNumber}`);
-      path += `/${seasonNumber}`;
-      headers = { 'If-Match': current.etag };
-      delete body.seasonNumber;
-    } else headers = { 'If-None-Match': '*' };
-  } else {
-    const base = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons/${seasonNumber}/episodes`;
-    path = mode === 'create' ? base : `${base}/${episodeNumber}`;
-    method = mode === 'create' ? 'POST' : 'PUT';
-    body.releaseDate = $('#structure-release-date').value || undefined;
-    const links = $('#structure-download-links .structure-download-row').map((row, index) => {
-      const fields = row.querySelectorAll('input');
-      const sizeBytes = fields[2].value === '' ? undefined : Number(fields[2].value);
-      return {
-        id: row.dataset.linkId,
-        label: fields[0].value.trim(),
-        url: fields[1].value.trim(),
-        ...(sizeBytes === undefined ? {} : { sizeBytes }),
-        sortOrder: index,
-        enabled: fields[3].checked,
-      };
-    });
-    if (!links.length || links.some((link) => !link.label || !link.url ||
-        (link.sizeBytes !== undefined && (!Number.isSafeInteger(link.sizeBytes) || link.sizeBytes < 0)))) {
-      showToast('برای هر قسمت حداقل یک لینک معتبر لازم است.', 'error');
-      return;
-    }
-    body.downloadLinks = links;
-    if (mode === 'edit') {
-      const current = await api(path);
-      headers = { 'If-Match': current.etag };
-    } else headers = { 'If-None-Match': '*' };
-  }
   const button = $('#structure-save');
   setBusy(button, true);
   try {
+    const { kind, mode, seasonNumber, episodeNumber } = structureEditor;
+    const number = Number($('#structure-number').value);
+    if (!Number.isSafeInteger(number) || number < 1) {
+      showToast('شماره فصل یا قسمت معتبر نیست.', 'error');
+      return;
+    }
+    const title = $('#structure-title').value.trim();
+    const description = $('#structure-description').value.trim();
+    const body = {
+      [kind === 'season' ? 'seasonNumber' : 'episodeNumber']: number,
+      ...(title ? { title } : {}),
+      ...(description ? { description } : {}),
+    };
+    let path;
+    let method;
+    let headers;
+    if (kind === 'season') {
+      path = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons`;
+      method = mode === 'create' ? 'POST' : 'PUT';
+      if (mode === 'edit') {
+        const current = await api(`${path}/${seasonNumber}`);
+        path += `/${seasonNumber}`;
+        headers = { 'If-Match': current.etag };
+        delete body.seasonNumber;
+      } else headers = { 'If-None-Match': '*' };
+    } else {
+      const base = `${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons/${seasonNumber}/episodes`;
+      path = mode === 'create' ? base : `${base}/${episodeNumber}`;
+      method = mode === 'create' ? 'POST' : 'PUT';
+      body.releaseDate = $('#structure-release-date').value || undefined;
+      const links = $$('#structure-download-links .structure-download-row').map((row, index) => {
+        const fields = row.querySelectorAll('input');
+        const sizeBytes = fields[2].value === '' ? undefined : Number(fields[2].value);
+        return {
+          id: row.dataset.linkId,
+          label: fields[0].value.trim(),
+          url: fields[1].value.trim(),
+          ...(sizeBytes === undefined ? {} : { sizeBytes }),
+          sortOrder: index,
+          enabled: fields[3].checked,
+        };
+      });
+      if (!links.length || links.some((link) => !link.label || !link.url ||
+          (link.sizeBytes !== undefined && (!Number.isSafeInteger(link.sizeBytes) || link.sizeBytes < 0)))) {
+        showToast('برای هر قسمت حداقل یک لینک معتبر لازم است.', 'error');
+        return;
+      }
+      body.downloadLinks = links;
+      if (mode === 'edit') {
+        const current = await api(path);
+        headers = { 'If-Match': current.etag };
+      } else headers = { 'If-None-Match': '*' };
+    }
     await api(path, { method, headers, body: JSON.stringify(body) });
     $('#series-structure-editor').close();
     structureEditor = null;
