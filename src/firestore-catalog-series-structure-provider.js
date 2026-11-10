@@ -200,7 +200,7 @@ function createFirestoreCatalogSeriesStructureProvider({
       const snapshot = await seasonsRef(seriesId).get();
       if (!snapshot || !Array.isArray(snapshot.docs)) throw new TypeError();
       return snapshot.docs.map((doc) => {
-        const stored = snapshotValue({ exists: true, data: doc.data });
+        const stored = snapshotValue({ exists: true, data: () => doc.data() });
         return { value: projectSeason(doc.id, stored.data), version: stored.version };
       }).filter(({ value }) => includeDisabled || value.lifecycleStatus === 'active')
         .sort((left, right) => left.value.seasonNumber - right.value.seasonNumber);
@@ -260,7 +260,7 @@ function createFirestoreCatalogSeriesStructureProvider({
           throw new CatalogConflictError('CASCADE_LIMIT_EXCEEDED');
         }
         for (const episode of episodeSnapshot.docs) {
-          const stored = snapshotValue({ exists: true, data: episode.data });
+          const stored = snapshotValue({ exists: true, data: () => episode.data() });
           const value = projectEpisode(episode.id, stored.data);
           transaction.delete(episodeRef(seriesId, seasonNumber, value.episodeNumber));
           await auditEventSink.appendInTransaction(transaction, eventFor({
