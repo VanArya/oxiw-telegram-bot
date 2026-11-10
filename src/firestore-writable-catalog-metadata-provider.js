@@ -445,17 +445,24 @@ function createFirestoreWritableCatalogMetadataProvider({
         entityId: contentId,
         operationFor: (_previous, next) => next.lifecycleStatus === 'disabled' ? 'content.disabled' : 'content.restored',
         fieldNames: ['lifecycleStatus', 'disabledAt', 'disabledBy'],
-        valueFor: (previous) => ({
-          ...(previous || {
-            contentId,
-            approvalStatus: 'unknown',
-            publicationStatus: 'unknown',
-            countryIds: [],
-            genreIds: [],
-          }),
-          lifecycleStatus,
-          ...disabledFields,
-        }),
+        valueFor: (previous) => {
+          const value = {
+            ...(previous || {
+              contentId,
+              approvalStatus: 'unknown',
+              publicationStatus: 'unknown',
+              countryIds: [],
+              genreIds: [],
+            }),
+            lifecycleStatus,
+            ...disabledFields,
+          };
+          if (lifecycleStatus === 'active') {
+            delete value.disabledAt;
+            delete value.disabledBy;
+          }
+          return value;
+        },
       });
     },
     async updateApprovalStatus(contentId, approvalStatus, options) {
