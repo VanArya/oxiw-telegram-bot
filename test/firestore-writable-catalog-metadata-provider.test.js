@@ -155,7 +155,7 @@ class FakeQuery {
   }
 }
 
-function setup({ sink, clock } = {}) {
+function setup({ sink, clock, collections } = {}) {
   const firestore = new FakeFirestore();
   firestore.seed('catalogTaxonomies/country/terms/IR', {
     id: 'IR', labelFa: 'ایران', enabled: true, _version: 1,
@@ -170,6 +170,7 @@ function setup({ sink, clock } = {}) {
   const provider = createFirestoreWritableCatalogMetadataProvider({
     firestore,
     auditEventSink,
+    ...(collections ? { collections } : {}),
     ...(clock ? { clock } : {}),
   });
   return { firestore, provider };
@@ -447,6 +448,46 @@ test('permanent series deletion cascades through seasons and episodes in the met
   assert.ok(events.some((event) => event.operation === 'episode.deleted'));
   assert.ok(events.some((event) => event.operation === 'season.deleted'));
   assert.ok(events.some((event) => event.operation === 'content.deleted'));
+});
+
+test('series cascade deletion uses the configured structure collection', async () => {
+  const collections = {
+    contentMetadata: 'customContentMetadata',
+    categories: 'customCategories',
+    taxonomies: 'customTaxonomies',
+    seriesStructures: 'customSeriesStructures',
+  };
+  const { firestore, provider: metadataProvider } = setup({ collections });
+  const auditEventSink = createFirestoreCatalogAuditEventSink({ firestore });
+  const structureProvider = createFirestoreCatalogSeriesStructureProvider({
+    firestore,
+    auditEventSink,
+    collection: collections.seriesStructures,
+    contentMetadataCollection: collections.contentMetadata,
+  });
+  const seriesId = createCatalogContentId('series', 'custom-collection-fixture');
+  await metadataProvider.upsertContentMetadata(seriesId, metadata, {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  });
+  await structureProvider.createSeason(seriesId, { seasonNumber: 1 }, {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  });
+  await structureProvider.createEpisode(seriesId, 1, {
+    episodeNumber: 1,
+    downloadLinks: [{ id: 'main', label: 'اصلی', url: 'https://download.example/file' }],
+  }, { expectedVersion: 0, actorId: 'admin-test-1' });
+  await metadataProvider.updateContentLifecycleStatus(seriesId, 'disabled', {
+    expectedVersion: 1,
+    actorId: 'admin-test-1',
+  });
+  await metadataProvider.deleteContentMetadata(seriesId, {
+    expectedVersion: 2,
+    actorId: 'admin-test-1',
+  });
+  assert.equal(firestore.documents.has('customSeriesStructures/' + seriesId + '/seasons/season-1'), false);
+  assert.equal(firestore.documents.has('customSeriesStructures/' + seriesId + '/seasons/season-1/episodes/episode-1'), false);
 });
 
 test('approval and publication remain independent and publication requires approval', async () => {
