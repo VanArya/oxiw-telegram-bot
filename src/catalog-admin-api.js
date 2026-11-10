@@ -640,7 +640,7 @@ function createCatalogAdminApi({
     for (const header of ['سال', 'سال شروع', 'سال پایان']) {
       if (Object.hasOwn(fields, header) && fields[header] !== '' &&
           !(header === 'سال پایان' && fields[header] === 'در حال پخش') &&
-          (!/^\\d{4}$/.test(fields[header]) || Number(fields[header]) < 1800 || Number(fields[header]) > 3000)) {
+          (!/^\d{4}$/.test(fields[header]) || Number(fields[header]) < 1800 || Number(fields[header]) > 3000)) {
         throw new CatalogInputError();
       }
     }
