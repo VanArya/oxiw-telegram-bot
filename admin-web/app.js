@@ -12,6 +12,7 @@ const PERMISSION_LABELS = Object.freeze({
 const STATUS_LABELS = Object.freeze({
   pending: 'در انتظار', approved: 'تأییدشده', rejected: 'ردشده', unknown: 'نامشخص',
   draft: 'پیش‌نویس', published: 'منتشرشده', archived: 'بایگانی',
+  active: 'فعال', disabled: 'غیرفعال',
 });
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -617,7 +618,8 @@ function renderContentRows(items) {
     lifecycle.addEventListener('click', () => void changeContentLifecycle(item,
       item.lifecycleStatus === 'disabled' ? 'active' : 'disabled'));
     action.append(lifecycle);
-    if (item.lifecycleStatus === 'disabled' && (session?.roles || []).includes('administrator')) {
+    if (item.lifecycleStatus === 'disabled' && ((item.kind === 'season' || item.kind === 'episode')
+      ? hasPermission('catalog.metadata.write') : (session?.roles || []).includes('administrator'))) {
       const permanentDelete = document.createElement('button');
       permanentDelete.type = 'button';
       permanentDelete.className = 'button button-small button-danger';
@@ -1083,6 +1085,8 @@ async function loadSeriesStructure() {
   try {
     const result = await api(`${API_ROOT}/items/${encodeURIComponent(selectedItem.id)}/seasons`);
     seriesStructure = result.body.data || [];
+    const message = $('#series-structure-message');
+    if (message) message.hidden = true;
     renderSeriesStructure();
   } catch (error) {
     seriesStructure = [];
@@ -1140,7 +1144,6 @@ function openStructureEditor({ kind, mode, seasonNumber, episodeNumber, value = 
   setText($('#structure-editor-title'), `${mode === 'create' ? 'افزودن' : 'ویرایش'} ${kind === 'season' ? 'فصل' : 'قسمت'}`);
   const numberField = $('#structure-number-field');
   const numberInput = $('#structure-number');
-  setText(numberField.querySelector('label'), '');
   numberInput.value = mode === 'edit' ? String(kind === 'season' ? seasonNumber : episodeNumber) : '';
   numberInput.readOnly = mode === 'edit';
   numberField.firstChild.textContent = kind === 'season' ? 'شماره فصل' : 'شماره قسمت';
