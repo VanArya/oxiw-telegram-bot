@@ -743,6 +743,51 @@ test('only one concurrent write using the same ETag succeeds', async () => {
   });
 });
 
+test('bulk approval and publication process selected records independently with approval gating', async () => {
+  const secondId = createCatalogContentId('series', 'admin-fixture-2');
+  const store = createStore({ contentMetadata: [
+    { contentId, approvalStatus: 'pending', publicationStatus: 'draft' },
+    { contentId: secondId, approvalStatus: 'pending', publicationStatus: 'draft' },
+  ] });
+  const app = createAdminApi(store);
+  await withServer(app, async (baseUrl) => {
+    const approved = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/bulk/approval`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentIds: [contentId, secondId], approvalStatus: 'approved' }),
+    }));
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.meta.succeeded, 2);
+    assert.equal(approved.body.meta.failed, 0);
+    assert.equal((await store.getContentMetadata(contentId)).approvalStatus, 'approved');
+
+    const published = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/bulk/publication`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentIds: [contentId, secondId], publicationStatus: 'published' }),
+    }));
+    assert.equal(published.status, 200);
+    assert.equal(published.body.meta.succeeded, 2);
+    assert.equal((await store.getContentMetadata(secondId)).publicationStatus, 'published');
+  });
+});
+
+test('bulk publication reports unapproved and missing metadata items without aborting the batch', async () => {
+  const secondId = createCatalogContentId('series', 'admin-fixture-2');
+  const store = createStore({ contentMetadata: [
+    { contentId, approvalStatus: 'pending', publicationStatus: 'draft' },
+  ] });
+  const app = createAdminApi(store);
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/bulk/publication`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentIds: [contentId, secondId], publicationStatus: 'published' }),
+    }));
+    assert.equal(result.status, 200);
+    assert.equal(result.body.meta.succeeded, 0);
+    assert.equal(result.body.meta.failed, 2);
+    assert.deepEqual(result.body.data.map((item) => item.code), ['APPROVAL_REQUIRED', 'METADATA_REQUIRED']);
+  });
+});
+
 test('in-memory writer rejects duplicate keys, invalid metadata and disabling referenced taxonomy', async () => {
   assert.throws(() => createInMemoryWritableCatalogMetadataProvider({
     contentMetadata: [
