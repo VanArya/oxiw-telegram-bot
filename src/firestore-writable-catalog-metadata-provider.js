@@ -70,6 +70,9 @@ function projectContent(data, contentId) {
       ...(data.countryIds === undefined ? {} : { countryIds: data.countryIds }),
       ...(data.genreIds === undefined ? {} : { genreIds: data.genreIds }),
       ...(data.categoryIds === undefined ? {} : { categoryIds: data.categoryIds }),
+      ...(data.lifecycleStatus === undefined ? {} : { lifecycleStatus: data.lifecycleStatus }),
+      ...(data.disabledAt === undefined ? {} : { disabledAt: data.disabledAt }),
+      ...(data.disabledBy === undefined ? {} : { disabledBy: data.disabledBy }),
     });
   } catch {
     throw new TypeError();
@@ -406,15 +409,51 @@ function createFirestoreWritableCatalogMetadataProvider({
         entityType: 'content',
         entityId: contentId,
         operationFor: (previous) => previous ? 'metadata.updated' : 'metadata.created',
-        fieldNames: ['approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds'],
-        valueFor: (previous) => metadata.categoryIds === undefined && previous
-          ? { ...metadata, ...(previous.categoryIds === undefined ? {} : { categoryIds: previous.categoryIds }) }
-          : metadata,
+        fieldNames: ['approvalStatus', 'publicationStatus', 'countryIds', 'genreIds', 'categoryIds', 'lifecycleStatus', 'disabledAt', 'disabledBy'],
+        valueFor: (previous) => previous ? {
+          ...metadata,
+          ...(metadata.categoryIds === undefined && previous.categoryIds !== undefined ? { categoryIds: previous.categoryIds } : {}),
+          ...(metadata.lifecycleStatus === 'active' && previous.lifecycleStatus === 'disabled'
+            ? { lifecycleStatus: 'disabled', disabledAt: previous.disabledAt, disabledBy: previous.disabledBy }
+            : {}),
+        } : metadata,
         beforeWrite: async (transaction, _previous, nextValue) => {
           await assertActiveTaxonomyReferences(transaction, nextValue);
           await assertActiveCategoryReferences(transaction, nextValue);
         },
       }));
+    },
+    async updateContentLifecycleStatus(contentId, lifecycleStatus, options) {
+      if (!isCanonicalContentId(contentId) || !['active', 'disabled'].includes(lifecycleStatus)) {
+        throw new CatalogInputError('INVALID_CONTENT_LIFECYCLE');
+      }
+      const writeOptions = validateExpectedVersion(options);
+      const timestamp = clock();
+      if (!(timestamp instanceof Date) || !Number.isFinite(timestamp.getTime())) throw new CatalogInputError();
+      const disabledFields = lifecycleStatus === 'disabled'
+        ? { disabledAt: timestamp.toISOString(), ...(writeOptions.actorId ? { disabledBy: writeOptions.actorId } : {}) }
+        : {};
+      if (lifecycleStatus === 'disabled' && !writeOptions.actorId) throw new CatalogInputError();
+      return transactWrite({
+        reference: contentRef(contentId),
+        options: writeOptions,
+        projectExisting: (data) => projectContent(data, contentId),
+        entityType: 'content',
+        entityId: contentId,
+        operationFor: (_previous, next) => next.lifecycleStatus === 'disabled' ? 'content.disabled' : 'content.restored',
+        fieldNames: ['lifecycleStatus', 'disabledAt', 'disabledBy'],
+        valueFor: (previous) => ({
+          ...(previous || {
+            contentId,
+            approvalStatus: 'unknown',
+            publicationStatus: 'unknown',
+            countryIds: [],
+            genreIds: [],
+          }),
+          lifecycleStatus,
+          ...disabledFields,
+        }),
+      });
     },
     async updateApprovalStatus(contentId, approvalStatus, options) {
       validateExpectedVersion(options);
