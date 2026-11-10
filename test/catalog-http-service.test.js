@@ -545,7 +545,7 @@ test('logs safe Sheets and Firestore diagnostics correlated with the public requ
     const logger = { logFailure() { throw new Error('private logger failure'); } };
     const provider = createGoogleSheetsCatalogProvider({
       sheetsClient: {
-        spreadsheets: { values: { async get() { throw Object.assign(new Error('private api error'), { code: 'ETIMEDOUT' }); }, async batchUpdate() { return { data: {} }; } } },
+        spreadsheets: { values: { async get() { throw Object.assign(new Error('private api error'), { code: 'ETIMEDOUT' }); }, async batchUpdate() { return { data: {} }; }, async append() { return { data: {} }; } } },
       },
       spreadsheetId: 'sensitive-spreadsheet-id',
     });
