@@ -404,6 +404,45 @@ test('series structure manages seasons, episodes, independent links, lifecycle a
   assert.ok(events.some((event) => event.operation === 'season.deleted'));
 });
 
+test('permanent series deletion cascades through seasons and episodes in the metadata transaction', async () => {
+  const { firestore, provider: metadataProvider } = setup();
+  const structureProvider = createFirestoreCatalogSeriesStructureProvider({
+    firestore,
+    auditEventSink: createFirestoreCatalogAuditEventSink({ firestore }),
+    clock: () => new Date('2026-11-10T12:00:00.000Z'),
+  });
+  const seriesId = createCatalogContentId('series', 'series-delete-fixture');
+  await metadataProvider.upsertContentMetadata(seriesId, metadata, {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  });
+  await structureProvider.createSeason(seriesId, { seasonNumber: 1 }, {
+    expectedVersion: 0,
+    actorId: 'admin-test-1',
+  });
+  await structureProvider.createEpisode(seriesId, 1, {
+    episodeNumber: 1,
+    downloadLinks: [{ id: 'main', label: 'اصلی', url: 'https://download.example/file' }],
+  }, { expectedVersion: 0, actorId: 'admin-test-1' });
+  await metadataProvider.updateContentLifecycleStatus(seriesId, 'disabled', {
+    expectedVersion: 1,
+    actorId: 'admin-test-1',
+  });
+
+  await metadataProvider.deleteContentMetadata(seriesId, {
+    expectedVersion: 2,
+    actorId: 'admin-test-1',
+  });
+  assert.equal(await metadataProvider.getContentMetadata(seriesId), null);
+  assert.equal((await structureProvider.listSeasons(seriesId, { includeDisabled: true })).length, 0);
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, value]) => value);
+  assert.ok(events.some((event) => event.operation === 'episode.deleted'));
+  assert.ok(events.some((event) => event.operation === 'season.deleted'));
+  assert.ok(events.some((event) => event.operation === 'content.deleted'));
+});
+
 test('approval and publication remain independent and publication requires approval', async () => {
   const { firestore, provider } = setup();
   const pending = { ...metadata, approvalStatus: 'pending' };
