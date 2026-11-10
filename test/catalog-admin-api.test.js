@@ -804,6 +804,43 @@ test('source editor API exposes all sheet columns, protects identity, and create
 });
 
 
+test('category and taxonomy delete endpoints require current ETags and call guarded provider deletes', async () => {
+  const base = createStore({
+    categories: [{ id: 'remove-category', slug: 'remove-category', localizedTitle: { fa: 'حذف آزمایشی' }, enabled: true }],
+  });
+  const writableProvider = {
+    ...base,
+    async deleteCategory(id, options) {
+      const current = await base.getCategoryWithVersion(id);
+      if (!current || current.version !== options.expectedVersion) throw Object.assign(new Error(), { code: 'VERSION_CONFLICT' });
+      return { value: current.value, version: current.version + 1 };
+    },
+    async deleteTaxonomyTerm(type, id, options) {
+      const current = await base.getTaxonomyTermWithVersion(type, id);
+      if (!current || current.version !== options.expectedVersion) throw Object.assign(new Error(), { code: 'VERSION_CONFLICT' });
+      return { value: current.value, version: current.version + 1 };
+    },
+  };
+  const app = createAdminApi(writableProvider);
+  await withServer(app, async (baseUrl) => {
+    const category = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories/remove-category`));
+    assert.equal(category.status, 200);
+    const removedCategory = await json(await fetch(`${baseUrl}${ADMIN_PATH}/categories/remove-category`, {
+      method: 'DELETE', headers: { 'If-Match': category.etag },
+    }));
+    assert.equal(removedCategory.status, 200);
+    assert.equal(removedCategory.body.data.deleted, true);
+
+    const country = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`));
+    assert.equal(country.status, 200);
+    const removedCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`, {
+      method: 'DELETE', headers: { 'If-Match': country.etag },
+    }));
+    assert.equal(removedCountry.status, 200);
+    assert.equal(removedCountry.body.data.deleted, true);
+  });
+});
+
 test('bulk approval and publication process selected records independently with approval gating', async () => {
   const secondId = createCatalogContentId('series', 'admin-fixture-2');
   const store = createStore({ contentMetadata: [
