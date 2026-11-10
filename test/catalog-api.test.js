@@ -55,6 +55,51 @@ test('lists only public fixture DTOs with supported filters and bounded paginati
   });
 });
 
+test('exposes active season episodes and enabled download links only for public series', async () => {
+  const seriesId = 'series:fixture-series-ir';
+  const metadataProvider = createFixtureMetadataProvider({
+    [seriesId]: {
+      approvalStatus: 'approved',
+      publicationStatus: 'published',
+      lifecycleStatus: 'active',
+      countryIds: ['IR'],
+      genreIds: ['drama'],
+    },
+  });
+  const structure = [{
+    value: { seasonNumber: 1, title: 'فصل اول', lifecycleStatus: 'active' },
+    version: 1,
+    episodes: [{
+      value: {
+        episodeNumber: 1,
+        title: 'قسمت اول',
+        lifecycleStatus: 'active',
+        downloadLinks: [
+          { id: '720p', label: '720p', url: 'https://download.example/720', enabled: true, sortOrder: 0 },
+          { id: '1080p', label: '1080p', url: 'https://download.example/1080', enabled: false, sortOrder: 1 },
+        ],
+      },
+      version: 1,
+    }],
+  }];
+  const seriesStructureProvider = {
+    async listStructure(id, options) {
+      assert.equal(id, seriesId);
+      assert.equal(options.parentLifecycleStatus, 'active');
+      return structure;
+    },
+  };
+  await withApiServer({ ...options(), metadataProvider, seriesStructureProvider }, async (baseUrl) => {
+    const { response, body } = await jsonResponse(
+      `${baseUrl}/api/v1/catalog/items/${encodeURIComponent(seriesId)}/seasons`,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(body.data.length, 1);
+    assert.equal(body.data[0].episodes.length, 1);
+    assert.deepEqual(body.data[0].episodes[0].downloadLinks.map((link) => link.label), ['720p']);
+  });
+});
+
 test('rejects invalid and not-yet-supported filters without running them', async () => {
   await withApiServer(options(), async (baseUrl) => {
     for (const [query, expectedCode] of [
