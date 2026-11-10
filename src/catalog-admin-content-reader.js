@@ -62,7 +62,7 @@ function pageNumber(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
 }
 
 function parseQuery(query) {
-  const allowed = new Set(['q', 'kind', 'approvalStatus', 'publicationStatus', 'countryId', 'genreId', 'categoryId', 'page', 'pageSize']);
+  const allowed = new Set(['q', 'kind', 'approvalStatus', 'publicationStatus', 'lifecycleStatus', 'countryId', 'genreId', 'categoryId', 'page', 'pageSize']);
   for (const key of query.keys()) if (!allowed.has(key) || query.getAll(key).length !== 1) {
     throw new CatalogAdminListInputError();
   }
@@ -70,12 +70,14 @@ function parseQuery(query) {
   const kind = query.get('kind');
   const approvalStatus = query.get('approvalStatus');
   const publicationStatus = query.get('publicationStatus');
+  const lifecycleStatus = query.get('lifecycleStatus') ?? 'active';
   const countryId = query.get('countryId');
   const genreId = query.get('genreId');
   const categoryId = query.get('categoryId');
   if (q.length > 100 || (kind !== null && !['movie', 'series'].includes(kind)) ||
       (approvalStatus !== null && !APPROVAL_STATUSES.has(approvalStatus)) ||
-      (publicationStatus !== null && !PUBLICATION_STATUSES.has(publicationStatus))) {
+      (publicationStatus !== null && !PUBLICATION_STATUSES.has(publicationStatus)) ||
+      !['active', 'disabled'].includes(lifecycleStatus)) {
     throw new CatalogAdminListInputError();
   }
   return Object.freeze({
@@ -83,6 +85,7 @@ function parseQuery(query) {
     kind,
     approvalStatus,
     publicationStatus,
+    lifecycleStatus,
     countryId,
     genreId,
     categoryId,
@@ -107,6 +110,8 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
     title: content.title,
     approvalStatus: metadata?.approvalStatus ?? 'unknown',
     publicationStatus: metadata?.publicationStatus ?? 'unknown',
+    lifecycleStatus: metadata?.lifecycleStatus ?? 'active',
+    ...(metadata?.disabledAt ? { disabledAt: metadata.disabledAt } : {}),
     countryIds: metadata?.countryIds ? [...metadata.countryIds] : [],
     genreIds: metadata?.genreIds ? [...metadata.genreIds] : [],
     directCategoryIds: metadata?.categoryIds ? [...metadata.categoryIds] : [],
@@ -356,6 +361,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
         if (parsed.kind && item.kind !== parsed.kind) return false;
         if (parsed.approvalStatus && item.approvalStatus !== parsed.approvalStatus) return false;
         if (parsed.publicationStatus && item.publicationStatus !== parsed.publicationStatus) return false;
+        if (item.lifecycleStatus !== parsed.lifecycleStatus) return false;
         if (parsed.countryId && !item.countryIds.includes(parsed.countryId)) return false;
         if (parsed.genreId && !item.genreIds.includes(parsed.genreId)) return false;
         if (parsed.categoryId && !categoryMatches(item, categoryById.get(parsed.categoryId))) return false;
