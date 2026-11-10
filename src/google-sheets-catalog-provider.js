@@ -122,7 +122,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         if (columnIndex < 0) throw Object.assign(new Error('Editable catalog column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
         data.push({
           range: `${quoteSheetRange(sheetName)}!${columnLetter(columnIndex + 1)}${index + 2}`,
-          values: [[value]],
+          values: [[field === 'کد سیستم' ? String(value).normalize('NFC').trim() : value]],
         });
       }
       try {
@@ -134,7 +134,11 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         throw classifyCatalogDependencyError('sheets', 'sheet_write', error, 'Unable to update catalog row.');
       }
       const updatedRecord = { ...record };
-      for (const [field, value] of Object.entries(fields)) updatedRecord[field] = String(value);
+      for (const [field, value] of Object.entries(fields)) {
+        updatedRecord[field] = field === 'کد سیستم'
+          ? String(value).normalize('NFC').trim()
+          : String(value);
+      }
       if (Object.hasOwn(updatedRecord, 'کد سیستم')) {
         updatedRecord['کد سیستم'] = String(updatedRecord['کد سیستم']).normalize('NFC').trim();
       }
