@@ -743,6 +743,46 @@ test('only one concurrent write using the same ETag succeeds', async () => {
   });
 });
 
+test('source editor API enforces the editor permission and forwards versioned allowlisted fields', async () => {
+  const store = createStore();
+  const item = {
+    id: contentId, kind: 'movie', systemCode: 'admin-fixture-1', title: 'عنوان قدیمی',
+    sourceVersion: 'a'.repeat(43), sourceAvailableFields: ['title', 'releaseYear'],
+  };
+  const contentReader = {
+    async getItem(id) { return id === contentId ? { ...item } : null; },
+    async updateItemSource(id, options) {
+      assert.equal(id, contentId);
+      assert.equal(options.sourceVersion, 'a'.repeat(43));
+      assert.equal(options.actorId, 'fixture-admin');
+      item.title = options.fields.title;
+      item.sourceVersion = 'b'.repeat(43);
+      return { ...item };
+    },
+  };
+  const app = createCatalogAdminApi({
+    writableProvider: store,
+    contentReader,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+    roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
+    authorizePermission: roleAuthorizer,
+  });
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion: 'a'.repeat(43), fields: { title: 'عنوان تازه', releaseYear: 2024 } }),
+    }));
+    assert.equal(result.status, 200);
+    assert.equal(result.body.data.title, 'عنوان تازه');
+
+    const invalid = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion: 'b'.repeat(43), fields: { systemCode: 'changed' } }),
+    }));
+    assert.equal(invalid.status, 400);
+  });
+});
+
 test('bulk approval and publication process selected records independently with approval gating', async () => {
   const secondId = createCatalogContentId('series', 'admin-fixture-2');
   const store = createStore({ contentMetadata: [
