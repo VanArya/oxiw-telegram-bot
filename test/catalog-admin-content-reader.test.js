@@ -7,7 +7,7 @@ const { createInMemoryWritableCatalogMetadataProvider } = require('../src/in-mem
 const { createFixtureProvider, sheets } = require('./fixtures/catalog-sheet-source-fixtures');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
 
-function makeReader({ source = sheets, contentMetadata = [], categories = [] } = {}) {
+function makeReader({ source = sheets, contentMetadata = [], categories = [], seriesStructureProvider } = {}) {
   const writableProvider = createInMemoryWritableCatalogMetadataProvider({
     contentMetadata,
     categories,
@@ -19,6 +19,7 @@ function makeReader({ source = sheets, contentMetadata = [], categories = [] } =
   return createCatalogAdminContentReader({
     sheetProvider: createFixtureProvider(source),
     writableProvider,
+    seriesStructureProvider,
   });
 }
 
@@ -71,6 +72,49 @@ test('admin content reader separates active and disabled records for the archive
   assert.equal(disabled.data[0].id, id);
   assert.equal(disabled.data[0].lifecycleStatus, 'disabled');
   assert.equal(disabled.data[0].disabledAt, '2026-11-10T12:00:00.000Z');
+});
+
+test('disabled archive includes independent disabled seasons and episodes but hides descendants of a disabled season', async () => {
+  const seriesId = createCatalogContentId('series', 'fixture-series-ir');
+  const reader = makeReader({
+    contentMetadata: [{
+      contentId: seriesId,
+      approvalStatus: 'approved',
+      publicationStatus: 'published',
+      lifecycleStatus: 'active',
+      countryIds: ['IR'],
+      genreIds: ['drama'],
+    }],
+    seriesStructureProvider: {
+      async listStructure(id, options) {
+        assert.equal(id, seriesId);
+        assert.deepEqual(options, { includeDisabled: true, parentLifecycleStatus: 'active' });
+        return [
+          {
+            value: { seasonNumber: 1, lifecycleStatus: 'active' },
+            version: 1,
+            episodes: [{
+              value: { episodeNumber: 2, lifecycleStatus: 'disabled', title: 'قسمت غیرفعال' },
+              version: 2,
+            }],
+          },
+          {
+            value: { seasonNumber: 2, lifecycleStatus: 'disabled', title: 'فصل غیرفعال' },
+            version: 3,
+            episodes: [{
+              value: { episodeNumber: 1, lifecycleStatus: 'active' },
+              version: 1,
+            }],
+          },
+        ];
+      },
+    },
+  });
+  const result = await reader.list(new URLSearchParams('lifecycleStatus=disabled&pageSize=100'));
+  assert.deepEqual(result.data.map((item) => item.kind).sort(), ['episode', 'season']);
+  assert.equal(result.data.some((item) => item.title === 'قسمت غیرفعال'), true);
+  assert.equal(result.data.some((item) => item.title === 'فصل غیرفعال'), true);
+  assert.equal(result.data.some((item) => item.episodeNumber === 1), false);
 });
 
 test('protected source reader returns every sheet column while normal list projection keeps file IDs private', async () => {
