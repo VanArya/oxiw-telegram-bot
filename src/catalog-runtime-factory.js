@@ -120,6 +120,7 @@ async function createCatalogRuntime({
     seriesStructureProvider = createFirestoreCatalogSeriesStructureProvider({
       firestore,
       auditEventSink,
+      ...(collections?.contentMetadata ? { contentMetadataCollection: collections.contentMetadata } : {}),
       ...(clock === undefined ? {} : { clock }),
     });
   } catch {
