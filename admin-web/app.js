@@ -840,10 +840,27 @@ async function createSourceItem(event) {
     });
     $('#source-create-dialog').close();
     creatingSourceKind = null;
+    let metadataReady = true;
+    try {
+      await api(`${API_ROOT}/items/${encodeURIComponent(body.data.id)}/metadata`, {
+        method: 'PUT',
+        headers: { 'If-None-Match': '*' },
+        body: JSON.stringify({
+          contentId: body.data.id, approvalStatus: 'pending', publicationStatus: 'draft',
+          countryIds: [], genreIds: [],
+        }),
+      });
+    } catch (metadataError) {
+      metadataReady = false;
+      reportApiError(metadataError, 'رکورد در شیت ثبت شد، اما ایجاد فرادادهٔ اولیه انجام نشد.');
+    }
     contentPage = 1;
     elements.contentKind.value = body.data.kind;
     await loadContent();
-    showToast('عنوان جدید در Google Sheets ثبت شد. وضعیت اولیه: در انتظار تأیید و پیش‌نویس.');
+    showToast(metadataReady
+      ? 'عنوان در شیت و فهرست مدیریتی ثبت شد؛ وضعیت اولیه در انتظار تأیید و پیش‌نویس است.'
+      : 'عنوان در شیت ثبت شد؛ فرادادهٔ اولیه را از پنجرهٔ مدیریت تکمیل کنید.',
+      metadataReady ? 'success' : 'error');
     const created = currentItems.find((item) => item.id === body.data.id);
     if (created) await openContent(created);
   } catch (error) {
