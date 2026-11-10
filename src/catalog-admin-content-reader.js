@@ -181,63 +181,72 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider } = {
     }));
   }
 
+  async function readSourceRecord(kind, systemCode) {
+    const sheetName = kind === 'movie' ? 'سینمایی' : kind === 'series' ? 'سریال' : null;
+    if (!sheetName) return null;
+    const snapshot = await sheetProvider.readSheet(sheetName);
+    validateSnapshot(sheetName, snapshot);
+    const codeIndex = snapshot.headers.indexOf('کد سیستم');
+    const matches = snapshot.rows.map((row, index) => ({ row, index }))
+      .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode);
+    if (matches.length !== 1) return null;
+    const { row, index } = matches[0];
+    const record = Object.fromEntries(snapshot.headers.map((header, column) => [header, row[column] ?? '']));
+    return {
+      sourceSheet: sheetName,
+      sourceRowNumber: index + 2,
+      sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
+      headers: [...snapshot.headers],
+      record,
+    };
+  }
+
   return Object.freeze({
     async getItem(contentId) {
       const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
       return item || null;
     },
-    async updateItemSource(contentId, { sourceVersion, fields, actorId } = {}) {
-      if (typeof sheetProvider.updateCatalogRow !== 'function') {
-        throw new Error('Catalog source writer is not configured.');
-      }
-      const items = await readAllItems();
-      const item = items.find((candidate) => candidate.id === contentId);
+    async getItemSource(contentId) {
+      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
       if (!item) return null;
-      const kind = item.kind;
-      const systemCode = item.systemCode;
-      const result = await sheetProvider.updateCatalogRow({
-        sheetName: item.sourceSheet,
-        systemCode,
-        expectedVersion: sourceVersion,
-        fields,
-        actorId,
+      const source = await readSourceRecord(item.kind, item.systemCode);
+      return source ? Object.freeze({ id: item.id, kind: item.kind, systemCode: item.systemCode, ...source }) : null;
+    },
+    async getSheetSchema(kind) {
+      if (typeof sheetProvider.getSheetSchema !== 'function') throw new Error('Catalog sheet schema is unavailable.');
+      const sheetName = kind === 'movie' ? 'سینمایی' : kind === 'series' ? 'سریال' : null;
+      if (!sheetName) return null;
+      return Object.freeze({ kind, sheetName, headers: await sheetProvider.getSheetSchema(sheetName) });
+    },
+    async createItemSource(kind, fields) {
+      if (typeof sheetProvider.createCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
+      const schema = await this.getSheetSchema(kind);
+      if (!schema) return null;
+      const result = await sheetProvider.createCatalogRow({ sheetName: schema.sheetName, fields });
+      const mapped = mapCatalogSheetRow(schema.sheetName, result.record);
+      return Object.freeze({
+        id: mapped.content.id, kind, systemCode: String(result.record['کد سیستم']).normalize('NFC').trim(),
+        sourceSheet: schema.sheetName, sourceRowNumber: result.rowNumber,
+        sourceVersion: result.sourceVersion, headers: schema.headers, record: result.record,
       });
-      const updated = {
-        ...item,
-        sourceVersion: result.sourceVersion,
-        sourceRowNumber: result.rowNumber,
-      };
-      if (Object.hasOwn(fields, 'title')) updated.title = fields.title;
-      if (Object.hasOwn(fields, 'releaseYear')) {
-        if (fields.releaseYear === '') delete updated.releaseYear;
-        else updated.releaseYear = fields.releaseYear;
-      }
-      if (kind === 'series') {
-        const seriesMetadata = { ...(item.seriesMetadata || {}) };
-        if (Object.hasOwn(fields, 'startYear')) {
-          if (fields.startYear === '') delete seriesMetadata.startYear;
-          else seriesMetadata.startYear = fields.startYear;
-        }
-        if (Object.hasOwn(fields, 'endYear')) {
-          if (fields.endYear === 'در حال پخش') {
-            delete seriesMetadata.endYear;
-            seriesMetadata.isOngoing = true;
-          } else if (fields.endYear === '') {
-            delete seriesMetadata.endYear;
-            delete seriesMetadata.isOngoing;
-          } else {
-            seriesMetadata.endYear = Number(fields.endYear);
-            seriesMetadata.isOngoing = false;
-          }
-        }
-        if (Object.hasOwn(fields, 'seasonsAndEpisodes')) seriesMetadata.seasonsAndEpisodes = fields.seasonsAndEpisodes;
-        updated.seriesMetadata = seriesMetadata;
-      }
-      for (const [field, target] of [
-        ['synopsis', 'synopsis'], ['cast', 'cast'], ['language', 'language'],
-        ['rating', 'rating'], ['trailerUrl', 'trailerUrl'], ['posterUrl', 'posterUrl'],
-      ]) if (Object.hasOwn(fields, field)) updated[target] = fields[field];
-      return Object.freeze(updated);
+    },
+    async updateItemSource(contentId, { sourceVersion, fields, actorId } = {}) {
+      if (typeof sheetProvider.updateCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
+      const item = (await readAllItems()).find((candidate) => candidate.id === contentId);
+      if (!item) return null;
+      const current = await readSourceRecord(item.kind, item.systemCode);
+      if (!current) return null;
+      const result = await sheetProvider.updateCatalogRow({
+        sheetName: current.sourceSheet, systemCode: item.systemCode,
+        expectedVersion: sourceVersion, fields, actorId,
+      });
+      const record = { ...current.record };
+      for (const [header, value] of Object.entries(fields)) record[header] = String(value);
+      return Object.freeze({
+        id: item.id, kind: item.kind, systemCode: item.systemCode,
+        sourceSheet: current.sourceSheet, sourceRowNumber: result.rowNumber,
+        sourceVersion: result.sourceVersion, headers: current.headers, record,
+      });
     },
     async list(query) {
       const parsed = parseQuery(query);
