@@ -50,6 +50,29 @@ test('admin content reader lists unpublished Sheet rows with metadata status and
   assert.equal(JSON.stringify(item).includes('sourceRecord'), false);
 });
 
+test('admin content reader separates active and disabled records for the archive tab', async () => {
+  const id = createCatalogContentId('movie', 'fixture-movie-ir');
+  const reader = makeReader({
+    contentMetadata: [{
+      contentId: id,
+      approvalStatus: 'approved',
+      publicationStatus: 'published',
+      lifecycleStatus: 'disabled',
+      disabledAt: '2026-11-10T12:00:00.000Z',
+      disabledBy: 'fixture-admin',
+      countryIds: ['IR'],
+      genreIds: ['drama'],
+    }],
+  });
+  const active = await reader.list(new URLSearchParams('pageSize=100'));
+  const disabled = await reader.list(new URLSearchParams('lifecycleStatus=disabled&pageSize=100'));
+  assert.equal(active.data.some((item) => item.id === id), false);
+  assert.equal(disabled.data.length, 1);
+  assert.equal(disabled.data[0].id, id);
+  assert.equal(disabled.data[0].lifecycleStatus, 'disabled');
+  assert.equal(disabled.data[0].disabledAt, '2026-11-10T12:00:00.000Z');
+});
+
 test('protected source reader returns every sheet column while normal list projection keeps file IDs private', async () => {
   const reader = makeReader();
   const source = await reader.getItemSource(createCatalogContentId('movie', 'fixture-movie-ir'));
