@@ -466,7 +466,10 @@ test('series cascade deletion uses the configured structure collection', async (
     contentMetadataCollection: collections.contentMetadata,
   });
   const seriesId = createCatalogContentId('series', 'custom-collection-fixture');
-  await metadataProvider.upsertContentMetadata(seriesId, metadata, {
+  await metadataProvider.upsertContentMetadata(seriesId, {
+    approvalStatus: 'approved',
+    publicationStatus: 'draft',
+  }, {
     expectedVersion: 0,
     actorId: 'admin-test-1',
   });
