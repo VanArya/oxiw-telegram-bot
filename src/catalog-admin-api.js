@@ -742,9 +742,16 @@ function createCatalogAdminApi({
         return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
       }
     }
-    const requestBody = current && !Object.hasOwn(req.body || {}, 'categoryIds')
-      ? { ...req.body, categoryIds: current.value.categoryIds || [] }
-      : req.body;
+    if (['lifecycleStatus', 'disabledAt', 'disabledBy'].some((key) => Object.hasOwn(req.body || {}, key))) {
+      return sendError(res, 400, 'INVALID_INPUT', 'وضعیت فعال‌سازی فقط از عملیات مستقل مدیریت محتوا تغییر می‌کند.');
+    }
+    const requestBody = current ? {
+      ...req.body,
+      categoryIds: Object.hasOwn(req.body || {}, 'categoryIds')
+        ? req.body.categoryIds : (current.value.categoryIds || []),
+      lifecycleStatus: current.value.lifecycleStatus || 'active',
+      ...(current.value.disabledAt ? { disabledAt: current.value.disabledAt, disabledBy: current.value.disabledBy } : {}),
+    } : req.body;
     const body = validateCatalogContentMetadata(req.params.contentId, requestBody);
     const approvalChanged = current
       ? body.approvalStatus !== current.value.approvalStatus
@@ -763,6 +770,37 @@ function createCatalogAdminApi({
     });
     return sendVersioned(res, precondition.isCreate ? 201 : 200, 'content', req.params.contentId,
       saved, (value) => publicAdminMetadata(req.params.contentId, value));
+  }));
+
+  app.patch(`${BASE_PATH}/items/:contentId/lifecycle`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    const precondition = readMutationPrecondition(req, res, 'content', req.params.contentId);
+    if (!precondition || res.headersSent) return;
+    try {
+      requireBodyKeys(req.body, ['lifecycleStatus']);
+      if (!['active', 'disabled'].includes(req.body.lifecycleStatus) ||
+          typeof provider.updateContentLifecycleStatus !== 'function') {
+        if (typeof provider.updateContentLifecycleStatus !== 'function') {
+          return sendError(res, 503, 'CONTENT_LIFECYCLE_NOT_CONFIGURED', 'مدیریت وضعیت محتوا پیکربندی نشده است.');
+        }
+        throw new CatalogInputError();
+      }
+      const saved = await provider.updateContentLifecycleStatus(req.params.contentId, req.body.lifecycleStatus, {
+        expectedVersion: precondition.expectedVersion,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      return sendVersioned(res, precondition.isCreate ? 201 : 200, 'content', req.params.contentId,
+        saved, (value) => publicAdminMetadata(req.params.contentId, value));
+    } catch (error) {
+      if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_INPUT', 'وضعیت انتخاب‌شده معتبر نیست.');
+      if (error instanceof CatalogConflictError && error.code === 'VERSION_CONFLICT') {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'نسخهٔ رکورد تغییر کرده است.');
+      }
+      if (error instanceof CatalogConflictError && error.code === 'ALREADY_EXISTS') {
+        return sendError(res, 409, 'ALREADY_EXISTS', 'فرادادهٔ محتوا هم‌زمان ایجاد شده است.');
+      }
+      throw error;
+    }
   }));
 
   app.patch(`${BASE_PATH}/items/:contentId/approval`, requirePermission(PERMISSIONS.CONTENT_APPROVE), parseJson, asyncRoute(async (req, res) => {
