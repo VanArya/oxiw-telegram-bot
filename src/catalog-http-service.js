@@ -69,6 +69,7 @@ function createCatalogHttpService({
   logger,
   getAdminWebConfig,
   auditReader,
+  roleAuditReader,
   directCategoryWritesEnabled = false,
 } = {}) {
   if (!provider || typeof provider.readSheet !== 'function') {
@@ -111,6 +112,7 @@ function createCatalogHttpService({
     contentReader: adminContentReader,
     seriesStructureProvider,
     auditReader,
+    roleAuditReader,
     verifyAdminPrincipal,
     roleProvider,
     reportRoleResolutionFailure,
