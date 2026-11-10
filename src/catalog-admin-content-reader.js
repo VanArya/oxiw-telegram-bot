@@ -272,6 +272,24 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
         sourceVersion: result.sourceVersion, headers: schema.headers, record: result.record,
       });
     },
+    async deleteItemSource(contentId, { sourceVersion } = {}) {
+      if (typeof sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(sourceVersion)) {
+        throw Object.assign(new Error('Invalid catalog source version.'), { code: 'INVALID_INPUT' });
+      }
+      if (typeof sheetProvider.deleteCatalogRow !== 'function') {
+        throw Object.assign(new Error('Catalog source deletion is not configured.'), { code: 'DELETE_UNAVAILABLE' });
+      }
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
+      if (!item) return Object.freeze({ alreadyMissing: true });
+      const current = await readSourceRecord(item.kind, item.systemCode);
+      if (!current) return Object.freeze({ alreadyMissing: true });
+      return Object.freeze(await sheetProvider.deleteCatalogRow({
+        sheetName: current.sourceSheet,
+        systemCode: item.systemCode,
+        expectedVersion: sourceVersion,
+      }));
+    },
     async updateItemSource(contentId, { sourceVersion, fields, actorId } = {}) {
       if (typeof sheetProvider.updateCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
       const { items } = await readAllItems();
