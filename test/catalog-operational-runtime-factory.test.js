@@ -71,6 +71,7 @@ function makeGoogle(state) {
           values: {
             async get() { return { data: { values: [] } }; },
             async batchUpdate() { return { data: {} }; },
+            async append() { return { data: {} }; },
           },
         },
       };
