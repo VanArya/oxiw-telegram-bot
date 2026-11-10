@@ -74,7 +74,7 @@ function parseQuery(query) {
   const countryId = query.get('countryId');
   const genreId = query.get('genreId');
   const categoryId = query.get('categoryId');
-  if (q.length > 100 || (kind !== null && !['movie', 'series'].includes(kind)) ||
+  if (q.length > 100 || (kind !== null && !['movie', 'series', 'season', 'episode'].includes(kind)) ||
       (approvalStatus !== null && !APPROVAL_STATUSES.has(approvalStatus)) ||
       (publicationStatus !== null && !PUBLICATION_STATUSES.has(publicationStatus)) ||
       !['active', 'disabled'].includes(lifecycleStatus)) {
@@ -141,7 +141,7 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
   return Object.freeze(dto);
 }
 
-function createCatalogAdminContentReader({ sheetProvider, writableProvider, onInvalidSourceRow } = {}) {
+function createCatalogAdminContentReader({ sheetProvider, writableProvider, seriesStructureProvider, onInvalidSourceRow } = {}) {
   if (!sheetProvider || typeof sheetProvider.readSheet !== 'function' ||
       !writableProvider || typeof writableProvider.getContentMetadataWithVersion !== 'function') {
     throw new TypeError('Catalog admin content reader dependencies are incomplete.');
@@ -340,7 +340,72 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     },
     async list(query) {
       const parsed = parseQuery(query);
-      const { items: allItems, invalidSourceRows } = await readAllItems();
+      const { items: rootItems, invalidSourceRows } = await readAllItems();
+      let allItems = [...rootItems];
+      if (parsed.lifecycleStatus === 'disabled' && seriesStructureProvider &&
+          typeof seriesStructureProvider.listStructure === 'function') {
+        for (const series of rootItems.filter((item) => item.kind === 'series' && item.lifecycleStatus === 'active')) {
+          const structure = await seriesStructureProvider.listStructure(series.id, {
+            includeDisabled: true,
+            parentLifecycleStatus: 'active',
+          });
+          for (const seasonEntry of structure) {
+            const season = seasonEntry.value;
+            if (season.lifecycleStatus === 'disabled') {
+              allItems.push(Object.freeze({
+                id: `${series.id}:season:${season.seasonNumber}`,
+                kind: 'season',
+                title: season.title || `فصل ${season.seasonNumber} - ${series.title}`,
+                systemCode: series.systemCode,
+                approvalStatus: 'unknown',
+                publicationStatus: 'unknown',
+                lifecycleStatus: 'disabled',
+                ...(season.disabledAt ? { disabledAt: season.disabledAt } : {}),
+                ...(season.disabledBy ? { disabledBy: season.disabledBy } : {}),
+                parentContentId: series.id,
+                parentTitle: series.title,
+                seasonNumber: season.seasonNumber,
+                releaseYear: series.releaseYear,
+                countryIds: [...series.countryIds],
+                genreIds: [...series.genreIds],
+                directCategoryIds: [...series.directCategoryIds],
+                hasMetadata: true,
+                sourceSheet: series.sourceSheet,
+                sourceRowNumber: series.sourceRowNumber,
+                version: seasonEntry.version,
+              }));
+              continue;
+            }
+            for (const episodeEntry of seasonEntry.episodes) {
+              const episode = episodeEntry.value;
+              if (episode.lifecycleStatus !== 'disabled') continue;
+              allItems.push(Object.freeze({
+                id: `${series.id}:season:${season.seasonNumber}:episode:${episode.episodeNumber}`,
+                kind: 'episode',
+                title: episode.title || `قسمت ${episode.episodeNumber} - ${series.title}`,
+                systemCode: series.systemCode,
+                approvalStatus: 'unknown',
+                publicationStatus: 'unknown',
+                lifecycleStatus: 'disabled',
+                ...(episode.disabledAt ? { disabledAt: episode.disabledAt } : {}),
+                ...(episode.disabledBy ? { disabledBy: episode.disabledBy } : {}),
+                parentContentId: series.id,
+                parentTitle: series.title,
+                seasonNumber: season.seasonNumber,
+                episodeNumber: episode.episodeNumber,
+                releaseYear: series.releaseYear,
+                countryIds: [...series.countryIds],
+                genreIds: [...series.genreIds],
+                directCategoryIds: [...series.directCategoryIds],
+                hasMetadata: true,
+                sourceSheet: series.sourceSheet,
+                sourceRowNumber: series.sourceRowNumber,
+                version: episodeEntry.version,
+              }));
+            }
+          }
+        }
+      }
       const [categories, countries, genres] = await Promise.all([
         writableProvider.listCategories(),
         writableProvider.listTaxonomyTerms('country'),
