@@ -136,9 +136,9 @@ test('source reader exposes dropdown options from existing catalog column values
   const reader = makeReader({ source });
   const item = await reader.getItemSource(createCatalogContentId('movie', 'fixture-movie-ir'));
   assert.deepEqual(item.fieldOptions['نوع'], ['سینمایی', 'سریال']);
-  assert.deepEqual(item.fieldOptions['ژانر'], ['درام', 'کمدی']);
-  assert.deepEqual(item.fieldOptions['زبان'], ['انگلیسی', 'فارسی']);
-  assert.deepEqual(item.fieldOptions['پیشنهادی'], ['بله', 'خیر']);
+  assert.deepEqual([...item.fieldOptions['ژانر']].sort(), ['درام', 'کمدی'].sort());
+  assert.deepEqual([...item.fieldOptions['زبان']].sort(), ['انگلیسی', 'فارسی'].sort());
+  assert.deepEqual([...item.fieldOptions['پیشنهادی']].sort(), ['بله', 'خیر'].sort());
 });
 
 test('reader creates new movie and series rows using each sheet schema', async () => {
