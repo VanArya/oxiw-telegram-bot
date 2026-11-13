@@ -127,6 +127,20 @@ test('protected source reader returns every sheet column while normal list proje
   assert.equal(JSON.stringify(list).includes('fake-file-movie'), false);
 });
 
+test('source reader exposes dropdown options from existing catalog column values', async () => {
+  const source = structuredClone(sheets);
+  source['سینمایی'].headers.push('ژانر', 'زبان', 'پیشنهادی');
+  source['سینمایی'].rows.forEach((row, index) => row.push(index % 2 ? 'کمدی' : 'درام', 'فارسی', index % 2 ? 'خیر' : 'بله'));
+  source['سریال'].headers.push('ژانر', 'زبان', 'پیشنهادی');
+  source['سریال'].rows.forEach((row) => row.push('درام', 'انگلیسی', 'بله'));
+  const reader = makeReader({ source });
+  const item = await reader.getItemSource(createCatalogContentId('movie', 'fixture-movie-ir'));
+  assert.deepEqual(item.fieldOptions['نوع'], ['سینمایی', 'سریال']);
+  assert.deepEqual(item.fieldOptions['ژانر'], ['درام', 'کمدی']);
+  assert.deepEqual(item.fieldOptions['زبان'], ['انگلیسی', 'فارسی']);
+  assert.deepEqual(item.fieldOptions['پیشنهادی'], ['بله', 'خیر']);
+});
+
 test('reader creates new movie and series rows using each sheet schema', async () => {
   const source = structuredClone(sheets);
   const hash = (record) => require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
