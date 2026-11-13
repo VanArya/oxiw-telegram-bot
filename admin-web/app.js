@@ -751,18 +751,34 @@ function permissionControls() {
   $('#publication-actions').hidden = !hasPermission('catalog.content.publish');
 }
 
-function renderSheetFields(container, headers, record = {}, { create = false } = {}) {
+function renderSheetFields(container, headers, record = {}, { create = false, fieldOptions = {} } = {}) {
   container.replaceChildren();
   headers.forEach((header) => {
     const label = document.createElement('label');
     label.textContent = header;
     const value = record[header] == null ? '' : String(record[header]);
-    const longField = value.length > 120 || /خلاصه|توضیح|شرح|بازیگران|توضیحات|داستان/i.test(header);
-    const control = document.createElement(longField ? 'textarea' : 'input');
-    if (longField) control.rows = 4;
-    else control.type = 'text';
+    const configuredOptions = Array.isArray(fieldOptions[header]) ? fieldOptions[header] : null;
+    const normalizedHeader = String(header).normalize('NFC').trim();
+    const dropdownField = /^(نوع|ژانر|زبان|پیشنهادی)$/.test(normalizedHeader);
+    const options = dropdownField
+      ? (configuredOptions || (normalizedHeader === 'نوع' ? ['سینمایی', 'سریال'] : []))
+      : [];
+    let control;
+    if (dropdownField) {
+      control = document.createElement('select');
+      control.append(new Option('انتخاب کنید', ''));
+      const values = [...new Set(options.map((option) => String(option).trim()).filter(Boolean))];
+      if (value && !values.includes(value)) values.unshift(value);
+      values.forEach((optionValue) => control.append(new Option(optionValue, optionValue)));
+      control.value = value;
+    } else {
+      const longField = value.length > 120 || /خلاصه|توضیح|شرح|بازیگران|توضیحات|داستان/i.test(header);
+      control = document.createElement(longField ? 'textarea' : 'input');
+      if (longField) control.rows = 4;
+      else control.type = 'text';
+      control.value = value;
+    }
     control.maxLength = 20000;
-    control.value = value;
     control.dataset.sourceHeader = header;
     control.setAttribute('aria-label', header);
     if (header === 'کد سیستم' || header === 'اسم فیلم') control.required = true;
@@ -788,7 +804,7 @@ function renderSourceForm(source) {
     form.hidden = true;
     return;
   }
-  renderSheetFields($('#source-fields'), source.headers, source.record);
+  renderSheetFields($('#source-fields'), source.headers, source.record, { fieldOptions: source.fieldOptions || {} });
   form.hidden = false;
 }
 
@@ -833,7 +849,7 @@ async function openSourceCreate(kind) {
   setText($('#source-create-title'), title);
   try {
     const { body } = await api(`${API_ROOT}/source-schema/${kind}`);
-    renderSheetFields($('#source-create-fields'), body.data.headers, {}, { create: true });
+    renderSheetFields($('#source-create-fields'), body.data.headers, {}, { create: true, fieldOptions: body.data.fieldOptions || {} });
     $('#source-create-dialog').showModal();
   } catch (error) { reportApiError(error); }
 }
