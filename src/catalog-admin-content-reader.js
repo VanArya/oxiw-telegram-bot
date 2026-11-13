@@ -217,6 +217,23 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, seri
     return { items, invalidSourceRows };
   }
 
+  async function readFieldOptions() {
+    const options = { 'نوع': ['سینمایی', 'سریال'] };
+    for (const sheetName of SHEETS) {
+      const snapshot = await sheetProvider.readSheet(sheetName);
+      validateSnapshot(sheetName, snapshot);
+      for (const header of ['ژانر', 'زبان', 'پیشنهادی']) {
+        const columnIndex = snapshot.headers.indexOf(header);
+        if (columnIndex < 0) continue;
+        const values = snapshot.rows
+          .map((row) => String(row[columnIndex] ?? '').normalize('NFC').trim())
+          .filter(Boolean);
+        options[header] = [...new Set([...(options[header] || []), ...values])].sort((a, b) => a.localeCompare(b, 'fa'));
+      }
+    }
+    return Object.freeze(options);
+  }
+
   async function readSourceRecord(kind, systemCode) {
     const sheetName = kind === 'movie' ? 'سینمایی' : kind === 'series' ? 'سریال' : null;
     if (!sheetName) return null;
@@ -233,6 +250,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, seri
       sourceRowNumber: index + 2,
       sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
       headers: [...snapshot.headers],
+      fieldOptions: await readFieldOptions(),
       record,
     };
   }
@@ -254,7 +272,10 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, seri
       if (typeof sheetProvider.getSheetSchema !== 'function') throw new Error('Catalog sheet schema is unavailable.');
       const sheetName = kind === 'movie' ? 'سینمایی' : kind === 'series' ? 'سریال' : null;
       if (!sheetName) return null;
-      return Object.freeze({ kind, sheetName, headers: await sheetProvider.getSheetSchema(sheetName) });
+      return Object.freeze({
+        kind, sheetName, headers: await sheetProvider.getSheetSchema(sheetName),
+        fieldOptions: await readFieldOptions(),
+      });
     },
     async createItemSource(kind, fields) {
       if (typeof sheetProvider.createCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
