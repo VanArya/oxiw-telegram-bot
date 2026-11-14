@@ -63,13 +63,13 @@ test('protected source reader returns every sheet column while normal list proje
 test('source reader exposes dropdown options from existing catalog column values', async () => {
   const source = structuredClone(sheets);
   source['سینمایی'].headers.push('ژانر', 'زبان', 'پیشنهادی');
-  source['سینمایی'].rows.forEach((row, index) => row.push(index % 2 ? 'کمدی' : 'درام', 'فارسی', index % 2 ? 'خیر' : 'بله'));
+  source['سینمایی'].rows.forEach((row, index) => row.push(index % 2 ? 'اکشن، درام' : 'درام، کمدی', 'فارسی', index % 2 ? 'خیر' : 'بله'));
   source['سریال'].headers.push('ژانر', 'زبان', 'پیشنهادی');
-  source['سریال'].rows.forEach((row) => row.push('درام', 'انگلیسی', 'بله'));
+  source['سریال'].rows.forEach((row) => row.push('درام، جنایی', 'انگلیسی', 'بله'));
   const reader = makeReader({ source });
   const item = await reader.getItemSource(createCatalogContentId('movie', 'fixture-movie-ir'));
   assert.deepEqual(item.fieldOptions['نوع'], ['سینمایی', 'سریال']);
-  assert.deepEqual([...item.fieldOptions['ژانر']].sort(), ['درام', 'کمدی'].sort());
+  assert.deepEqual([...item.fieldOptions['ژانر']].sort(), ['اکشن', 'درام', 'جنایی', 'کمدی'].sort());
   assert.deepEqual([...item.fieldOptions['زبان']].sort(), ['انگلیسی', 'فارسی'].sort());
   assert.deepEqual([...item.fieldOptions['پیشنهادی']].sort(), ['بله', 'خیر'].sort());
 });

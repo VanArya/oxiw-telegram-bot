@@ -8,6 +8,10 @@ const { createCatalogContentId } = require('./catalog-content-identity');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 
+function splitSourceMultiValue(value) {
+  return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\n]+/).map((part) => part.trim()).filter(Boolean))];
+}
+
 function atStage(stage, operation) {
   return Promise.resolve().then(operation).catch((cause) => {
     const error = new Error('Catalog admin list stage failed.');
@@ -220,9 +224,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       for (const header of ['ژانر', 'زبان', 'پیشنهادی']) {
         const columnIndex = snapshot.headers.indexOf(header);
         if (columnIndex < 0) continue;
-        const values = snapshot.rows
-          .map((row) => String(row[columnIndex] ?? '').normalize('NFC').trim())
-          .filter(Boolean);
+        const values = snapshot.rows.flatMap((row) => splitSourceMultiValue(row[columnIndex]));
         options[header] = [...new Set([...(options[header] || []), ...values])]
           .sort((left, right) => left.localeCompare(right, 'fa'));
       }
