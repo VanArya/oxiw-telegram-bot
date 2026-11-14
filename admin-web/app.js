@@ -752,7 +752,7 @@ function permissionControls() {
 }
 
 function splitSourceMultiValue(value) {
-  return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\\n]+/).map((part) => part.trim()).filter(Boolean))];
+  return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\n]+/).map((part) => part.trim()).filter(Boolean))];
 }
 
 function renderSheetFields(container, headers, record = {}, { create = false, fieldOptions = {} } = {}) {
