@@ -751,15 +751,42 @@ function permissionControls() {
   $('#publication-actions').hidden = !hasPermission('catalog.content.publish');
 }
 
+function splitSourceMultiValue(value) {
+  return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\\n]+/).map((part) => part.trim()).filter(Boolean))];
+}
+
 function renderSheetFields(container, headers, record = {}, { create = false, fieldOptions = {} } = {}) {
   container.replaceChildren();
   headers.forEach((header) => {
-    const label = document.createElement('label');
-    label.textContent = header;
+    const normalizedHeader = String(header).normalize('NFC').trim();
     const value = record[header] == null ? '' : String(record[header]);
     const configuredOptions = Array.isArray(fieldOptions[header]) ? fieldOptions[header] : null;
-    const normalizedHeader = String(header).normalize('NFC').trim();
-    const dropdownField = /^(نوع|ژانر|زبان|پیشنهادی)$/.test(normalizedHeader);
+    const label = document.createElement('label');
+    label.textContent = header;
+    if (normalizedHeader === 'ژانر') {
+      const selected = splitSourceMultiValue(value);
+      const options = [...new Set([...(configuredOptions || []), ...selected]
+        .map((option) => String(option).trim()).filter(Boolean))];
+      const group = document.createElement('fieldset');
+      group.className = 'source-genre-options';
+      group.dataset.sourceHeader = header;
+      group.setAttribute('aria-label', header);
+      options.forEach((optionValue) => {
+        const optionLabel = document.createElement('label');
+        optionLabel.className = 'check-label';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = optionValue;
+        checkbox.checked = selected.includes(optionValue);
+        checkbox.dataset.genreOption = 'true';
+        optionLabel.append(checkbox, document.createTextNode(optionValue));
+        group.append(optionLabel);
+      });
+      label.append(group);
+      container.append(label);
+      return;
+    }
+    const dropdownField = /^(نوع|زبان|پیشنهادی)$/.test(normalizedHeader);
     const options = dropdownField
       ? (configuredOptions || (normalizedHeader === 'نوع' ? ['سینمایی', 'سریال'] : []))
       : [];
@@ -790,9 +817,14 @@ function renderSheetFields(container, headers, record = {}, { create = false, fi
 
 function readSheetFields(container, { create = false } = {}) {
   const fields = {};
-  $$('[data-source-header]', container).forEach((control) => {
+  $('[data-source-header]', container).forEach((control) => {
     const header = control.dataset.sourceHeader;
-    fields[header] = control.value;
+    if (control.matches('fieldset.source-genre-options')) {
+      fields[header] = [...control.querySelectorAll('input[data-genre-option]:checked')]
+        .map((checkbox) => checkbox.value).join('، ');
+    } else {
+      fields[header] = control.value;
+    }
   });
   return fields;
 }
