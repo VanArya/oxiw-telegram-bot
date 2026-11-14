@@ -9,7 +9,7 @@ const { createCatalogContentId } = require('./catalog-content-identity');
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 
 function splitSourceMultiValue(value) {
-  return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\\n]+/).map((part) => part.trim()).filter(Boolean))];
+  return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\n]+/).map((part) => part.trim()).filter(Boolean))];
 }
 
 function atStage(stage, operation) {
