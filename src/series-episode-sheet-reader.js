@@ -12,7 +12,7 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
 
   return Object.freeze({
     async listEpisodes(parentSeriesCode) {
-      if (typeof parentSeriesCode !== 'string' || !/^\\d{5}$/.test(parentSeriesCode)) {
+      if (typeof parentSeriesCode !== 'string' || !/^\d{5}$/.test(parentSeriesCode)) {
         throw new TypeError('Invalid parent series code.');
       }
       const snapshot = await sheetProvider.readSheet('سریال');
@@ -41,7 +41,7 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
           episodes.push(Object.freeze({ ...episode, rowNumber }));
         } catch {
           // Rows with dotted episode-code patterns are reported; ordinary series codes are ignored.
-          if (typeof record['کد سیستم'] === 'string' && /^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(record['کد سیستم'].trim())) {
+          if (typeof record['کد سیستم'] === 'string' && /^\d{5}\.\d{2}\.\d{2}$/.test(record['کد سیستم'].trim())) {
             invalidRows.push(Object.freeze({ rowNumber, systemCode: record['کد سیستم'] }));
           }
         }
