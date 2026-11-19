@@ -54,5 +54,5 @@ test('manager administration stays owner-gated and uses the manager APIs safely'
 
 
 test('source create form reads every generated field, not only the first', () => {
-  assert.match(appSource, /\$\$\('\[data-source-header\]', container\)\.forEach/);
+  assert.match(appSource, /container\.querySelectorAll\('\[data-source-header\]'\)\.forEach/);
 });
