@@ -51,3 +51,8 @@ test('manager administration stays owner-gated and uses the manager APIs safely'
   assert.match(appSource, /managerSave\.disabled = !managerAccessAllowed/);
   assert.doesNotMatch(appSource, /roles\.includes\(['"]owner/);
 });
+
+
+test('source create form reads every generated field, not only the first', () => {
+  assert.match(appSource, /\$\$\('\[data-source-header\]', container\)\.forEach/);
+});
