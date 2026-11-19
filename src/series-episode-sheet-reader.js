@@ -1,7 +1,7 @@
 'use strict';
 
 const { parseSeriesEpisodeCode } = require('./series-episode-code');
-const { createSeriesEpisodeRecord } = require('./series-episode-record');
+const { mapSeriesEpisodeRecord } = require('./series-episode-record');
 
 const REQUIRED_HEADERS = Object.freeze(['کد سیستم', 'کد سریال مادر', 'لینک تلگرام']);
 
@@ -36,7 +36,7 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
         try {
           const parsed = parseSeriesEpisodeCode(record['کد سیستم']);
           if (!parsed) continue;
-          const episode = createSeriesEpisodeRecord(record);
+          const episode = mapSeriesEpisodeRecord(record);
           if (episode.parentSeriesCode !== parentSeriesCode) continue;
           episodes.push(Object.freeze({ ...episode, rowNumber }));
         } catch {
