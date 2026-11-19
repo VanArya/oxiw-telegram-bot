@@ -817,7 +817,7 @@ function renderSheetFields(container, headers, record = {}, { create = false, fi
 
 function readSheetFields(container, { create = false } = {}) {
   const fields = {};
-  $('[data-source-header]', container).forEach((control) => {
+  container.querySelectorAll('[data-source-header]').forEach((control) => {
     const header = control.dataset.sourceHeader;
     if (control.matches('fieldset.source-genre-options')) {
       fields[header] = [...control.querySelectorAll('input[data-genre-option]:checked')]
