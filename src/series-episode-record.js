@@ -31,7 +31,7 @@ function mapSeriesEpisodeRecord(row) {
   if (parsed.parentSeriesCode !== parentSeriesCode) {
     throw new TypeError('Episode code parent does not match parent series code.');
   }
-  if (!/^https?:\\/\\//i.test(telegramUrl)) {
+  if (!/^https?:\/\//i.test(telegramUrl)) {
     throw new TypeError('Episode Telegram link must be an http(s) URL.');
   }
   return Object.freeze({
