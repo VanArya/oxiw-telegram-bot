@@ -50,17 +50,38 @@ class CatalogAdminListInputError extends Error {
 }
 
 function validateSnapshot(sheetName, snapshot) {
-  const hasCodeHeader = sheetName === 'سریال'
-    ? snapshot?.headers?.filter((header) => header === 'کد سریال').length === 1 ||
-      snapshot?.headers?.filter((header) => header === 'کد سیستم').length === 1
-    : snapshot?.headers?.filter((header) => header === 'کد سیستم').length === 1;
   if (!snapshot || !Array.isArray(snapshot.headers) || !Array.isArray(snapshot.rows) ||
       snapshot.headers.some((header) => typeof header !== 'string') ||
-      !hasCodeHeader ||
-      snapshot.headers.filter((header) => header === 'اسم فیلم').length !== 1 ||
       snapshot.rows.some((row) => !Array.isArray(row))) {
     throw new TypeError(`Invalid catalog source snapshot: ${sheetName}`);
   }
+
+  // Normalize labels before validation so harmless whitespace and Unicode
+  // normalization differences do not make a healthy sheet unreadable.
+  const headers = snapshot.headers.map((header) => header.normalize('NFC').trim());
+  const hasCodeHeader = sheetName === 'سریال'
+    ? headers.includes('کد سریال') || headers.includes('کد سیستم')
+    : headers.includes('کد سیستم');
+  if (!hasCodeHeader || !headers.includes('اسم فیلم')) {
+    const requiredCodeHeader = sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
+    throw new TypeError(`Invalid catalog source headers in ${sheetName}: expected ${requiredCodeHeader} and اسم فیلم.`);
+  }
+
+  return { ...snapshot, headers };
+}
+
+function rowToRecord(headers, row) {
+  const record = {};
+  headers.forEach((header, index) => {
+    if (!header) return;
+    const value = row[index] ?? '';
+    // Duplicate headings are tolerated when they are blank aliases or repeated
+    // columns; retain the first non-empty value for deterministic projection.
+    if (!Object.hasOwn(record, header) || record[header] === '') {
+      record[header] = value;
+    }
+  });
+  return record;
 }
 
 function pageNumber(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
@@ -159,11 +180,12 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     const seen = new Set();
     const sourceItems = [];
     const invalidSourceRows = [];
-    snapshots.forEach((snapshot, sheetIndex) => {
+    snapshots.forEach((sourceSnapshot, sheetIndex) => {
       const sheetName = SHEETS[sheetIndex];
-      try { validateSnapshot(sheetName, snapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
+      let snapshot;
+      try { snapshot = validateSnapshot(sheetName, sourceSnapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
       snapshot.rows.forEach((row, rowIndex) => {
-        const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index] ?? '']));
+        const record = rowToRecord(snapshot.headers, row);
         // Episode rows are linked children, never standalone admin catalog titles.
         if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return;
         const sourceRowNumber = rowIndex + 2;
@@ -229,8 +251,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
   async function readFieldOptions() {
     const options = { 'نوع': ['سینمایی', 'سریال'] };
     for (const sheetName of ['سینمایی', 'سریال']) {
-      const snapshot = await sheetProvider.readSheet(sheetName);
-      validateSnapshot(sheetName, snapshot);
+      const snapshot = validateSnapshot(sheetName, await sheetProvider.readSheet(sheetName));
       for (const header of ['ژانر', 'زبان', 'پیشنهادی']) {
         const columnIndex = snapshot.headers.indexOf(header);
         if (columnIndex < 0) continue;
@@ -245,14 +266,13 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
   async function readSourceRecord(kind, systemCode) {
     const sheetName = kind === 'movie' ? 'سینمایی' : kind === 'series' ? 'سریال' : null;
     if (!sheetName) return null;
-    const snapshot = await sheetProvider.readSheet(sheetName);
-    validateSnapshot(sheetName, snapshot);
+    const snapshot = validateSnapshot(sheetName, await sheetProvider.readSheet(sheetName));
     const codeIndex = snapshot.headers.indexOf(CODE_HEADER(sheetName, snapshot.headers));
     const matches = snapshot.rows.map((row, index) => ({ row, index }))
       .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode);
     if (matches.length !== 1) return null;
     const { row, index } = matches[0];
-    const record = Object.fromEntries(snapshot.headers.map((header, column) => [header, row[column] ?? '']));
+    const record = rowToRecord(snapshot.headers, row);
     return {
       sourceSheet: sheetName,
       sourceRowNumber: index + 2,

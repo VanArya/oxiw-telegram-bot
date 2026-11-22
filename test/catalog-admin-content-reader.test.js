@@ -50,6 +50,17 @@ test('admin content reader lists unpublished Sheet rows with metadata status and
   assert.equal(JSON.stringify(item).includes('sourceRecord'), false);
 });
 
+test('admin reader tolerates whitespace and duplicate aliases in required sheet headings', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push(' کد سریال ', ' اسم فیلم ');
+  source['سریال'].rows.forEach((row) => row.push('', ''));
+
+  const result = await makeReader({ source }).list(new URLSearchParams('kind=series&pageSize=100'));
+  assert.equal(result.meta.stats.series, 2);
+  assert.ok(result.data.some((item) => item.id === 'series:fixture-series-ir'));
+  assert.equal(result.data.find((item) => item.id === 'series:fixture-series-ir').systemCode, 'fixture-series-ir');
+});
+
 test('protected source reader returns every sheet column while normal list projection keeps file IDs private', async () => {
   const reader = makeReader();
   const source = await reader.getItemSource(createCatalogContentId('movie', 'fixture-movie-ir'));
