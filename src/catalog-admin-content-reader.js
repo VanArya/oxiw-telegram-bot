@@ -50,10 +50,13 @@ class CatalogAdminListInputError extends Error {
 }
 
 function validateSnapshot(sheetName, snapshot) {
+  const hasCodeHeader = sheetName === 'سریال'
+    ? snapshot?.headers?.filter((header) => header === 'کد سریال').length === 1 ||
+      snapshot?.headers?.filter((header) => header === 'کد سیستم').length === 1
+    : snapshot?.headers?.filter((header) => header === 'کد سیستم').length === 1;
   if (!snapshot || !Array.isArray(snapshot.headers) || !Array.isArray(snapshot.rows) ||
       snapshot.headers.some((header) => typeof header !== 'string') ||
-      (sheetName === 'سینمایی' && snapshot.headers.filter((header) => header === 'کد سیستم').length !== 1) ||
-      (sheetName === 'سریال' && snapshot.headers.filter((header) => header === 'کد سریال').length !== 1 && snapshot.headers.filter((header) => header === 'کد سیستم').length !== 1 ||
+      !hasCodeHeader ||
       snapshot.headers.filter((header) => header === 'اسم فیلم').length !== 1 ||
       snapshot.rows.some((row) => !Array.isArray(row))) {
     throw new TypeError(`Invalid catalog source snapshot: ${sheetName}`);
