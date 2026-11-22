@@ -13,7 +13,7 @@ const { createInMemoryCatalogMetadataProvider } = require('../../src/in-memory-c
 const { categories } = require('./catalog-fixtures');
 
 const seriesHeaders = [
-  'کد سیستم',
+  'کد سریال',
   'اسم فیلم',
   'سال شروع',
   'سال پایان',

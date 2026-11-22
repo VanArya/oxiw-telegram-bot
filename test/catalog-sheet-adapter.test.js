@@ -168,7 +168,7 @@ test('a replacement provider works without changing the Core or adapter', async 
           rows: [['replacement-movie', 'فیلم منبع جایگزین', 'published']],
         };
       }
-      return { headers: ['کد سیستم', 'اسم فیلم'], rows: [] };
+      return { headers: ['کد سریال', 'اسم فیلم'], rows: [] };
     },
   };
   const result = await createAdapter(

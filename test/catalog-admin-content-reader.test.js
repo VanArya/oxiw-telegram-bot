@@ -86,7 +86,8 @@ test('reader creates new movie and series rows using each sheet schema', async (
       return { record, rowNumber: source[sheetName].rows.length + 1, sourceVersion: hash(record) };
     },
     async updateCatalogRow({ sheetName, systemCode, expectedVersion, fields }) {
-      const codeIndex = source[sheetName].headers.indexOf('کد سیستم');
+      const codeHeader = sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
+      const codeIndex = source[sheetName].headers.indexOf(codeHeader);
       const rowIndex = source[sheetName].rows.findIndex((row) => row[codeIndex] === systemCode);
       const record = Object.fromEntries(source[sheetName].headers.map((header, index) => [header, source[sheetName].rows[rowIndex][index] ?? '']));
       assert.equal(hash(record), expectedVersion);
@@ -109,11 +110,18 @@ test('reader creates new movie and series rows using each sheet schema', async (
   assert.equal(movie.id, 'movie:created-movie');
   assert.equal(movie.record['Telegram File ID'], 'new-file');
   const series = await reader.createItemSource('series', {
-    'کد سیستم': 'created-series', 'اسم فیلم': 'سریال تازه', 'سال شروع': '2023',
+    'کد سریال': 'created-series', 'اسم فیلم': 'سریال تازه', 'سال شروع': '2023',
     'سال پایان': 'در حال پخش', 'تعداد فصل و قسمت': '۱ فصل، ۸ قسمت',
   });
   assert.equal(series.id, 'series:created-series');
+  assert.equal(series.systemCode, 'created-series');
   assert.equal(series.record['سال پایان'], 'در حال پخش');
+  const updatedSeries = await reader.updateItemSource(series.id, {
+    sourceVersion: series.sourceVersion, fields: { 'کد سریال': 'created-series-renamed', 'اسم فیلم': 'عنوان سریال ویرایش‌شده' },
+  });
+  assert.equal(updatedSeries.id, 'series:created-series-renamed');
+  assert.equal(updatedSeries.systemCode, 'created-series-renamed');
+  assert.equal(updatedSeries.record['کد سریال'], 'created-series-renamed');
   const updated = await reader.updateItemSource(movie.id, {
     sourceVersion: movie.sourceVersion, fields: { 'Telegram File ID': 'updated-file', 'اسم فیلم': 'عنوان ویرایش‌شده' },
   });
@@ -265,7 +273,7 @@ test('admin content reader still rejects duplicate identities rather than silent
 test('admin reader skips dotted episode records from standalone catalog listing', async () => {
   const source = structuredClone(sheets);
   source['سریال'].headers.push('کد سریال مادر', 'لینک تلگرام', 'عنوان قسمت');
-  source['سریال'].rows.push(['70711.01.01', 'قسمت اول', '', '', '', '', '70711', 'https://t.me/example/1', 'قسمت اول']);
+  source['سریال'].rows.push(['70711.01.01', 'قسمت اول', '', '', '', '', '', '', '70711', 'https://t.me/example/1', 'قسمت اول']);
   const reader = makeReader({ source });
   const result = await reader.list(new URLSearchParams('kind=series&pageSize=100'));
   assert.equal(result.meta.stats.series, 2);
