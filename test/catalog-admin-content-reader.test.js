@@ -110,7 +110,7 @@ test('reader creates new movie and series rows using each sheet schema', async (
   assert.equal(movie.id, 'movie:created-movie');
   assert.equal(movie.record['Telegram File ID'], 'new-file');
   const series = await reader.createItemSource('series', {
-    'کد سیستم': 'created-series', 'اسم فیلم': 'سریال تازه', 'سال شروع': '2023',
+    'کد سریال': 'created-series', 'اسم فیلم': 'سریال تازه', 'سال شروع': '2023',
     'سال پایان': 'در حال پخش', 'تعداد فصل و قسمت': '۱ فصل، ۸ قسمت',
   });
   assert.equal(series.id, 'series:created-series');
