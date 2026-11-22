@@ -897,7 +897,7 @@ function createCatalogAdminApi({
           !Number.isInteger(body.season) || body.season < 1 || body.season > 99 ||
           !Number.isInteger(body.episode) || body.episode < 1 || body.episode > 99 ||
           typeof body.title !== 'string' || body.title.length > 200 ||
-          typeof body.country !== 'string' || body.country.length > 100 ||
+          !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
           typeof body.telegramFileId !== 'string' || !body.telegramFileId.trim() || body.telegramFileId.length > 4096) {
         throw new CatalogInputError();
       }
