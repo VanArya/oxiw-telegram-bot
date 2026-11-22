@@ -29,9 +29,15 @@ test('episode source row maps to a non-catalog episode record', () => {
   assert.deepEqual(REQUIRED_EPISODE_FIELDS, ['کد سیستم', 'کد سریال مادر', 'لینک تلگرام']);
 });
 
-test('episode row detection uses the dotted episode-code shape', () => {
+test('episode row detection supports current and legacy series code headers', () => {
   assert.equal(isSeriesEpisodeRecord(validRow), true);
   assert.equal(isSeriesEpisodeRecord({ 'کد سیستم': '70711' }), false);
+  assert.equal(isSeriesEpisodeRecord({ 'کد سریال': '70711.01.13' }), true);
+  assert.deepEqual(mapSeriesEpisodeRecord({
+    'کد سریال': '70711.01.13',
+    'کد سریال مادر': '70711',
+    'لینک تلگرام': 'https://t.me/example/123',
+  }).systemCode, '70711.01.13');
 });
 
 test('rejects missing required fields and mismatched parent codes', () => {
