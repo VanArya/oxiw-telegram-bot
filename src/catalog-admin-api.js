@@ -528,6 +528,23 @@ function createCatalogAdminApi({
       (value) => publicAdminTaxonomy(req.params.type, value));
   }));
 
+  app.post(`${BASE_PATH}/episode-registration`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (typeof provider.appendEpisode !== 'function') return sendError(res, 503, 'EPISODE_REGISTRATION_UNAVAILABLE', 'ثبت قسمت پیکربندی نشده است.');
+    const body = req.body; const allowed = ['seriesCode','season','episode','title','country','telegramFileId'];
+    if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(k => !allowed.includes(k)) ||
+      typeof body.seriesCode !== 'string' || !/^\d{5}$/.test(body.seriesCode) ||
+      !Number.isInteger(body.season) || body.season < 1 || body.season > 99 ||
+      !Number.isInteger(body.episode) || body.episode < 1 || body.episode > 99 ||
+      (body.title !== undefined && (typeof body.title !== 'string' || body.title.length > 200)) ||
+      !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
+      typeof body.telegramFileId !== 'string' || !body.telegramFileId.trim() || body.telegramFileId.length > 4096) return sendError(res, 400, 'INVALID_EPISODE_REQUEST', 'اطلاعات قسمت معتبر نیست.');
+    const code = body.seriesCode + '.' + String(body.season).padStart(2,'0') + '.' + String(body.episode).padStart(2,'0');
+    try { const result = await provider.appendEpisode({ ...body, code }); return res.status(201).json({ data: result }); }
+    catch (error) { if (error?.code === 'EPISODE_DUPLICATE') return sendError(res,409,'EPISODE_DUPLICATE','این قسمت قبلاً ثبت شده است.');
+      if (error?.code === 'EPISODE_PARENT_NOT_FOUND') return sendError(res,404,'EPISODE_PARENT_NOT_FOUND','سریال مادر پیدا نشد.');
+      return sendError(res,503,'EPISODE_WRITE_FAILED','ثبت قسمت انجام نشد؛ شیت را بررسی کنید.'); }
+  }));
+
   app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'مسیر درخواست پیدا نشد.'));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);

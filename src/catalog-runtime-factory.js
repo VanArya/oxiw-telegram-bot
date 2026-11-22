@@ -9,7 +9,7 @@ const { createGoogleSheetsCatalogProvider } = require('./google-sheets-catalog-p
 const { assertCatalogAdminRoleProvider } = require('./catalog-admin-role-provider');
 const { repairInvalidMetadataVersions } = require('./firestore-metadata-version-migration');
 
-const GOOGLE_SHEETS_READONLY_SCOPE = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+const GOOGLE_SHEETS_READONLY_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 const SPREADSHEET_ID_ENV = 'CATALOG_SPREADSHEET_ID';
 
 class CatalogRuntimeConfigurationError extends Error {
