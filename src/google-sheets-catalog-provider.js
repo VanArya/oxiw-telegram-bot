@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const SHEETS = new Set(['سینمایی', 'سریال']);
+const codeHeaderFor = (sheetName) => sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
 
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const {
@@ -95,7 +96,8 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     }
     const operation = async () => {
       const snapshot = await provider.readSheet(sheetName);
-      const codeIndex = snapshot.headers.indexOf('کد سیستم');
+      const codeHeader = codeHeaderFor(sheetName);
+      const codeIndex = snapshot.headers.indexOf(codeHeader);
       if (codeIndex < 0) throw new Error('Catalog identity column is unavailable.');
       const matches = snapshot.rows.map((row, index) => ({ row, index }))
         .filter(({ row }) => String(row[codeIndex] ?? '').trim() === systemCode.trim());
@@ -104,8 +106,8 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const { row, index } = matches[0];
       const record = Object.fromEntries(snapshot.headers.map((header, i) => [header, row[i] ?? '']));
-      if (Object.hasOwn(fields, 'کد سیستم')) {
-        const nextCode = String(fields['کد سیستم']).normalize('NFC').trim();
+      if (Object.hasOwn(fields, codeHeader)) {
+        const nextCode = String(fields[codeHeader]).normalize('NFC').trim();
         if (!nextCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
         const duplicate = snapshot.rows.some((candidate, rowIndex) => rowIndex !== index &&
           String(candidate[codeIndex] ?? '').normalize('NFC').trim() === nextCode);
@@ -122,7 +124,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         if (columnIndex < 0) throw Object.assign(new Error('Editable catalog column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
         data.push({
           range: `${quoteSheetRange(sheetName)}!${columnLetter(columnIndex + 1)}${index + 2}`,
-          values: [[field === 'کد سیستم' ? String(value).normalize('NFC').trim() : value]],
+          values: [[field === codeHeader ? String(value).normalize('NFC').trim() : value]],
         });
       }
       try {
@@ -135,12 +137,12 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const updatedRecord = { ...record };
       for (const [field, value] of Object.entries(fields)) {
-        updatedRecord[field] = field === 'کد سیستم'
+        updatedRecord[field] = field === codeHeader
           ? String(value).normalize('NFC').trim()
           : String(value);
       }
-      if (Object.hasOwn(updatedRecord, 'کد سیستم')) {
-        updatedRecord['کد سیستم'] = String(updatedRecord['کد سیستم']).normalize('NFC').trim();
+      if (Object.hasOwn(updatedRecord, codeHeader)) {
+        updatedRecord[codeHeader] = String(updatedRecord[codeHeader]).normalize('NFC').trim();
       }
       return {
         sourceVersion: crypto.createHash('sha256').update(JSON.stringify(updatedRecord)).digest('base64url'),
@@ -157,20 +159,21 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
   };
   provider.createCatalogRow = async function createCatalogRow({ sheetName, fields } = {}) {
     if (!SHEETS.has(sheetName) || !fields || typeof fields !== 'object' || Array.isArray(fields) ||
-        typeof fields['کد سیستم'] !== 'string' || !fields['کد سیستم'].trim() ||
+        typeof fields[codeHeaderFor(sheetName)] !== 'string' || !fields[codeHeaderFor(sheetName)].trim() ||
         typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim()) {
       throw Object.assign(new Error('Invalid new catalog row.'), { code: 'INVALID_INPUT' });
     }
     const operation = async () => {
       const snapshot = await provider.readSheet(sheetName);
-      if (!snapshot.headers.includes('کد سیستم') || !snapshot.headers.includes('اسم فیلم')) {
+      const codeHeader = codeHeaderFor(sheetName);
+      if (!snapshot.headers.includes(codeHeader) || !snapshot.headers.includes('اسم فیلم')) {
         throw Object.assign(new Error('Required catalog columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
       }
       if (Object.keys(fields).some((header) => !snapshot.headers.includes(header) || header === '__proto__')) {
         throw Object.assign(new Error('Unknown catalog column.'), { code: 'INVALID_INPUT' });
       }
-      const code = fields['کد سیستم'].normalize('NFC').trim();
-      const codeIndex = snapshot.headers.indexOf('کد سیستم');
+      const code = fields[codeHeader].normalize('NFC').trim();
+      const codeIndex = snapshot.headers.indexOf(codeHeader);
       if (snapshot.rows.some((row) => String(row[codeIndex] ?? '').normalize('NFC').trim() === code)) {
         throw Object.assign(new Error('Catalog system code already exists.'), { code: 'ALREADY_EXISTS' });
       }
