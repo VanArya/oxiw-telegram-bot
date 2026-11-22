@@ -8,6 +8,7 @@ const { createCatalogContentId } = require('./catalog-content-identity');
 const { isSeriesEpisodeRecord } = require('./series-episode-record');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
+const CODE_HEADER = (sheetName) => sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
 
 function splitSourceMultiValue(value) {
   return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\n]+/).map((part) => part.trim()).filter(Boolean))];
@@ -108,7 +109,7 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
   const dto = {
     id: content.id,
     kind: content.kind,
-    systemCode: String(record['کد سیستم']).normalize('NFC').trim(),
+    systemCode: String(record[CODE_HEADER(mapped.sourceSheet)]).normalize('NFC').trim(),
     title: content.title,
     approvalStatus: metadata?.approvalStatus ?? 'unknown',
     publicationStatus: metadata?.publicationStatus ?? 'unknown',
@@ -240,7 +241,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     if (!sheetName) return null;
     const snapshot = await sheetProvider.readSheet(sheetName);
     validateSnapshot(sheetName, snapshot);
-    const codeIndex = snapshot.headers.indexOf('کد سیستم');
+    const codeIndex = snapshot.headers.indexOf(CODE_HEADER(sheetName));
     const matches = snapshot.rows.map((row, index) => ({ row, index }))
       .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode);
     if (matches.length !== 1) return null;
@@ -289,7 +290,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       const result = await sheetProvider.createCatalogRow({ sheetName: schema.sheetName, fields });
       const mapped = mapCatalogSheetRow(schema.sheetName, result.record);
       return Object.freeze({
-        id: mapped.content.id, kind, systemCode: String(result.record['کد سیستم']).normalize('NFC').trim(),
+        id: mapped.content.id, kind, systemCode: String(result.record[CODE_HEADER(schema.sheetName)]).normalize('NFC').trim(),
         sourceSheet: schema.sheetName, sourceRowNumber: result.rowNumber,
         sourceVersion: result.sourceVersion, headers: schema.headers, record: result.record,
       });
@@ -303,7 +304,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       if (!current) return null;
       const record = { ...current.record };
       for (const [header, value] of Object.entries(fields)) record[header] = String(value);
-      const nextSystemCode = String(record['کد سیستم'] ?? '').normalize('NFC').trim();
+      const codeHeader = CODE_HEADER(current.sourceSheet);
+      const nextSystemCode = String(record[codeHeader] ?? '').normalize('NFC').trim();
       if (!nextSystemCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
       try { mapCatalogSheetRow(current.sourceSheet, record); } catch {
         throw Object.assign(new Error('Invalid catalog source row.'), { code: 'INVALID_INPUT' });
@@ -324,7 +326,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
             await sheetProvider.updateCatalogRow({
               sheetName: current.sourceSheet, systemCode: nextSystemCode,
               expectedVersion: result.sourceVersion,
-              fields: { 'کد سیستم': item.systemCode }, actorId,
+              fields: { [codeHeader]: item.systemCode }, actorId,
             });
           } catch {
             throw Object.assign(new Error('Catalog identity migration and rollback failed.'), {
