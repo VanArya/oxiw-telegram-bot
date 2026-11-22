@@ -889,6 +889,48 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.post(`${BASE_PATH}/episode-registration`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    try {
+      requireBodyKeys(req.body, ['seriesCode', 'season', 'episode', 'title', 'country', 'telegramFileId']);
+      const body = req.body;
+      if (typeof body.seriesCode !== 'string' || !/^\\d{5}$/.test(body.seriesCode) ||
+          !Number.isInteger(body.season) || body.season < 1 || body.season > 99 ||
+          !Number.isInteger(body.episode) || body.episode < 1 || body.episode > 99 ||
+          typeof body.title !== 'string' || body.title.length > 200 ||
+          !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
+          typeof body.telegramFileId !== 'string' || !body.telegramFileId.trim() || body.telegramFileId.length > 4096) {
+        throw new CatalogInputError();
+      }
+      if (typeof contentReader?.getSheetSchema !== 'function' || typeof contentReader?.createItemSource !== 'function') {
+        return sendError(res, 503, 'EPISODE_REGISTRATION_UNAVAILABLE', 'ثبت قسمت پیکربندی نشده است.');
+      }
+      const schema = await contentReader.getSheetSchema('series');
+      const headers = schema.headers;
+      const code = body.seriesCode + '.' + String(body.season).padStart(2, '0') + '.' + String(body.episode).padStart(2, '0');
+      const parentHeader = headers.includes('کد سریال مادر') ? 'کد سریال مادر' : 'کد سریال';
+      const fileHeader = headers.includes('Telegram File ID') ? 'Telegram File ID' : 'File ID';
+      const required = ['کد سیستم', 'اسم فیلم', 'سازنده', parentHeader, 'کد قسمت', fileHeader];
+      if (required.some(header => !headers.includes(header))) return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های ضروری شیت سریال در دسترس نیست.');
+      const fields = {
+        'کد سیستم': code,
+        'اسم فیلم': body.title.trim() || ('فصل ' + body.season + ' قسمت ' + body.episode),
+        'سازنده': body.country,
+        [parentHeader]: body.seriesCode,
+        'کد قسمت': code,
+        [fileHeader]: body.telegramFileId.trim(),
+        ...(headers.includes('نوع') ? {'نوع':'قسمت'} : {}),
+      };
+      validateSourceFields(fields, headers, { create: true });
+      const created = await contentReader.createItemSource('series', fields);
+      return res.status(201).json({ data: { episodeCode: code, created } });
+    } catch (error) {
+      if (error instanceof CatalogInputError) return sendError(res, 400, 'INVALID_EPISODE_REQUEST', 'اطلاعات قسمت معتبر نیست.');
+      if (error?.code === 'ALREADY_EXISTS') return sendError(res, 409, 'EPISODE_DUPLICATE', 'این قسمت قبلاً ثبت شده است.');
+      if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های ضروری شیت در دسترس نیست.');
+      throw error;
+    }
+  }));
+
   app.use((req, res) => sendError(res, 404, 'NOT_FOUND', 'مسیر درخواست پیدا نشد.'));
   app.use((error, req, res, next) => {
     if (res.headersSent) return next(error);

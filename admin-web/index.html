@@ -65,6 +65,7 @@
               <button class="nav-item active" data-view="overview" type="button"><span>01</span> نمای کلی</button>
               <button class="nav-item" data-view="content" data-kind="movie" type="button"><span>02</span> فیلم‌ها</button>
               <button class="nav-item" data-view="content" data-kind="series" type="button"><span>03</span> سریال‌ها</button>
+              <button class="nav-item" data-view="episode-registration" data-permission="catalog.metadata.write" type="button"><span>04</span> ثبت قسمت سریال</button>
               <button class="nav-item" data-view="categories" data-permission="catalog.categories.manage" type="button"><span>04</span> تنظیمات کاتالوگ</button>
               <button class="nav-item" data-view="audit" type="button"><span>06</span> تاریخچه عملیات</button>
               <button class="nav-item" data-view="account" type="button"><span>07</span> حساب و دسترسی</button>
@@ -100,6 +101,22 @@
               </div>
               <div id="content-source-warning" class="notice warning-panel" role="status" hidden></div>
               <div id="content-bulk-actions" class="panel bulk-actions" hidden><strong id="content-selected-count">۰ مورد انتخاب شده</strong><div class="form-actions"><button id="bulk-approve" class="button button-small button-secondary" type="button">تأیید انتخاب‌شده‌ها</button><button id="bulk-publish" class="button button-small button-primary" type="button">انتشار انتخاب‌شده‌ها</button><button id="content-clear-selection" class="button button-small button-quiet" type="button">لغو انتخاب</button></div></div><div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th><input id="content-select-all" type="checkbox" aria-label="انتخاب همهٔ موارد این صفحه"></th><th>عنوان</th><th>نوع</th><th>کد سیستم</th><th>سال</th><th>تأیید</th><th>انتشار</th><th>metadata</th><th></th></tr></thead><tbody id="content-rows"></tbody></table></div><div class="table-footer"><span id="content-count" class="muted"></span><div class="pager"><button id="content-prev" class="button button-small button-secondary" type="button">قبلی</button><span id="content-page"></span><button id="content-next" class="button button-small button-secondary" type="button">بعدی</button></div></div></div>
+            </section>
+
+            <section id="view-episode-registration" class="view">
+              <div class="page-heading"><div><p class="eyebrow">Google Sheets · سریال</p><h1>ثبت قسمت سریال</h1></div></div>
+              <form id="episode-registration-form" class="panel editor-form">
+                <label>کد سریال مادر<input id="episode-series-code" inputmode="numeric" pattern="\\d{5}" minlength="5" maxlength="5" required placeholder="مثلاً 12345" dir="ltr"></label>
+                <div class="two-column">
+                  <label>فصل<input id="episode-season" type="number" min="1" max="99" step="1" required></label>
+                  <label>شماره قسمت<input id="episode-number" type="number" min="1" max="99" step="1" required></label>
+                </div>
+                <label>عنوان قسمت<input id="episode-title" maxlength="200" placeholder="اختیاری"></label>
+                <label>کشور<select id="episode-country" required><option value="">انتخاب کشور</option><option value="ایران">ایران</option><option value="آمریکا">آمریکا</option><option value="کره جنوبی">کره جنوبی</option><option value="ژاپن">ژاپن</option><option value="هند">هند</option><option value="اسپانیا">اسپانیا</option><option value="مصر">مصر</option></select></label>
+                <label>Telegram File ID<input id="episode-file-id" maxlength="4096" required dir="ltr" autocomplete="off"></label>
+                <p id="episode-registration-message" class="fine-print" role="status" aria-live="polite"></p>
+                <div class="form-actions"><button id="episode-registration-submit" class="button button-primary" type="submit">ثبت قسمت</button></div>
+              </form>
             </section>
 
             <section id="view-categories" class="view">

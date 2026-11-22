@@ -1699,6 +1699,29 @@ function wireUi() {
   elements.contentDialog.addEventListener('click', (event) => {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
   });
+  $('#episode-registration-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submit = $('#episode-registration-submit');
+    setBusy(submit, true);
+    setText($('#episode-registration-message'), 'در حال ثبت قسمت…');
+    const payload = {
+      seriesCode: $('#episode-series-code').value.trim(),
+      season: Number($('#episode-season').value),
+      episode: Number($('#episode-number').value),
+      title: $('#episode-title').value.trim(),
+      country: $('#episode-country').value,
+      telegramFileId: $('#episode-file-id').value.trim(),
+    };
+    try {
+      const { body } = await api(`${API_ROOT}/episode-registration`, { method: 'POST', body: JSON.stringify(payload) });
+      setText($('#episode-registration-message'), `ثبت شد: ${body.data.episodeCode}`);
+      showToast('قسمت با موفقیت ثبت شد.');
+      event.currentTarget.reset();
+      $('#episode-series-code').focus();
+    } catch (error) {
+      setText($('#episode-registration-message'), error.message || 'ثبت قسمت انجام نشد.');
+    } finally { setBusy(submit, false); }
+  });
   elements.metadataForm.addEventListener('submit', (event) => void saveContentMetadata(event));
   $('#source-form').addEventListener('submit', (event) => void saveSourceItem(event));
   $('#source-create-form').addEventListener('submit', (event) => void createSourceItem(event));
