@@ -106,7 +106,7 @@
             <section id="view-episode-registration" class="view">
               <div class="page-heading"><div><p class="eyebrow">Google Sheets · سریال</p><h1>ثبت قسمت سریال</h1></div></div>
               <form id="episode-registration-form" class="panel editor-form">
-                <label>کد سریال مادر<input id="episode-series-code" inputmode="numeric" pattern="\\d{5}" minlength="5" maxlength="5" required placeholder="مثلاً 12345" dir="ltr"></label>
+                <label>کد سریال مادر<input id="episode-series-code" inputmode="numeric" pattern="[0-9]{5}" minlength="5" maxlength="5" required placeholder="مثلاً 12345" dir="ltr"></label>
                 <div class="two-column">
                   <label>فصل<input id="episode-season" type="number" min="1" max="99" step="1" required></label>
                   <label>شماره قسمت<input id="episode-number" type="number" min="1" max="99" step="1" required></label>
