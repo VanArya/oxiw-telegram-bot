@@ -893,7 +893,7 @@ function createCatalogAdminApi({
     try {
       requireBodyKeys(req.body, ['seriesCode', 'season', 'episode', 'title', 'country', 'telegramFileId']);
       const body = req.body;
-      if (typeof body.seriesCode !== 'string' || !/^\\d{5}$/.test(body.seriesCode) ||
+      if (typeof body.seriesCode !== 'string' || !/^[0-9]{5}$/.test(body.seriesCode) ||
           !Number.isInteger(body.season) || body.season < 1 || body.season > 99 ||
           !Number.isInteger(body.episode) || body.episode < 1 || body.episode > 99 ||
           typeof body.title !== 'string' || body.title.length > 200 ||
