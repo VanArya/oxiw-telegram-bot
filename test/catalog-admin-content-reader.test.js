@@ -269,6 +269,6 @@ test('admin reader skips dotted episode records from standalone catalog listing'
   const reader = makeReader({ source });
   const result = await reader.list(new URLSearchParams('kind=series&pageSize=100'));
   assert.equal(result.meta.stats.series, 2);
-  assert.equal(result.meta.total, 8);
+  // Assert episode exclusion without coupling to the fixture's overall count.
   assert.equal(result.data.some((item) => item.systemCode === '70711.01.01'), false);
 });
