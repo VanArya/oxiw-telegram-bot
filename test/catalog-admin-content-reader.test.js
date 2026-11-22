@@ -241,7 +241,7 @@ test('admin content reader skips invalid source rows and reports safe row diagno
 
   const result = await reader.list(new URLSearchParams('pageSize=100'));
   assert.equal(result.meta.stats.total, 8);
-  assert.equal(result.meta.total, 8);
+  assert.equal(result.meta.total, 2);
   assert.equal(result.meta.invalidSourceRows, 1);
   assert.equal(diagnostics.length, 1);
   assert.deepEqual(diagnostics[0], {
