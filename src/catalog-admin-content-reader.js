@@ -310,7 +310,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       if (!current) return null;
       const record = { ...current.record };
       for (const [header, value] of Object.entries(fields)) record[header] = String(value);
-      const codeHeader = CODE_HEADER(current.sourceSheet, Object.keys(current.sourceRecord));
+      const codeHeader = CODE_HEADER(current.sourceSheet, Object.keys(current.record));
       const nextSystemCode = String(record[codeHeader] ?? '').normalize('NFC').trim();
       if (!nextSystemCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
       try { mapCatalogSheetRow(current.sourceSheet, record); } catch {
