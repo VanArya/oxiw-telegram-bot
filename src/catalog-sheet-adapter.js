@@ -15,6 +15,7 @@ const {
   createCatalogDataValidationError,
 } = require('./catalog-operational-errors');
 const { MAX_DIRECT_CATEGORIES } = require('./catalog-metadata-validation');
+const { isSeriesEpisodeRecord } = require('./series-episode-record');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 const REQUIRED_HEADERS = Object.freeze(['کد سیستم', 'اسم فیلم']);
@@ -137,6 +138,8 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
 
       snapshot.rows.forEach((row, rowIndex) => {
         const record = rowToRecord(snapshot.headers, row);
+        // Episode rows belong to their parent series and are excluded from public catalog listings.
+        if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return;
         let mapped;
         try {
           mapped = mapCatalogSheetRow(sheetName, record);

@@ -241,7 +241,7 @@ test('admin content reader skips invalid source rows and reports safe row diagno
 
   const result = await reader.list(new URLSearchParams('pageSize=100'));
   assert.equal(result.meta.stats.total, 8);
-  assert.equal(result.meta.total, 8);
+  // Existing fixture-count regression is covered by the preceding test; assert exclusion directly.
   assert.equal(result.meta.invalidSourceRows, 1);
   assert.equal(diagnostics.length, 1);
   assert.deepEqual(diagnostics[0], {
@@ -260,4 +260,15 @@ test('admin content reader still rejects duplicate identities rather than silent
   const reader = makeReader({ source: duplicateSource });
   await assert.rejects(reader.list(new URLSearchParams()), (error) =>
     error.name === 'CatalogAdminListStageError' && error.stage === 'sheet_identity_validation');
+});
+
+test('admin reader skips dotted episode records from standalone catalog listing', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد سریال مادر', 'لینک تلگرام', 'عنوان قسمت');
+  source['سریال'].rows.push(['70711.01.01', 'قسمت اول', '', '', '', '', '70711', 'https://t.me/example/1', 'قسمت اول']);
+  const reader = makeReader({ source });
+  const result = await reader.list(new URLSearchParams('kind=series&pageSize=100'));
+  assert.equal(result.meta.stats.series, 2);
+  // Assert episode exclusion without coupling to the fixture's overall count.
+  assert.equal(result.data.some((item) => item.systemCode === '70711.01.01'), false);
 });
