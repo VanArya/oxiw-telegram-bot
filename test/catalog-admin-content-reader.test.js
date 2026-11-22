@@ -86,7 +86,8 @@ test('reader creates new movie and series rows using each sheet schema', async (
       return { record, rowNumber: source[sheetName].rows.length + 1, sourceVersion: hash(record) };
     },
     async updateCatalogRow({ sheetName, systemCode, expectedVersion, fields }) {
-      const codeIndex = source[sheetName].headers.indexOf('کد سیستم');
+      const codeHeader = sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
+      const codeIndex = source[sheetName].headers.indexOf(codeHeader);
       const rowIndex = source[sheetName].rows.findIndex((row) => row[codeIndex] === systemCode);
       const record = Object.fromEntries(source[sheetName].headers.map((header, index) => [header, source[sheetName].rows[rowIndex][index] ?? '']));
       assert.equal(hash(record), expectedVersion);
@@ -113,7 +114,14 @@ test('reader creates new movie and series rows using each sheet schema', async (
     'سال پایان': 'در حال پخش', 'تعداد فصل و قسمت': '۱ فصل، ۸ قسمت',
   });
   assert.equal(series.id, 'series:created-series');
+  assert.equal(series.systemCode, 'created-series');
   assert.equal(series.record['سال پایان'], 'در حال پخش');
+  const updatedSeries = await reader.updateItemSource(series.id, {
+    sourceVersion: series.sourceVersion, fields: { 'کد سریال': 'created-series-renamed', 'اسم فیلم': 'عنوان سریال ویرایش‌شده' },
+  });
+  assert.equal(updatedSeries.id, 'series:created-series-renamed');
+  assert.equal(updatedSeries.systemCode, 'created-series-renamed');
+  assert.equal(updatedSeries.record['کد سریال'], 'created-series-renamed');
   const updated = await reader.updateItemSource(movie.id, {
     sourceVersion: movie.sourceVersion, fields: { 'Telegram File ID': 'updated-file', 'اسم فیلم': 'عنوان ویرایش‌شده' },
   });
