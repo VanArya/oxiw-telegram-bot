@@ -108,8 +108,9 @@ function projectAdminItem(mapped, record, metadataRecord) {
   // explicitly excluded URL identifier. Values are bounded plain text; no
   // source row is exposed wholesale and this DTO is never used by public APIs.
   const sourceFields = {};
+  const excludedSourceFields = new Set(['شناسه URL', 'Telegram File ID', 'File ID', 'file_id', 'telegramFileId']);
   for (const [field, rawValue] of Object.entries(record)) {
-    if (field === 'شناسه URL') continue;
+    if (excludedSourceFields.has(field)) continue;
     if (rawValue === undefined || rawValue === null) {
       sourceFields[field] = '';
       continue;
