@@ -5,6 +5,7 @@ const { mapCatalogSheetRow } = require('./catalog-sheet-mapper');
 const { assertFilter, matchesFilter } = require('./catalog-core');
 const { isCanonicalContentId, validateCatalogContentMetadata } = require('./catalog-metadata-validation');
 const { createCatalogContentId } = require('./catalog-content-identity');
+const { isSeriesEpisodeRecord } = require('./series-episode-record');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 
@@ -156,6 +157,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       try { validateSnapshot(sheetName, snapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
       snapshot.rows.forEach((row, rowIndex) => {
         const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index] ?? '']));
+        // Episode rows are linked children, never standalone admin catalog titles.
+        if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return;
         const sourceRowNumber = rowIndex + 2;
         let mapped;
         try {
