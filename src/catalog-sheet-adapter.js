@@ -18,7 +18,7 @@ const { MAX_DIRECT_CATEGORIES } = require('./catalog-metadata-validation');
 const { isSeriesEpisodeRecord } = require('./series-episode-record');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
-const REQUIRED_HEADERS = Object.freeze(['کد سیستم', 'اسم فیلم']);
+const REQUIRED_HEADERS = Object.freeze({ movie: ['کد سیستم', 'اسم فیلم'], series: ['کد سریال', 'اسم فیلم'] });
 const APPROVAL_STATUSES = new Set(['pending', 'approved', 'rejected', 'unknown']);
 const PUBLICATION_STATUSES = new Set(['draft', 'published', 'archived', 'unknown']);
 const TAXONOMY_TYPES = Object.freeze(['country', 'genre']);
@@ -39,7 +39,9 @@ function validateSnapshot(sheetName, snapshot) {
     throw new TypeError(`Invalid or duplicate headers: ${sheetName}`);
   }
 
-  const missing = REQUIRED_HEADERS.filter((header) => !snapshot.headers.includes(header));
+  const codeHeader = sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
+  const requiredHeaders = REQUIRED_HEADERS[sheetName === 'سریال' ? 'series' : 'movie'];
+  const missing = requiredHeaders.filter((header) => !snapshot.headers.includes(header));
   if (missing.length > 0) {
     throw new TypeError(`Missing required headers in ${sheetName}: ${missing.join(', ')}`);
   }
@@ -59,7 +61,7 @@ function mappingDiagnosticField(error) {
   if (message.includes('Series start year cannot be after end year.')) {
     return 'series_year_range';
   }
-  if (message.includes('کد سیستم')) return 'system_code';
+  if (message.includes('کد سیستم') || message.includes('کد سریال')) return 'system_code';
   if (message.includes('اسم فیلم')) return 'title';
   if (message.includes('سال شروع')) return 'series_start_year';
   if (message.includes('سال پایان')) return 'series_end_year';
