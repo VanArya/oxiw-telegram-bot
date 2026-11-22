@@ -261,3 +261,14 @@ test('admin content reader still rejects duplicate identities rather than silent
   await assert.rejects(reader.list(new URLSearchParams()), (error) =>
     error.name === 'CatalogAdminListStageError' && error.stage === 'sheet_identity_validation');
 });
+
+test('admin reader skips dotted episode records from standalone catalog listing', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد سریال مادر', 'لینک تلگرام', 'عنوان قسمت');
+  source['سریال'].rows.push(['70711.01.01', 'قسمت اول', '', '', '', '', '70711', 'https://t.me/example/1', 'قسمت اول']);
+  const reader = makeReader({ source });
+  const result = await reader.list(new URLSearchParams('kind=series&pageSize=100'));
+  assert.equal(result.meta.stats.series, 2);
+  assert.equal(result.meta.total, 8);
+  assert.equal(result.data.some((item) => item.systemCode === '70711.01.01'), false);
+});
