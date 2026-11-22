@@ -72,6 +72,7 @@
             <nav id="main-nav" class="main-nav">
               <button class="nav-item active" data-view="overview" type="button"><span>01</span> نمای کلی</button>
               <button class="nav-item" data-view="content" type="button"><span>02</span> فیلم‌ها و سریال‌ها</button>
+              <button class="nav-item" data-view="episode-registration" data-permission="catalog.metadata.write" type="button"><span>03</span> ثبت قسمت سریال</button>
               <button class="nav-item" data-view="categories" data-permission="catalog.categories.manage" type="button"><span>03</span> دسته‌بندی‌ها</button>
               <button class="nav-item" data-view="countries" data-permission="catalog.taxonomies.manage" type="button"><span>04</span> کشورها</button>
               <button class="nav-item" data-view="genres" data-permission="catalog.taxonomies.manage" type="button"><span>05</span> ژانرها</button>
@@ -108,6 +109,24 @@
                 <button id="content-search-button" class="button button-primary" type="button">اعمال فیلتر</button>
               </div>
               <div class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>عنوان</th><th>نوع</th><th>کد سیستم</th><th>سال</th><th>تأیید</th><th>انتشار</th><th>metadata</th><th></th></tr></thead><tbody id="content-rows"></tbody></table></div><div class="table-footer"><span id="content-count" class="muted"></span><div class="pager"><button id="content-prev" class="button button-small button-secondary" type="button">قبلی</button><span id="content-page"></span><button id="content-next" class="button button-small button-secondary" type="button">بعدی</button></div></div></div>
+            </section>
+
+            <section id="view-episode-registration" class="view">
+              <div class="page-heading"><div><p class="eyebrow">Google Sheets · سریال</p><h1>ثبت قسمت سریال</h1><p class="muted">کد سریال مادر، فصل، قسمت و شناسهٔ فایل تلگرام را وارد کنید.</p></div></div>
+              <form id="episode-registration-form" class="panel editor-form">
+                <label>کد سریال مادر<input id="episode-series-code" inputmode="numeric" pattern="\\d{5}" minlength="5" maxlength="5" required placeholder="مثلاً 12345" dir="ltr"></label>
+                <div class="two-column">
+                  <label>فصل<input id="episode-season" type="number" min="1" max="99" step="1" required></label>
+                  <label>شماره قسمت<input id="episode-number" type="number" min="1" max="99" step="1" required></label>
+                </div>
+                <label>عنوان قسمت (اختیاری)<input id="episode-title" maxlength="200" placeholder="در صورت خالی بودن عنوان خودکار ثبت می‌شود"></label>
+                <label>کشور<select id="episode-country" required>
+                  <option value="">انتخاب کشور</option><option>ایران</option><option>آمریکا</option><option>کره جنوبی</option><option>ژاپن</option><option>هند</option><option>اسپانیا</option><option>مصر</option>
+                </select></label>
+                <label>Telegram File ID<input id="episode-file-id" maxlength="4096" required dir="ltr" autocomplete="off"></label>
+                <p id="episode-registration-message" class="fine-print" role="status" aria-live="polite"></p>
+                <div class="form-actions"><button id="episode-registration-submit" class="button button-primary" type="submit">ثبت قسمت</button></div>
+              </form>
             </section>
 
             <section id="view-categories" class="view">
