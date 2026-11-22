@@ -48,9 +48,9 @@ class CatalogAdminListInputError extends Error {
 
 function validateSnapshot(sheetName, snapshot) {
   if (!snapshot || !Array.isArray(snapshot.headers) || !Array.isArray(snapshot.rows) ||
-      snapshot.headers.some((header) => typeof header !== 'string' || header.trim() === '') ||
-      new Set(snapshot.headers).size !== snapshot.headers.length ||
-      !snapshot.headers.includes('کد سیستم') || !snapshot.headers.includes('اسم فیلم') ||
+      snapshot.headers.some((header) => typeof header !== 'string') ||
+      snapshot.headers.filter((header) => header === 'کد سیستم').length !== 1 ||
+      snapshot.headers.filter((header) => header === 'اسم فیلم').length !== 1 ||
       snapshot.rows.some((row) => !Array.isArray(row))) {
     throw new TypeError(`Invalid catalog source snapshot: ${sheetName}`);
   }
