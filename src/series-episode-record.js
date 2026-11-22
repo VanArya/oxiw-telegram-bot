@@ -23,7 +23,8 @@ function mapSeriesEpisodeRecord(row) {
   if (!row || typeof row !== 'object' || Array.isArray(row)) {
     throw new TypeError('Episode source row must be an object.');
   }
-  const systemCode = requiredString(row['کد سیستم'], 'کد سیستم');
+  const codeField = typeof row['کد سریال'] === 'string' ? 'کد سریال' : 'کد سیستم';
+  const systemCode = requiredString(row[codeField], codeField);
   const parentSeriesCode = requiredString(row['کد سریال مادر'], 'کد سریال مادر');
   const telegramUrl = requiredString(row['لینک تلگرام'], 'لینک تلگرام');
   const parsed = parseSeriesEpisodeCode(systemCode);
@@ -49,9 +50,10 @@ function mapSeriesEpisodeRecord(row) {
 }
 
 function isSeriesEpisodeRecord(row) {
-  return Boolean(row && typeof row === 'object' && parseSeriesEpisodeCode(
-    typeof row['کد سیستم'] === 'string' ? row['کد سیستم'] : '',
-  ));
+  const code = row && typeof row === 'object'
+    ? (typeof row['کد سریال'] === 'string' ? row['کد سریال'] : row['کد سیستم'])
+    : '';
+  return Boolean(parseSeriesEpisodeCode(typeof code === 'string' ? code : ''));
 }
 
 
