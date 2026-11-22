@@ -186,3 +186,23 @@ test('a replacement provider works without changing the Core or adapter', async 
 test('provider contract is checked when the adapter is created', () => {
   assert.throws(() => createCatalogSheetAdapter({}), /Provider must implement readSheet/);
 });
+
+test('public catalog adapter skips dotted episode codes from public items', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': { headers: movieHeaders, rows: [] },
+    'سریال': {
+      headers: [...seriesHeaders, 'کد سریال مادر', 'لینک تلگرام'],
+      rows: [
+        ['70711.01.01', 'قسمت اول', '2024', '', '', '', '70711', 'https://t.me/example/1'],
+        ['70711', 'سریال والد', '2020', '2022', '', '', '', ''],
+      ],
+    },
+  });
+  const metadata = createFixtureMetadataProvider({
+    [createCatalogContentId('series', '70711')]: { approvalStatus: 'approved', publicationStatus: 'published' },
+  });
+  const adapter = createCatalogSheetAdapter(provider, { metadataProvider: metadata });
+  const results = await adapter.listItems();
+  assert.equal(results.some((item) => item.id === 'series:70711.01.01'), false);
+  assert.equal(results.some((item) => item.id === 'series:70711'), true);
+});
