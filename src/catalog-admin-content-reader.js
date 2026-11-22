@@ -51,7 +51,7 @@ function validateSnapshot(sheetName, snapshot) {
       snapshot.headers.some((header) => typeof header !== 'string' || header.trim() === '') ||
       new Set(snapshot.headers).size !== snapshot.headers.length ||
       !snapshot.headers.includes('کد سیستم') || !snapshot.headers.includes('اسم فیلم') ||
-      snapshot.rows.some((row) => !Array.isArray(row) || row.length > snapshot.headers.length)) {
+      snapshot.rows.some((row) => !Array.isArray(row))) {
     throw new TypeError(`Invalid catalog source snapshot: ${sheetName}`);
   }
 }
