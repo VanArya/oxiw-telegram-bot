@@ -1133,6 +1133,31 @@ $('#content-search-button').addEventListener('click', () => { contentPage = 1; v
   }));
   elements.auditPrev.addEventListener('click', () => { if (auditPage > 1) { auditPage -= 1; void loadAudit(); } });
   elements.auditNext.addEventListener('click', () => { if (auditHasMore) { auditPage += 1; void loadAudit(); } });
+  $('#episode-registration-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const submit = $('#episode-registration-submit');
+    setBusy(submit, true);
+    setText($('#episode-registration-message'), 'در حال ثبت قسمت…');
+    try {
+      const payload = {
+        seriesCode: $('#episode-series-code').value.trim(),
+        season: Number($('#episode-season').value),
+        episode: Number($('#episode-number').value),
+        title: $('#episode-title').value.trim(),
+        country: $('#episode-country').value,
+        telegramFileId: $('#episode-file-id').value.trim(),
+      };
+      const { body } = await api(`${API_ROOT}/episode-registration`, { method: 'POST', body: JSON.stringify(payload) });
+      setText($('#episode-registration-message'), `ثبت شد: ${body.data.episodeCode}`);
+      showToast('قسمت با موفقیت ثبت شد.');
+      form.reset();
+      $('#episode-series-code').focus();
+    } catch (error) {
+      setText($('#episode-registration-message'), error.message || 'ثبت قسمت انجام نشد.');
+      reportApiError(error);
+    } finally { setBusy(submit, false); }
+  });
   elements.metadataMigrationButton.addEventListener('click', () => void runMetadataMigration(elements.metadataMigrationButton.dataset.action || 'preview'));
 }
 
