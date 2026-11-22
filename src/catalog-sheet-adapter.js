@@ -39,9 +39,10 @@ function validateSnapshot(sheetName, snapshot) {
     throw new TypeError(`Invalid or duplicate headers: ${sheetName}`);
   }
 
-  const codeHeader = sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
-  const requiredHeaders = REQUIRED_HEADERS[sheetName === 'سریال' ? 'series' : 'movie'];
+  const codeHeaders = sheetName === 'سریال' ? ['کد سریال', 'کد سیستم'] : ['کد سیستم'];
+  const requiredHeaders = ['اسم فیلم'];
   const missing = requiredHeaders.filter((header) => !snapshot.headers.includes(header));
+  if (!codeHeaders.some((header) => snapshot.headers.includes(header))) missing.push(codeHeaders.join(' یا '));
   if (missing.length > 0) {
     throw new TypeError(`Missing required headers in ${sheetName}: ${missing.join(', ')}`);
   }
