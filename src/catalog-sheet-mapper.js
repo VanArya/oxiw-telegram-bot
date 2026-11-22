@@ -55,7 +55,9 @@ function mapCatalogSheetRow(sheetName, row) {
     throw new TypeError('Unsupported catalog sheet.');
   }
 
-  const codeHeader = kind === 'series' ? 'کد سریال' : 'کد سیستم';
+  const codeHeader = kind === 'series'
+    ? (row['کد سریال'] !== undefined ? 'کد سریال' : 'کد سیستم')
+    : 'کد سیستم';
   const content = {
     id: createCatalogContentId(kind, requiredText(row, codeHeader)),
     kind,
