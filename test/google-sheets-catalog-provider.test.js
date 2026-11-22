@@ -58,6 +58,23 @@ test('reads headers and rows for both approved sheets using dynamic values.get a
   assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow']);
 });
 
+test('normalizes whitespace and Unicode in live sheet header labels', async () => {
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient({
+      "'سینمایی'": [
+        ['  کد سیستم  ', ' اسم فیلم ', 'سال'],
+        ['normalized-movie', 'عنوان آزمایشی', '2024'],
+      ],
+    }),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+
+  assert.deepEqual(await provider.readSheet('سینمایی'), {
+    headers: ['کد سیستم', 'اسم فیلم', 'سال'],
+    rows: [['normalized-movie', 'عنوان آزمایشی', '2024']],
+  });
+});
+
 test('empty sheets and responses without values become empty snapshots', async () => {
   const provider = createGoogleSheetsCatalogProvider({
     sheetsClient: mockSheetsClient({ "'سینمایی'": [] }),
