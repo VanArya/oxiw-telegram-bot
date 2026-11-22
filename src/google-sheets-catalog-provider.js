@@ -69,7 +69,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         return { headers: [], rows: [] };
       }
 
-      const headers = values[0];
+      const headers = values[0].map((header) => header.normalize('NFC').trim());
       if (headers.some((header) => typeof header !== 'string')) {
         throw createCatalogDataValidationError(
           'sheets', 'sheet_response_validation', 'Invalid catalog sheet header row.',
