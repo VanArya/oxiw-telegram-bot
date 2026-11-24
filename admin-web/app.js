@@ -174,6 +174,7 @@ function messageForError(error) {
     SOURCE_COLUMN_UNAVAILABLE: 'ستون‌های لازم برای ثبت قسمت در شیت سریال موجود نیستند.',
     INVALID_EPISODE_REQUEST: 'اطلاعات واردشده برای ثبت قسمت معتبر نیست.',
     EPISODE_DUPLICATE: 'این قسمت قبلاً ثبت شده است.',
+    PARENT_SERIES_NOT_FOUND: 'سریال مادر با این کد در شیت پیدا نشد؛ کد سریال را بررسی کنید.',
     TARGET_INVALID: 'حساب هدف معتبر نیست.',
     INVALID_TARGET: 'حساب هدف معتبر نیست.',
     LAST_ADMINISTRATOR: 'لغو این دسترسی آخرین مدیر فعال را حذف می‌کند.',
