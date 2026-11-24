@@ -956,7 +956,7 @@ function createCatalogAdminApi({
   }));
 
   app.get(`${BASE_PATH}/episodes/:episodeCode`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
-    if (!/^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(req.params.episodeCode) ||
+    if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
         typeof contentReader?.getSeriesEpisode !== 'function') {
       return sendError(res, 400, 'INVALID_INPUT', 'کد قسمت معتبر نیست.');
     }
@@ -969,7 +969,7 @@ function createCatalogAdminApi({
     try {
       requireBodyKeys(req.body, ['sourceVersion', 'title', 'country', 'telegramFileId']);
       const body = req.body;
-      if (!/^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(req.params.episodeCode) ||
+      if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
           typeof body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(body.sourceVersion) ||
           typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200 ||
           !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
@@ -1001,7 +1001,7 @@ function createCatalogAdminApi({
   app.delete(`${BASE_PATH}/episodes/:episodeCode`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
     try {
       requireBodyKeys(req.body, ['sourceVersion']);
-      if (!/^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(req.params.episodeCode) ||
+      if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
           typeof req.body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(req.body.sourceVersion) ||
           typeof contentReader?.deleteSeriesEpisode !== 'function') {
         throw new CatalogInputError();
