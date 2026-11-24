@@ -809,6 +809,97 @@ test('source editor API exposes all sheet columns, allows identity changes, and 
 });
 
 
+test('episode registration writes the dotted code to the series identity column and parent code separately', async () => {
+  const store = createStore();
+  const headers = [
+    'کد سریال', 'کد سریال مادر', 'کد سیستم', 'اسم فیلم',
+    'سازنده', 'کد قسمت', 'Telegram File ID',
+  ];
+  let created = null;
+  const contentReader = {
+    async getSheetSchema(kind) {
+      assert.equal(kind, 'series');
+      return { kind, sheetName: 'سریال', headers };
+    },
+    async createItemSource(kind, fields) {
+      created = { kind, fields };
+      return {
+        id: `series:${encodeURIComponent(fields['کد سریال'])}`,
+        kind,
+        systemCode: fields['کد سریال'],
+        record: fields,
+      };
+    },
+  };
+  const app = createCatalogAdminApi({
+    writableProvider: store,
+    contentReader,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+    roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
+    authorizePermission: roleAuthorizer,
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/episode-registration`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        seriesCode: '70711',
+        season: 1,
+        episode: 13,
+        title: '',
+        country: 'ایران',
+        telegramFileId: 'synthetic-file-id',
+      }),
+    }));
+
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    assert.equal(result.body.data.episodeCode, '70711.01.13');
+    assert.equal(created.kind, 'series');
+    assert.equal(created.fields['کد سریال'], '70711.01.13');
+    assert.equal(created.fields['کد سریال مادر'], '70711');
+    assert.equal(created.fields['کد سیستم'], '70711.01.13');
+    assert.equal(created.fields['کد قسمت'], '70711.01.13');
+    assert.equal(created.fields['اسم فیلم'], 'فصل 1 قسمت 13');
+  });
+});
+
+test('series source creation validates the current series identity header', async () => {
+  const store = createStore();
+  const headers = ['کد سریال', 'اسم فیلم'];
+  let created = null;
+  const contentReader = {
+    async getSheetSchema(kind) {
+      return { kind, sheetName: kind === 'series' ? 'سریال' : 'سینمایی', headers };
+    },
+    async createItemSource(kind, fields) {
+      created = { kind, fields };
+      return { id: `series:${fields['کد سریال']}`, kind, systemCode: fields['کد سریال'], record: fields };
+    },
+  };
+  const app = createCatalogAdminApi({
+    writableProvider: store,
+    contentReader,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+    roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
+    authorizePermission: roleAuthorizer,
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/source`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'series',
+        fields: { 'کد سریال': 'new-series', 'اسم فیلم': 'سریال تازه' },
+      }),
+    }));
+    assert.equal(result.status, 201, JSON.stringify(result.body));
+    assert.equal(created.fields['کد سریال'], 'new-series');
+  });
+});
+
+
 test('category and taxonomy delete endpoints require current ETags and call guarded provider deletes', async () => {
   const base = createStore({
     categories: [{ id: 'remove-category', slug: 'remove-category', localizedTitle: { fa: 'حذف آزمایشی' }, enabled: true }],
