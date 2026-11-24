@@ -201,6 +201,81 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     writeQueue = result.catch(() => undefined);
     return result;
   };
+  provider.createSeriesEpisodeRow = async function createSeriesEpisodeRow({
+    seriesCode, episodeCode, fields,
+  } = {}) {
+    if (typeof seriesCode !== 'string' || !/^\d{5}$/.test(seriesCode) ||
+        typeof episodeCode !== 'string' || !/^\d{5}\.\d{2}\.\d{2}$/.test(episodeCode) ||
+        !fields || typeof fields !== 'object' || Array.isArray(fields) ||
+        Object.keys(fields).length === 0) {
+      throw Object.assign(new Error('Invalid series episode row.'), { code: 'INVALID_INPUT' });
+    }
+
+    const operation = async () => {
+      const snapshot = await provider.readSheet('سریال');
+      const headers = snapshot.headers;
+      // Current catalog layout stores the parent code in "کد سریال" and
+      // the dotted episode identity in "کد قسمت". Legacy columns remain
+      // readable for older sheets, but the current layout is preferred.
+      const parentHeader = headers.includes('کد سریال')
+        ? 'کد سریال'
+        : headers.includes('کد سریال مادر') ? 'کد سریال مادر' : null;
+      const episodeHeader = headers.includes('کد قسمت')
+        ? 'کد قسمت'
+        : headers.includes('کد سیستم') ? 'کد سیستم' : null;
+      const fileHeader = ['Telegram File ID', 'File ID', 'لینک تلگرام']
+        .find((header) => headers.includes(header)) || null;
+      const required = [parentHeader, episodeHeader, 'اسم فیلم', fileHeader];
+      if (required.some((header) => !header)) {
+        throw Object.assign(new Error('Series episode columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      }
+      if (fields[parentHeader] !== seriesCode || fields[episodeHeader] !== episodeCode ||
+          typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim() ||
+          typeof fields[fileHeader] !== 'string' || !fields[fileHeader].trim() ||
+          Object.keys(fields).some((header) => !headers.includes(header) || header === '__proto__')) {
+        throw Object.assign(new Error('Invalid series episode fields.'), { code: 'INVALID_INPUT' });
+      }
+      const parentIndex = headers.indexOf(parentHeader);
+      const episodeIndex = headers.indexOf(episodeHeader);
+      const parentExists = snapshot.rows.some((row) =>
+        String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode &&
+        String(row[episodeIndex] ?? '').normalize('NFC').trim() === '');
+      if (!parentExists) {
+        throw Object.assign(new Error('Parent series was not found.'), { code: 'PARENT_SERIES_NOT_FOUND' });
+      }
+      const duplicate = snapshot.rows.some((row) =>
+        String(row[episodeIndex] ?? '').normalize('NFC').trim() === episodeCode);
+      if (duplicate) {
+        throw Object.assign(new Error('Series episode already exists.'), { code: 'ALREADY_EXISTS' });
+      }
+
+      const values = headers.map((header) => fields[header] === undefined ? '' : String(fields[header]));
+      const record = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+      try {
+        const response = await sheetsClient.spreadsheets.values.append({
+          spreadsheetId,
+          range: `${quoteSheetRange('سریال')}!A:ZZZ`,
+          valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
+          requestBody: { values: [values] },
+        });
+        const rowNumber = Number(/!A(\\d+):/.exec(response?.data?.updates?.updatedRange || '')?.[1]) ||
+          snapshot.rows.length + 2;
+        return Object.freeze({
+          rowNumber,
+          record: Object.freeze(record),
+          sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
+        });
+      } catch (error) {
+        throw classifyCatalogDependencyError('sheets', 'sheet_append', error, 'Unable to create series episode.');
+      }
+    };
+
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+
   return Object.freeze(markCatalogProviderKind(provider, 'google-sheets'));
 }
 
