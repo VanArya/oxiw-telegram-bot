@@ -624,8 +624,11 @@ function createCatalogAdminApi({
   bulkContentStatus('publication', PERMISSIONS.CONTENT_PUBLISH,
     new Set(['published', 'draft', 'archived']), 'publicationStatus', 'updatePublicationStatus');
 
-  const validateSourceFields = (fields, headers, { create = false } = {}) => {
+  const validateSourceFields = (fields, headers, { create = false, identityHeader = 'کد سیستم' } = {}) => {
     if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) {
+      throw new CatalogInputError();
+    }
+    if (typeof identityHeader !== 'string' || !headers.includes(identityHeader)) {
       throw new CatalogInputError();
     }
     for (const [header, value] of Object.entries(fields)) {
@@ -634,10 +637,10 @@ function createCatalogAdminApi({
         throw new CatalogInputError();
       }
     }
-    if (create && (typeof fields['کد سیستم'] !== 'string' || !fields['کد سیستم'].trim() ||
+    if (create && (typeof fields[identityHeader] !== 'string' || !fields[identityHeader].trim() ||
         typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim())) throw new CatalogInputError();
     if (Object.hasOwn(fields, 'اسم فیلم') && !fields['اسم فیلم'].trim()) throw new CatalogInputError();
-    if (Object.hasOwn(fields, 'کد سیستم') && !fields['کد سیستم'].trim()) throw new CatalogInputError();
+    if (Object.hasOwn(fields, identityHeader) && !fields[identityHeader].trim()) throw new CatalogInputError();
     for (const header of ['سال', 'سال شروع', 'سال پایان']) {
       if (Object.hasOwn(fields, header) && fields[header] !== '' &&
           !(header === 'سال پایان' && fields[header] === 'در حال پخش') &&
@@ -662,7 +665,10 @@ function createCatalogAdminApi({
       if (!['movie', 'series'].includes(req.body.kind) || typeof contentReader?.getSheetSchema !== 'function' ||
           typeof contentReader?.createItemSource !== 'function') throw new CatalogInputError();
       const schema = await contentReader.getSheetSchema(req.body.kind);
-      validateSourceFields(req.body.fields, schema.headers, { create: true });
+      const identityHeader = req.body.kind === 'series' && schema.headers.includes('کد سریال')
+        ? 'کد سریال'
+        : 'کد سیستم';
+      validateSourceFields(req.body.fields, schema.headers, { create: true, identityHeader });
       const created = await contentReader.createItemSource(req.body.kind, req.body.fields);
       return res.status(201).json({ data: created });
     } catch (error) {
@@ -907,12 +913,18 @@ function createCatalogAdminApi({
       const schema = await contentReader.getSheetSchema('series');
       const headers = schema.headers;
       const code = body.seriesCode + '.' + String(body.season).padStart(2, '0') + '.' + String(body.episode).padStart(2, '0');
-      const parentHeader = headers.includes('کد سریال مادر') ? 'کد سریال مادر' : 'کد سریال';
+      // Series episode rows use the series identity column for the dotted episode
+      // code and a separate parent column for the five-digit series code.
+      const codeHeader = headers.includes('کد سریال') ? 'کد سریال' : null;
+      const parentHeader = headers.includes('کد سریال مادر') ? 'کد سریال مادر' : null;
       const fileHeader = headers.includes('Telegram File ID') ? 'Telegram File ID' : 'File ID';
-      const required = ['کد سیستم', 'اسم فیلم', 'سازنده', parentHeader, 'کد قسمت', fileHeader];
-      if (required.some(header => !headers.includes(header))) return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های ضروری شیت سریال در دسترس نیست.');
+      const required = [codeHeader, parentHeader, 'اسم فیلم', 'سازنده', 'کد قسمت', fileHeader];
+      if (required.some(header => !header || !headers.includes(header))) {
+        return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های لازم برای ثبت قسمت در شیت سریال موجود نیستند.');
+      }
       const fields = {
-        'کد سیستم': code,
+        [codeHeader]: code,
+        ...(headers.includes('کد سیستم') ? { 'کد سیستم': code } : {}),
         'اسم فیلم': body.title.trim() || ('فصل ' + body.season + ' قسمت ' + body.episode),
         'سازنده': body.country,
         [parentHeader]: body.seriesCode,
@@ -920,7 +932,7 @@ function createCatalogAdminApi({
         [fileHeader]: body.telegramFileId.trim(),
         ...(headers.includes('نوع') ? {'نوع':'قسمت'} : {}),
       };
-      validateSourceFields(fields, headers, { create: true });
+      validateSourceFields(fields, headers, { create: true, identityHeader: codeHeader });
       const created = await contentReader.createItemSource('series', fields);
       return res.status(201).json({ data: { episodeCode: code, created } });
     } catch (error) {
