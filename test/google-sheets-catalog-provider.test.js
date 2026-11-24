@@ -56,7 +56,7 @@ function mockSheetsClient(valuesBySheet, calls = []) {
           }
           return { data: {} };
         },
-        async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'سینمایی'!A3:E3` } }; },
+        async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'سینمایی'!A3:E3` } } }; },
       },
     },
   };
