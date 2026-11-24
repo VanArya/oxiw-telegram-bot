@@ -83,6 +83,55 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     },
   };
   let writeQueue = Promise.resolve();
+  async function deleteSheetRows(sheetName, rowNumbers) {
+    if (typeof sheetsClient.spreadsheets?.get !== 'function' ||
+        typeof sheetsClient.spreadsheets?.batchUpdate !== 'function') {
+      throw Object.assign(new Error('Sheet row deletion is not configured.'), {
+        code: 'DELETE_NOT_CONFIGURED',
+      });
+    }
+    const uniqueRows = [...new Set(rowNumbers)].filter((row) => Number.isSafeInteger(row) && row >= 2);
+    if (!uniqueRows.length) return;
+    try {
+      const metadata = await sheetsClient.spreadsheets.get({
+        spreadsheetId,
+        fields: 'sheets.properties(sheetId,title)',
+      });
+      const sheet = (metadata?.data?.sheets || [])
+        .map((entry) => entry.properties)
+        .find((properties) => properties?.title === sheetName);
+      if (!Number.isSafeInteger(sheet?.sheetId)) {
+        throw Object.assign(new Error('Sheet identity is unavailable.'), { code: 'SHEET_NOT_FOUND' });
+      }
+      const requests = uniqueRows.sort((a, b) => b - a).map((rowNumber) => ({
+        deleteDimension: {
+          range: {
+            sheetId: sheet.sheetId,
+            dimension: 'ROWS',
+            startIndex: rowNumber - 1,
+            endIndex: rowNumber,
+          },
+        },
+      }));
+      await sheetsClient.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: { requests },
+      });
+    } catch (error) {
+      if (error?.code === 'SHEET_NOT_FOUND' || error?.code === 'DELETE_NOT_CONFIGURED') throw error;
+      throw classifyCatalogDependencyError('sheets', 'sheet_delete', error, 'Unable to delete catalog rows.');
+    }
+  }
+
+  function recordFor(snapshot, row) {
+    return Object.fromEntries(snapshot.headers.map((header, index) => [header, row[index] ?? '']));
+  }
+
+  function versionFor(record) {
+    return crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  }
+
+
   provider.updateCatalogRow = async function updateCatalogRow({
     sheetName, systemCode, expectedVersion, fields,
   } = {}) {
@@ -153,6 +202,170 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     writeQueue = result.catch(() => undefined);
     return result;
   };
+
+  provider.deleteCatalogRow = async function deleteCatalogRow({
+    sheetName, systemCode, expectedVersion,
+  } = {}) {
+    if (sheetName !== 'سینمایی' || typeof systemCode !== 'string' || !systemCode.trim() ||
+        typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion)) {
+      throw Object.assign(new Error('Invalid catalog row deletion.'), { code: 'INVALID_INPUT' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet(sheetName);
+      const codeHeader = codeHeaderFor(sheetName);
+      const codeIndex = snapshot.headers.indexOf(codeHeader);
+      if (codeIndex < 0) throw Object.assign(new Error('Catalog identity column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      const matches = snapshot.rows.map((row, index) => ({ row, index }))
+        .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode.trim());
+      if (matches.length !== 1) throw Object.assign(new Error('Catalog row is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
+      const { row, index } = matches[0];
+      const record = recordFor(snapshot, row);
+      if (versionFor(record) !== expectedVersion) {
+        throw Object.assign(new Error('Catalog row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      await deleteSheetRows(sheetName, [index + 2]);
+      return Object.freeze({ deleted: true, deletedRows: 1, record: Object.freeze(record) });
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+
+  provider.deleteSeriesWithEpisodes = async function deleteSeriesWithEpisodes({
+    seriesCode, expectedVersion,
+  } = {}) {
+    if (typeof seriesCode !== 'string' || !/^\\d{5}$/.test(seriesCode) ||
+        typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion)) {
+      throw Object.assign(new Error('Invalid series deletion.'), { code: 'INVALID_INPUT' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet('سریال');
+      const parentHeader = snapshot.headers.includes('کد سریال') ? 'کد سریال' : 'کد سریال مادر';
+      const episodeHeader = snapshot.headers.includes('کد قسمت') ? 'کد قسمت' : 'کد سیستم';
+      const parentIndex = snapshot.headers.indexOf(parentHeader);
+      const episodeIndex = snapshot.headers.indexOf(episodeHeader);
+      if (parentIndex < 0 || episodeIndex < 0) {
+        throw Object.assign(new Error('Series identity columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      }
+      const matchingRows = snapshot.rows.map((row, index) => ({ row, index, record: recordFor(snapshot, row) }))
+        .filter(({ row }) => String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode);
+      const parents = matchingRows.filter(({ row }) => String(row[episodeIndex] ?? '').trim() === '');
+      if (parents.length !== 1) {
+        throw Object.assign(new Error('Parent series row is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
+      }
+      const parent = parents[0];
+      if (versionFor(parent.record) !== expectedVersion) {
+        throw Object.assign(new Error('Parent series changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      const rowsToDelete = matchingRows.map(({ index }) => index + 2);
+      const episodeCount = matchingRows.length - 1;
+      await deleteSheetRows('سریال', rowsToDelete);
+      return Object.freeze({
+        deleted: true,
+        deletedRows: rowsToDelete.length,
+        deletedEpisodes: episodeCount,
+        record: Object.freeze(parent.record),
+      });
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+
+  provider.updateSeriesEpisodeRow = async function updateSeriesEpisodeRow({
+    episodeCode, expectedVersion, fields,
+  } = {}) {
+    if (typeof episodeCode !== 'string' || !/^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(episodeCode) ||
+        typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion) ||
+        !fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) {
+      throw Object.assign(new Error('Invalid episode update.'), { code: 'INVALID_INPUT' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet('سریال');
+      const episodeHeader = snapshot.headers.includes('کد قسمت') ? 'کد قسمت' : 'کد سیستم';
+      const fileHeader = ['Telegram File ID', 'File ID', 'لینک تلگرام']
+        .find((header) => snapshot.headers.includes(header));
+      const allowed = new Set(['اسم فیلم', 'سازنده', fileHeader].filter(Boolean));
+      if (!snapshot.headers.includes(episodeHeader) || Object.keys(fields).some((key) => !allowed.has(key))) {
+        throw Object.assign(new Error('Episode editable columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      }
+      const codeIndex = snapshot.headers.indexOf(episodeHeader);
+      const matches = snapshot.rows.map((row, index) => ({ row, index }))
+        .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === episodeCode);
+      if (matches.length !== 1) throw Object.assign(new Error('Episode row is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
+      const { row, index } = matches[0];
+      const record = recordFor(snapshot, row);
+      if (versionFor(record) !== expectedVersion) {
+        throw Object.assign(new Error('Episode row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      if (Object.hasOwn(fields, 'اسم فیلم') &&
+          (typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim() || fields['اسم فیلم'].length > 200)) {
+        throw Object.assign(new Error('Invalid episode title.'), { code: 'INVALID_INPUT' });
+      }
+      if (Object.hasOwn(fields, 'سازنده') &&
+          (typeof fields['سازنده'] !== 'string' || !fields['سازنده'].trim())) {
+        throw Object.assign(new Error('Invalid episode country.'), { code: 'INVALID_INPUT' });
+      }
+      if (fileHeader && Object.hasOwn(fields, fileHeader) &&
+          (typeof fields[fileHeader] !== 'string' || !fields[fileHeader].trim() || fields[fileHeader].length > 4096)) {
+        throw Object.assign(new Error('Invalid Telegram file reference.'), { code: 'INVALID_INPUT' });
+      }
+      const data = [];
+      for (const [header, value] of Object.entries(fields)) {
+        const columnIndex = snapshot.headers.indexOf(header);
+        data.push({
+          range: `${quoteSheetRange('سریال')}!${columnLetter(columnIndex + 1)}${index + 2}`,
+          values: [[String(value)]],
+        });
+      }
+      try {
+        await sheetsClient.spreadsheets.values.batchUpdate({
+          spreadsheetId,
+          requestBody: { valueInputOption: 'RAW', data },
+        });
+      } catch (error) {
+        throw classifyCatalogDependencyError('sheets', 'sheet_write', error, 'Unable to update series episode.');
+      }
+      const updatedRecord = { ...record, ...fields };
+      return Object.freeze({
+        rowNumber: index + 2,
+        record: Object.freeze(updatedRecord),
+        sourceVersion: versionFor(updatedRecord),
+      });
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+
+  provider.deleteSeriesEpisodeRow = async function deleteSeriesEpisodeRow({
+    episodeCode, expectedVersion,
+  } = {}) {
+    if (typeof episodeCode !== 'string' || !/^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(episodeCode) ||
+        typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion)) {
+      throw Object.assign(new Error('Invalid episode deletion.'), { code: 'INVALID_INPUT' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet('سریال');
+      const episodeHeader = snapshot.headers.includes('کد قسمت') ? 'کد قسمت' : 'کد سیستم';
+      const codeIndex = snapshot.headers.indexOf(episodeHeader);
+      if (codeIndex < 0) throw Object.assign(new Error('Episode identity column is unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      const matches = snapshot.rows.map((row, index) => ({ row, index }))
+        .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === episodeCode);
+      if (matches.length !== 1) throw Object.assign(new Error('Episode row is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
+      const { row, index } = matches[0];
+      const record = recordFor(snapshot, row);
+      if (versionFor(record) !== expectedVersion) {
+        throw Object.assign(new Error('Episode row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      await deleteSheetRows('سریال', [index + 2]);
+      return Object.freeze({ deleted: true, deletedRows: 1, record: Object.freeze(record) });
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+
   provider.getSheetSchema = async function getSheetSchema(sheetName) {
     const snapshot = await provider.readSheet(sheetName);
     return Object.freeze([...snapshot.headers]);
