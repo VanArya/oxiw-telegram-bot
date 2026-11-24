@@ -1776,6 +1776,16 @@ function wireUi() {
   elements.contentDialog.addEventListener('click', (event) => {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
   });
+  $('#episode-new').addEventListener('click', () => {
+    setText($('#episode-registration-message'), '');
+    $('#episode-registration-dialog').showModal();
+    $('#episode-series-code').focus();
+  });
+  $('#episode-registration-close').addEventListener('click', () => $('#episode-registration-dialog').close());
+  $('#episode-registration-dialog').addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
+  $('#episodes-search').addEventListener('input', renderRegisteredEpisodes);
   $('#episode-registration-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const submit = $('#episode-registration-submit');
