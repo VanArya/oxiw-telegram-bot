@@ -628,7 +628,8 @@ function createCatalogAdminApi({
     if (!fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) {
       throw new CatalogInputError();
     }
-    if (typeof identityHeader !== 'string' || !headers.includes(identityHeader)) {
+    if ((create || Object.hasOwn(fields, identityHeader)) &&
+        (typeof identityHeader !== 'string' || !headers.includes(identityHeader))) {
       throw new CatalogInputError();
     }
     for (const [header, value] of Object.entries(fields)) {
