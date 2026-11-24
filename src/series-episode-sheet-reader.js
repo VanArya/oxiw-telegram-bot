@@ -63,7 +63,9 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
     // Resolve parent titles from the series rows in the same sheet. In the
     // current layout the parent is "کد سریال"; older layouts used "کد سیستم".
     const parentTitleByCode = new Map();
-    const legacyParentHeader = headers.includes('کد سیستم') ? 'کد سیستم' : parentCodeHeader;
+    const legacyParentHeader = parentCodeHeader === 'کد سریال'
+      ? 'کد سریال'
+      : (headers.includes('کد سیستم') ? 'کد سیستم' : parentCodeHeader);
     for (const { record } of records) {
       const candidateCode = String(record[legacyParentHeader] ?? '').normalize('NFC').trim();
       const hasEpisodeCode = typeof record[episodeCodeHeader] === 'string' &&
@@ -125,13 +127,6 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
       return Object.freeze({
         episodes: Object.freeze(episodes),
         invalidRows: Object.freeze(invalidRows),
-      });
-    },
-    async listAllEpisodes() {
-      const result = await readAllEpisodes();
-      return Object.freeze({
-        episodes: Object.freeze(result.episodes.filter((episode) => episode.seriesCode === parentSeriesCode)),
-        invalidRows: Object.freeze(result.invalidRows.filter((row) => row.systemCode.slice(0, 5) === parentSeriesCode)),
       });
     },
     async listAllEpisodes() {
