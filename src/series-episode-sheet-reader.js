@@ -88,12 +88,11 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
         const episode = mapSeriesEpisodeRecord(record);
         const fileValue = String(record[fileHeader] ?? '').trim();
         episodes.push(Object.freeze({
+          ...episode,
           seriesCode: episode.parentSeriesCode,
           seriesTitle: parentTitleByCode.get(episode.parentSeriesCode) || 'سریال بدون عنوان',
           episodeCode: episode.systemCode,
           episodeTitle: episode.episodeTitle || 'بدون عنوان',
-          season: episode.season,
-          episode: episode.episode,
           rowNumber,
           hasTelegramFile: Boolean(fileValue),
         }));
@@ -131,7 +130,18 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
     async listAllEpisodes() {
       const result = await readAllEpisodes();
       return Object.freeze({
-        episodes: Object.freeze(result.episodes),
+        episodes: Object.freeze(result.episodes.filter((episode) => episode.seriesCode === parentSeriesCode)),
+        invalidRows: Object.freeze(result.invalidRows.filter((row) => row.systemCode.slice(0, 5) === parentSeriesCode)),
+      });
+    },
+    async listAllEpisodes() {
+      const result = await readAllEpisodes();
+      const episodes = result.episodes.map((episode) => {
+        const { telegramFileId, telegramUrl, ...safeEpisode } = episode;
+        return Object.freeze(safeEpisode);
+      });
+      return Object.freeze({
+        episodes: Object.freeze(episodes),
         invalidRows: Object.freeze(result.invalidRows),
       });
     },
