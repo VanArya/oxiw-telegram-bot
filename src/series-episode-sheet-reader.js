@@ -132,7 +132,7 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
       });
     },
     async getEpisode(episodeCode) {
-      if (typeof episodeCode !== 'string' || !/^\d{5}\\.\d{2}\\.\d{2}$/.test(episodeCode)) {
+      if (typeof episodeCode !== 'string' || !/^\d{5}\.\d{2}\.\d{2}$/.test(episodeCode)) {
         throw new TypeError('Invalid episode code.');
       }
       const snapshot = await sheetProvider.readSheet('سریال');
