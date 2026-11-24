@@ -305,6 +305,12 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
         fieldOptions: await readFieldOptions(),
       });
     },
+    async createSeriesEpisode({ seriesCode, episodeCode, fields } = {}) {
+      if (typeof sheetProvider.createSeriesEpisodeRow !== 'function') {
+        throw new Error('Series episode source writer is not configured.');
+      }
+      return sheetProvider.createSeriesEpisodeRow({ seriesCode, episodeCode, fields });
+    },
     async createItemSource(kind, fields) {
       if (typeof sheetProvider.createCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
       const schema = await this.getSheetSchema(kind);

@@ -3,7 +3,7 @@
 const { parseSeriesEpisodeCode } = require('./series-episode-code');
 const { mapSeriesEpisodeRecord } = require('./series-episode-record');
 
-const REQUIRED_HEADERS = Object.freeze(['کد سیستم', 'کد سریال مادر', 'لینک تلگرام']);
+const REQUIRED_HEADERS = Object.freeze(['کد سریال', 'کد قسمت', 'Telegram File ID']);
 
 function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
   if (!sheetProvider || typeof sheetProvider.readSheet !== 'function') {
@@ -19,30 +19,57 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
       if (!snapshot || !Array.isArray(snapshot.headers) || !Array.isArray(snapshot.rows)) {
         throw new TypeError('Invalid series sheet snapshot.');
       }
-      const missingHeaders = REQUIRED_HEADERS.filter((header) => !snapshot.headers.includes(header));
+
+      const headers = snapshot.headers;
+      let episodeCodeHeader;
+      let parentCodeHeader;
+      if (headers.includes('کد قسمت') && headers.includes('کد سریال')) {
+        episodeCodeHeader = 'کد قسمت';
+        parentCodeHeader = 'کد سریال';
+      } else if (headers.includes('کد سیستم') && headers.includes('کد سریال مادر')) {
+        episodeCodeHeader = 'کد سیستم';
+        parentCodeHeader = 'کد سریال مادر';
+      } else if (headers.includes('کد سریال') && headers.includes('کد سریال مادر')) {
+        episodeCodeHeader = 'کد سریال';
+        parentCodeHeader = 'کد سریال مادر';
+      }
+
+      const fileHeader = ['Telegram File ID', 'File ID', 'لینک تلگرام']
+        .find((header) => headers.includes(header));
+      const missingHeaders = [
+        ...(parentCodeHeader ? [] : ['کد سریال']),
+        ...(episodeCodeHeader ? [] : ['کد قسمت']),
+        ...(fileHeader ? [] : ['Telegram File ID']),
+      ];
       if (missingHeaders.length) {
         const error = new Error('Episode sheet columns are not configured.');
         error.code = 'EPISODE_COLUMNS_UNAVAILABLE';
         error.missingHeaders = missingHeaders;
         throw error;
       }
+
       const records = snapshot.rows.map((row, index) => ({
         rowNumber: index + 2,
-        record: Object.fromEntries(snapshot.headers.map((header, column) => [header, row[column] ?? ''])),
+        record: Object.fromEntries(headers.map((header, column) => [header, row[column] ?? ''])),
       }));
       const episodes = [];
       const invalidRows = [];
       for (const { rowNumber, record } of records) {
+        const rawCode = typeof record[episodeCodeHeader] === 'string'
+          ? record[episodeCodeHeader].trim()
+          : '';
+        if (!/^\d{5}\./.test(rawCode)) continue;
+
         try {
-          const parsed = parseSeriesEpisodeCode(record['کد سیستم']);
-          if (!parsed) continue;
+          const parsed = parseSeriesEpisodeCode(rawCode);
+          if (!parsed) throw new TypeError('Invalid episode code.');
           const episode = mapSeriesEpisodeRecord(record);
           if (episode.parentSeriesCode !== parentSeriesCode) continue;
           episodes.push(Object.freeze({ ...episode, rowNumber }));
         } catch {
-          // Rows with dotted episode-code patterns are reported; ordinary series codes are ignored.
-          if (typeof record['کد سیستم'] === 'string' && /^\d{5}\.\d{2}\.\d{2}$/.test(record['کد سیستم'].trim())) {
-            invalidRows.push(Object.freeze({ rowNumber, systemCode: record['کد سیستم'] }));
+          const parentValue = record[parentCodeHeader];
+          if (parentValue === parentSeriesCode) {
+            invalidRows.push(Object.freeze({ rowNumber, systemCode: rawCode }));
           }
         }
       }

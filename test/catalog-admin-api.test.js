@@ -809,11 +809,13 @@ test('source editor API exposes all sheet columns, allows identity changes, and 
 });
 
 
-test('episode registration writes the dotted code to the series identity column and parent code separately', async () => {
+test('episode registration uses the live sheet columns and does not require a parent-code column', async () => {
   const store = createStore();
   const headers = [
-    'کد سریال', 'کد سریال مادر', 'کد سیستم', 'اسم فیلم',
-    'سازنده', 'کد قسمت', 'Telegram File ID',
+    'اسم فیلم', 'نوع', 'سازنده', 'ژانر', 'کد سریال', 'کد قسمت',
+    'سال شروع', 'سال پایان', 'تعداد فصل و قسمت', 'بازیگران',
+    'خلاصه داستان', 'امتیاز', 'زبان', 'پیشنهادی', 'لینک تریلر',
+    'پوستر فیلم', 'شناسه URL', 'Telegram File ID',
   ];
   let created = null;
   const contentReader = {
@@ -821,14 +823,9 @@ test('episode registration writes the dotted code to the series identity column 
       assert.equal(kind, 'series');
       return { kind, sheetName: 'سریال', headers };
     },
-    async createItemSource(kind, fields) {
-      created = { kind, fields };
-      return {
-        id: `series:${encodeURIComponent(fields['کد سریال'])}`,
-        kind,
-        systemCode: fields['کد سریال'],
-        record: fields,
-      };
+    async createSeriesEpisode(options) {
+      created = options;
+      return { rowNumber: 42, record: options.fields };
     },
   };
   const app = createCatalogAdminApi({
@@ -855,12 +852,14 @@ test('episode registration writes the dotted code to the series identity column 
 
     assert.equal(result.status, 201, JSON.stringify(result.body));
     assert.equal(result.body.data.episodeCode, '70711.01.13');
-    assert.equal(created.kind, 'series');
-    assert.equal(created.fields['کد سریال'], '70711.01.13');
-    assert.equal(created.fields['کد سریال مادر'], '70711');
-    assert.equal(created.fields['کد سیستم'], '70711.01.13');
+    assert.equal(created.seriesCode, '70711');
+    assert.equal(created.episodeCode, '70711.01.13');
+    assert.equal(created.fields['کد سریال'], '70711');
     assert.equal(created.fields['کد قسمت'], '70711.01.13');
+    assert.equal(created.fields['کد سریال مادر'], undefined);
     assert.equal(created.fields['اسم فیلم'], 'فصل 1 قسمت 13');
+    assert.equal(created.fields['سازنده'], 'ایران');
+    assert.equal(created.fields['Telegram File ID'], 'synthetic-file-id');
   });
 });
 
