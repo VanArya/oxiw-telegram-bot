@@ -43,6 +43,7 @@ let auditHasMore = false;
 let contentStats = null;
 let contentFilterOptionsLoaded = false;
 let currentItems = [];
+let registeredEpisodes = [];
 const selectedContentIds = new Set();
 let selectedItem = null;
 let selectedMetadata = null;
@@ -171,6 +172,7 @@ function messageForError(error) {
     OWNER_AUTH_UNAVAILABLE: 'احراز هویت مالک موقتاً در دسترس نیست.',
     ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED: 'مدیریت مدیران هنوز به منبع مورداعتماد متصل نشده است.',
     EPISODE_REGISTRATION_UNAVAILABLE: 'ثبت قسمت سریال هنوز به منبع شیت متصل نشده است.',
+    EPISODE_LIST_UNAVAILABLE: 'فهرست قسمت‌های ثبت‌شده موقتاً در دسترس نیست.',
     SOURCE_COLUMN_UNAVAILABLE: 'ستون‌های لازم برای ثبت قسمت در شیت سریال موجود نیستند.',
     INVALID_EPISODE_REQUEST: 'اطلاعات واردشده برای ثبت قسمت معتبر نیست.',
     EPISODE_DUPLICATE: 'این قسمت قبلاً ثبت شده است.',
@@ -276,6 +278,7 @@ function selectView(view, kind) {
   const loaders = {
     overview: loadOverview,
     content: loadContent,
+    episodes: loadEpisodes,
     categories: loadCategories,
     countries: () => loadTaxonomy('country'),
     genres: () => loadTaxonomy('genre'),
@@ -697,6 +700,74 @@ async function loadContentFilterOptions() {
   populateFilterSelect(elements.contentGenre, genreTerms, (term) => term.labelFa);
   populateFilterSelect(elements.contentCategory, categoryTerms, (term) =>
     term.localizedTitle?.fa || term.slug || term.id);
+}
+
+function renderRegisteredEpisodes() {
+  const tbody = $('#episodes-rows');
+  if (!tbody) return;
+  tbody.replaceChildren();
+
+  const query = ($('#episodes-search')?.value || '').trim().toLocaleLowerCase();
+  const filtered = registeredEpisodes.filter((item) => [
+    item.seriesTitle, item.seriesCode, item.episodeTitle, item.episodeCode,
+    String(item.season), String(item.episode),
+  ].some((value) => String(value ?? '').toLocaleLowerCase().includes(query)));
+
+  if (!filtered.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 7;
+    cell.className = 'empty-message';
+    cell.textContent = query ? 'موردی با این عبارت پیدا نشد.' : 'هنوز قسمتی ثبت نشده است.';
+    row.append(cell);
+    tbody.append(row);
+  } else {
+    filtered.forEach((episode) => {
+      const row = document.createElement('tr');
+      const values = [
+        episode.seriesTitle || 'سریال بدون عنوان',
+        episode.seriesCode || '—',
+        Number(episode.season).toLocaleString('fa-IR'),
+        Number(episode.episode).toLocaleString('fa-IR'),
+        episode.episodeTitle || 'بدون عنوان',
+        episode.episodeCode || '—',
+        episode.hasTelegramFile ? 'دارد' : 'ندارد',
+      ];
+      values.forEach((value, index) => {
+        const cell = document.createElement('td');
+        cell.textContent = String(value);
+        if ([1, 5].includes(index)) cell.className = 'mono';
+        if (index === 6) cell.className = episode.hasTelegramFile ? 'badge-published' : 'badge-pending';
+        row.append(cell);
+      });
+      tbody.append(row);
+    });
+  }
+
+  const countText = filtered.length === registeredEpisodes.length
+    ? `${registeredEpisodes.length.toLocaleString('fa-IR')} قسمت`
+    : `${filtered.length.toLocaleString('fa-IR')} از ${registeredEpisodes.length.toLocaleString('fa-IR')} قسمت`;
+  setText($('#episodes-count'), countText);
+}
+
+async function loadEpisodes() {
+  const button = $('[data-refresh="episodes"]');
+  setBusy(button, true);
+  try {
+    const { body } = await api(`${API_ROOT}/episodes`);
+    registeredEpisodes = Array.isArray(body.data) ? body.data : [];
+    const invalidRows = Number(body.meta?.invalidRows) || 0;
+    const warning = $('#episodes-warning');
+    warning.hidden = invalidRows === 0;
+    setText(warning, invalidRows
+      ? `هشدار: ${invalidRows.toLocaleString('fa-IR')} ردیف قسمت با اطلاعات ناقص در شیت وجود دارد و در فهرست نمایش داده نشده است.`
+      : '');
+    renderRegisteredEpisodes();
+  } catch (error) {
+    reportApiError(error, 'فهرست قسمت‌های ثبت‌شده بارگذاری نشد.');
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function loadContent() {
@@ -1654,6 +1725,7 @@ function wireUi() {
     const action = button.dataset.refresh;
     if (action === 'overview') void loadOverview();
     else if (action === 'content') void loadContent();
+    else if (action === 'episodes') void loadEpisodes();
     else if (action === 'categories') void loadCategories();
     else if (action === 'countries') void loadTaxonomy('country');
     else if (action === 'genres') void loadTaxonomy('genre');
@@ -1722,7 +1794,8 @@ function wireUi() {
       setText($('#episode-registration-message'), `ثبت شد: ${body.data.episodeCode}`);
       showToast('قسمت با موفقیت ثبت شد.');
       event.currentTarget.reset();
-      $('#episode-series-code').focus();
+      $('#episode-registration-dialog').close();
+      void loadEpisodes();
     } catch (error) {
       setText($('#episode-registration-message'), error.message || 'ثبت قسمت انجام نشد.');
     } finally { setBusy(submit, false); }
