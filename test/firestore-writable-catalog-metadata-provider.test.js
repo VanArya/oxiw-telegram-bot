@@ -511,7 +511,7 @@ test('deletes versioned content metadata and records an audit event', async () =
   assert.equal(events.at(-1).actorId, 'admin-delete-test');
   await assert.rejects(
     provider.deleteContentMetadata(contentId, { expectedVersion: 1 }),
-    (error) => error instanceof CatalogNotFoundError || error.code === 'NOT_FOUND',
+    (error) => error.code === 'NOT_FOUND',
   );
 });
 
