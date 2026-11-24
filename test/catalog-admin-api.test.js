@@ -828,8 +828,7 @@ test('registered episodes API returns the episode list to admin readers', async 
     },
   };
   const app = createCatalogAdminApi({
-    ...createStore(),
-  }, {
+    writableProvider: createStore(),
     contentReader,
     verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
     roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
@@ -842,6 +841,7 @@ test('registered episodes API returns the episode list to admin readers', async 
     assert.equal(result.body.meta.total, 1);
     assert.equal(result.body.data[0].episodeCode, '70711.01.13');
     assert.equal(result.body.data[0].seriesTitle, 'سریال آزمایشی');
+    assert.equal(JSON.stringify(result.body.data).includes('telegramFileId'), false);
   });
 });
 
