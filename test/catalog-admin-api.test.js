@@ -809,6 +809,43 @@ test('source editor API exposes all sheet columns, allows identity changes, and 
 });
 
 
+
+test('registered episodes API returns the episode list to admin readers', async () => {
+  const contentReader = {
+    async listSeriesEpisodes() {
+      return {
+        episodes: [{
+          seriesCode: '70711',
+          seriesTitle: 'سریال آزمایشی',
+          season: 1,
+          episode: 13,
+          episodeTitle: 'قسمت سیزدهم',
+          episodeCode: '70711.01.13',
+          hasTelegramFile: true,
+        }],
+        invalidRows: [],
+      };
+    },
+  };
+  const app = createCatalogAdminApi({
+    ...createStore(),
+  }, {
+    contentReader,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+    roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
+    authorizePermission: roleAuthorizer,
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/episodes`));
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.meta.total, 1);
+    assert.equal(result.body.data[0].episodeCode, '70711.01.13');
+    assert.equal(result.body.data[0].seriesTitle, 'سریال آزمایشی');
+  });
+});
+
+
 test('episode registration uses the live sheet columns and does not require a parent-code column', async () => {
   const store = createStore();
   const headers = [
