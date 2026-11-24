@@ -55,7 +55,7 @@ test('reads headers and rows for both approved sheets using dynamic values.get a
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow', 'createSeriesEpisodeRow']);
 });
 
 test('normalizes whitespace and Unicode in live sheet header labels', async () => {
@@ -220,6 +220,56 @@ test('appends a new record using the live sheet header order and RAW values', as
   assert.equal(appended.valueInputOption, 'RAW');
   assert.equal(created.rowNumber, 2);
   assert.equal(created.record['Telegram File ID'], 'file-id-123');
+});
+
+
+test('creates an episode using the existing series and episode columns without adding a parent-code column', async () => {
+  const headers = [
+    'اسم فیلم', 'نوع', 'سازنده', 'ژانر', 'کد سریال', 'کد قسمت',
+    'سال شروع', 'سال پایان', 'تعداد فصل و قسمت', 'بازیگران',
+    'خلاصه داستان', 'امتیاز', 'زبان', 'پیشنهادی', 'لینک تریلر',
+    'پوستر فیلم', 'شناسه URL', 'Telegram File ID',
+  ];
+  const values = {
+    "'سریال'": [
+      headers,
+      ['سریال مادر', 'سریال', 'ایران', 'درام', '70711', '', '2020', 'در حال پخش', '۱ فصل', '', '', '', '', '', '', '', '', ''],
+    ],
+  };
+  let appended;
+  const client = { spreadsheets: { values: {
+    async get({ range }) { return { data: { values: values[range] || [] } }; },
+    async batchUpdate() { return { data: {} }; },
+    async append(args) {
+      appended = args;
+      values["'سریال'"].push(args.requestBody.values[0]);
+      return { data: { updates: { updatedRange: "'سریال'!A3:R3" } } };
+    },
+  } } };
+  const provider = createGoogleSheetsCatalogProvider({ sheetsClient: client, spreadsheetId: spreadsheetIdFixture });
+  const fields = {
+    'اسم فیلم': 'فصل 1 قسمت 13',
+    'نوع': 'قسمت',
+    'سازنده': 'ایران',
+    'کد سریال': '70711',
+    'کد قسمت': '70711.01.13',
+    'Telegram File ID': 'synthetic-telegram-file-id',
+  };
+
+  const created = await provider.createSeriesEpisodeRow({
+    seriesCode: '70711', episodeCode: '70711.01.13', fields,
+  });
+  assert.equal(created.rowNumber, 3);
+  assert.equal(created.record['کد سریال'], '70711');
+  assert.equal(created.record['کد قسمت'], '70711.01.13');
+  assert.deepEqual(appended.requestBody.values[0], headers.map((header) => fields[header] || ''));
+  assert.equal(appended.range, "'سریال'!A:ZZZ");
+  assert.equal(appended.valueInputOption, 'RAW');
+
+  await assert.rejects(
+    provider.createSeriesEpisodeRow({ seriesCode: '70711', episodeCode: '70711.01.13', fields }),
+    (error) => error.code === 'ALREADY_EXISTS',
+  );
 });
 
 test('legacy rows remain mappable without country and internal Telegram IDs stay private', async () => {
