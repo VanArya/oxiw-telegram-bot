@@ -275,7 +275,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
   provider.updateSeriesEpisodeRow = async function updateSeriesEpisodeRow({
     episodeCode, expectedVersion, fields,
   } = {}) {
-    if (typeof episodeCode !== 'string' || !/^\d{5}\\.\d{2}\\.\d{2}$/.test(episodeCode) ||
+    if (typeof episodeCode !== 'string' || !/^\d{5}\.\d{2}\.\d{2}$/.test(episodeCode) ||
         typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion) ||
         !fields || typeof fields !== 'object' || Array.isArray(fields) || Object.keys(fields).length === 0) {
       throw Object.assign(new Error('Invalid episode update.'), { code: 'INVALID_INPUT' });
@@ -341,7 +341,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
   provider.deleteSeriesEpisodeRow = async function deleteSeriesEpisodeRow({
     episodeCode, expectedVersion,
   } = {}) {
-    if (typeof episodeCode !== 'string' || !/^\d{5}\\.\d{2}\\.\d{2}$/.test(episodeCode) ||
+    if (typeof episodeCode !== 'string' || !/^\d{5}\.\d{2}\.\d{2}$/.test(episodeCode) ||
         typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion)) {
       throw Object.assign(new Error('Invalid episode deletion.'), { code: 'INVALID_INPUT' });
     }
