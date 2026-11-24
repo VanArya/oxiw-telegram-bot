@@ -271,8 +271,15 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     if (!sheetName) return null;
     const snapshot = validateSnapshot(sheetName, await sheetProvider.readSheet(sheetName));
     const codeIndex = snapshot.headers.indexOf(CODE_HEADER(sheetName, snapshot.headers));
+    const episodeCodeHeader = sheetName === 'سریال'
+      ? (snapshot.headers.includes('کد قسمت') ? 'کد قسمت'
+        : snapshot.headers.includes('کد سیستم') ? 'کد سیستم' : null)
+      : null;
+    const episodeCodeIndex = episodeCodeHeader ? snapshot.headers.indexOf(episodeCodeHeader) : -1;
     const matches = snapshot.rows.map((row, index) => ({ row, index }))
-      .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode);
+      .filter(({ row }) =>
+        String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode &&
+        (episodeCodeIndex < 0 || String(row[episodeCodeIndex] ?? '').trim() === ''));
     if (matches.length !== 1) return null;
     const { row, index } = matches[0];
     const record = rowToRecord(snapshot.headers, row);
