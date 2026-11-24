@@ -896,6 +896,26 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.get(`${BASE_PATH}/episodes`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (typeof contentReader?.listSeriesEpisodes !== 'function') {
+      return sendError(res, 503, 'EPISODE_LIST_UNAVAILABLE', 'فهرست قسمت‌های ثبت‌شده پیکربندی نشده است.');
+    }
+    try {
+      const result = await contentReader.listSeriesEpisodes();
+      const episodes = Array.isArray(result?.episodes) ? result.episodes : [];
+      const invalidRows = Array.isArray(result?.invalidRows) ? result.invalidRows.length : 0;
+      return res.json({
+        data: episodes,
+        meta: { total: episodes.length, invalidRows },
+      });
+    } catch (error) {
+      if (error?.code === 'EPISODE_COLUMNS_UNAVAILABLE') {
+        return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های لازم برای خواندن قسمت‌ها در شیت سریال پیدا نشدند.');
+      }
+      return sendKnownError(res, error);
+    }
+  }));
+
   app.post(`${BASE_PATH}/episode-registration`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
     try {
       requireBodyKeys(req.body, ['seriesCode', 'season', 'episode', 'title', 'country', 'telegramFileId']);

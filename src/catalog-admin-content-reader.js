@@ -6,6 +6,7 @@ const { assertFilter, matchesFilter } = require('./catalog-core');
 const { isCanonicalContentId, validateCatalogContentMetadata } = require('./catalog-metadata-validation');
 const { createCatalogContentId } = require('./catalog-content-identity');
 const { isSeriesEpisodeRecord } = require('./series-episode-record');
+const { createSeriesEpisodeSheetReader } = require('./series-episode-sheet-reader');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 const CODE_HEADER = (sheetName, headers = []) => sheetName === 'سریال'
@@ -175,6 +176,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     throw new TypeError('Catalog admin content reader dependencies are incomplete.');
   }
 
+  const seriesEpisodeReader = createSeriesEpisodeSheetReader({ sheetProvider });
+
   async function readAllItems() {
     const snapshots = await Promise.all(SHEETS.map((name) => atStage('sheet_read', () => sheetProvider.readSheet(name))));
     const seen = new Set();
@@ -304,6 +307,9 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
         kind, sheetName, headers: await sheetProvider.getSheetSchema(sheetName),
         fieldOptions: await readFieldOptions(),
       });
+    },
+    async listSeriesEpisodes() {
+      return seriesEpisodeReader.listAllEpisodes();
     },
     async createSeriesEpisode({ seriesCode, episodeCode, fields } = {}) {
       if (typeof sheetProvider.createSeriesEpisodeRow !== 'function') {

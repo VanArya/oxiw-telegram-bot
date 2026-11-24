@@ -59,3 +59,20 @@ test('rejects invalid parent series codes before reading sheet', async () => {
   await assert.rejects(reader.listEpisodes('7071'), /Invalid parent series code/);
   assert.equal(reads, 0);
 });
+
+test('lists episodes across all series with parent titles and without returning Telegram file IDs', async () => {
+  const reader = createSeriesEpisodeSheetReader({ sheetProvider: provider([
+    ['سریال یک', 'سریال', 'ایران', 'درام', '70711', '', '2020', '', '', '', '', '', '', '', '', '', '', ''],
+    ['قسمت 13', 'قسمت', 'ایران', 'درام', '70711', '70711.01.13', '', '', '', '', '', '', '', '', '', '', '', 'private-file-1'],
+    ['سریال دو', 'سریال', 'آمریکا', 'درام', '80808', '', '2021', '', '', '', '', '', '', '', '', '', '', ''],
+    ['قسمت 1', 'قسمت', 'آمریکا', 'درام', '80808', '80808.01.01', '', '', '', '', '', '', '', '', '', '', '', 'private-file-2'],
+  ]) });
+
+  const result = await reader.listAllEpisodes();
+  assert.equal(result.episodes.length, 2);
+  assert.deepEqual(result.episodes.map((episode) => episode.seriesCode), ['70711', '80808']);
+  assert.deepEqual(result.episodes.map((episode) => episode.seriesTitle), ['سریال یک', 'سریال دو']);
+  assert.deepEqual(result.episodes.map((episode) => episode.episodeCode), ['70711.01.13', '80808.01.01']);
+  assert.equal(result.episodes.every((episode) => episode.hasTelegramFile), true);
+  assert.equal(JSON.stringify(result.episodes).includes('private-file-'), false);
+});
