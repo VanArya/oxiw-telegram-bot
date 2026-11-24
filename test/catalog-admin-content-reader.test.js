@@ -7,7 +7,7 @@ const { createInMemoryWritableCatalogMetadataProvider } = require('../src/in-mem
 const { createFixtureProvider, sheets } = require('./fixtures/catalog-sheet-source-fixtures');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
 
-function makeReader({ source = sheets, contentMetadata = [], categories = [] } = {}) {
+function makeReader({ source = sheets, contentMetadata = [], categories = [], sheetProvider } = {}) {
   const writableProvider = createInMemoryWritableCatalogMetadataProvider({
     contentMetadata,
     categories,
@@ -17,7 +17,7 @@ function makeReader({ source = sheets, contentMetadata = [], categories = [] } =
     },
   });
   return createCatalogAdminContentReader({
-    sheetProvider: createFixtureProvider(source),
+    sheetProvider: sheetProvider || createFixtureProvider(source),
     writableProvider,
   });
 }
@@ -310,6 +310,69 @@ test('admin content reader still rejects duplicate identities rather than silent
   const reader = makeReader({ source: duplicateSource });
   await assert.rejects(reader.list(new URLSearchParams()), (error) =>
     error.name === 'CatalogAdminListStageError' && error.stage === 'sheet_identity_validation');
+});
+
+
+test('deletes a series, its episode rows, and its Firestore metadata as one managed operation', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد قسمت');
+  source['سریال'].rows.forEach((row) => row.push(''));
+  const headers = source['سریال'].headers;
+  const parent = Object.fromEntries(headers.map((header) => [header, '']));
+  Object.assign(parent, {
+    'کد سریال': '70711',
+    'اسم فیلم': 'سریال آزمایشی برای حذف',
+    'سال شروع': '2022',
+    'کشور سازنده': 'IR',
+    'وضعیت انتشار': 'published',
+  });
+  const episode = {
+    ...parent,
+    'اسم فیلم': 'قسمت اول',
+    'کد قسمت': '70711.01.01',
+    'Telegram File ID': 'private-episode-file',
+  };
+  source['سریال'].rows.push(headers.map((header) => parent[header]));
+  source['سریال'].rows.push(headers.map((header) => episode[header]));
+
+  const contentId = createCatalogContentId('series', '70711');
+  const metadata = {
+    contentId,
+    approvalStatus: 'pending',
+    publicationStatus: 'draft',
+    countryIds: [],
+    genreIds: [],
+  };
+  const sheetProvider = {
+    async readSheet(name) {
+      return { headers: [...source[name].headers], rows: source[name].rows.map((row) => [...row]) };
+    },
+    async getSheetSchema(name) { return [...source[name].headers]; },
+    async deleteSeriesWithEpisodes({ seriesCode, expectedVersion }) {
+      assert.equal(seriesCode, '70711');
+      const parentRecord = Object.fromEntries(headers.map((header, index) => [header, source['سریال'].rows[2][index] ?? '']));
+      const currentVersion = require('node:crypto').createHash('sha256').update(JSON.stringify(parentRecord)).digest('base64url');
+      assert.equal(expectedVersion, currentVersion);
+      const before = source['سریال'].rows.length;
+      source['سریال'].rows = source['سریال'].rows.filter((row) => String(row[headers.indexOf('کد سریال')] ?? '') !== '70711');
+      return { deleted: true, deletedRows: before - source['سریال'].rows.length, deletedEpisodes: 1 };
+    },
+  };
+  const reader = makeReader({ source, sheetProvider, contentMetadata: [metadata] });
+  const current = await reader.getItemSource(contentId);
+  assert.equal(current.record['اسم فیلم'], 'سریال آزمایشی برای حذف');
+  assert.equal(current.sourceRowNumber, 4);
+  assert.equal(current.sourceVersion.length, 43);
+
+  const deleted = await reader.deleteItemSource(contentId, {
+    sourceVersion: current.sourceVersion,
+    actorId: 'admin-delete-test',
+  });
+  assert.equal(deleted.deleted, true);
+  assert.equal(deleted.deletedEpisodes, 1);
+  assert.equal(await reader.getItem(contentId), null);
+  const providerMetadata = await reader.list(new URLSearchParams('kind=series&pageSize=100'));
+  assert.equal(providerMetadata.data.some((item) => item.id === contentId), false);
 });
 
 test('admin reader skips dotted episode records from standalone catalog listing', async () => {
