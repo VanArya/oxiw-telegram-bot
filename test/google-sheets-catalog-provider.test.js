@@ -13,8 +13,28 @@ const { createFixtureMetadataProvider } = require('./fixtures/catalog-sheet-sour
 const spreadsheetIdFixture = 'synthetic-spreadsheet-id';
 
 function mockSheetsClient(valuesBySheet, calls = []) {
+  const sheetIds = { 'سینمایی': 101, 'سریال': 202 };
+  const titleById = { 101: 'سینمایی', 202: 'سریال' };
+  function columnIndex(column) {
+    return [...column].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+  }
   return {
     spreadsheets: {
+      async get(args) {
+        calls.push({ spreadsheetGet: args });
+        return { data: { sheets: Object.entries(sheetIds).map(([title, sheetId]) => ({ properties: { title, sheetId } })) } };
+      },
+      async batchUpdate(args) {
+        calls.push({ spreadsheetBatchUpdate: args });
+        for (const request of args.requestBody.requests || []) {
+          const range = request.deleteDimension?.range;
+          if (!range) continue;
+          const title = titleById[range.sheetId];
+          const rows = valuesBySheet[`'${title}'`];
+          if (rows) rows.splice(range.startIndex, range.endIndex - range.startIndex);
+        }
+        return { data: {} };
+      },
       values: {
         async get(args) {
           calls.push(args);
@@ -22,7 +42,20 @@ function mockSheetsClient(valuesBySheet, calls = []) {
             ? { data: { values: valuesBySheet[args.range] } }
             : { data: {} };
         },
-        async batchUpdate(args) { calls.push({ batchUpdate: args }); return { data: {} }; },
+        async batchUpdate(args) {
+          calls.push({ batchUpdate: args });
+          for (const item of args.requestBody.data || []) {
+            const match = /!([A-Z]+)([0-9]+)$/.exec(item.range);
+            const title = item.range.includes("'سریال'") ? 'سریال' : 'سینمایی';
+            const rows = valuesBySheet[`'${title}'`];
+            if (!match || !rows) continue;
+            const rowNumber = Number(match[2]);
+            const column = columnIndex(match[1]);
+            rows[rowNumber - 1] ||= [];
+            rows[rowNumber - 1][column] = item.values[0][0];
+          }
+          return { data: {} };
+        },
         async append(args) { calls.push({ append: args }); return { data: { updates: { updatedRange: `'سینمایی'!A3:E3` } } }; },
       },
     },
@@ -55,7 +88,7 @@ test('reads headers and rows for both approved sheets using dynamic values.get a
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'getSheetSchema', 'createCatalogRow', 'createSeriesEpisodeRow']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'deleteCatalogRow', 'deleteSeriesWithEpisodes', 'updateSeriesEpisodeRow', 'deleteSeriesEpisodeRow', 'getSheetSchema', 'createCatalogRow', 'createSeriesEpisodeRow']);
 });
 
 test('normalizes whitespace and Unicode in live sheet header labels', async () => {
@@ -271,6 +304,106 @@ test('creates an episode using the existing series and episode columns without a
     (error) => error.code === 'ALREADY_EXISTS',
   );
 });
+
+
+test('deletes a movie row physically after checking the row version', async () => {
+  const values = [movieValues[0], ['delete-me', 'فیلم برای حذف', 'IR', 'draft', 'file-delete']];
+  const source = { "'سینمایی'": values };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(source),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const record = Object.fromEntries(movieValues[0].map((header, index) => [header, values[1][index]]));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const deleted = await provider.deleteCatalogRow({
+    sheetName: 'سینمایی', systemCode: 'delete-me', expectedVersion: version,
+  });
+  assert.equal(deleted.deleted, true);
+  assert.equal(deleted.deletedRows, 1);
+  assert.equal(source["'سینمایی'"].length, 1);
+  await assert.rejects(
+    provider.deleteCatalogRow({ sheetName: 'سینمایی', systemCode: 'delete-me', expectedVersion: version }),
+    (error) => error.code === 'ROW_NOT_FOUND',
+  );
+});
+
+test('deletes a series together with all its linked episode rows', async () => {
+  const headers = ['اسم فیلم', 'نوع', 'سازنده', 'کد سریال', 'کد قسمت', 'Telegram File ID'];
+  const rows = [
+    headers,
+    ['سریال اول', 'سریال', 'ایران', '70711', '', ''],
+    ['قسمت یک', 'قسمت', 'ایران', '70711', '70711.01.01', 'file-a'],
+    ['سریال دوم', 'سریال', 'آمریکا', '80808', '', ''],
+    ['قسمت یک', 'قسمت', 'آمریکا', '80808', '80808.01.01', 'file-b'],
+    ['قسمت دو', 'قسمت', 'آمریکا', '80808', '80808.01.02', 'file-c'],
+  ];
+  const source = { "'سریال'": rows };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(source),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const record = Object.fromEntries(headers.map((header, index) => [header, rows[1][index]]));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const deleted = await provider.deleteSeriesWithEpisodes({ seriesCode: '70711', expectedVersion: version });
+  assert.equal(deleted.deletedRows, 2);
+  assert.equal(deleted.deletedEpisodes, 1);
+  assert.deepEqual(source["'سریال'"].slice(1).map((row) => row[3]), ['80808', '80808', '80808']);
+  assert.deepEqual(source["'سریال'"].slice(1).map((row) => row[4]), ['', '80808.01.01', '80808.01.02']);
+});
+
+test('updates only editable episode columns using source-version protection', async () => {
+  const headers = ['اسم فیلم', 'نوع', 'سازنده', 'کد سریال', 'کد قسمت', 'Telegram File ID'];
+  const rows = [
+    headers,
+    ['قسمت قدیم', 'قسمت', 'ایران', '70711', '70711.01.01', 'file-old'],
+  ];
+  const source = { "'سریال'": rows };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(source),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const record = Object.fromEntries(headers.map((header, index) => [header, rows[1][index]]));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const updated = await provider.updateSeriesEpisodeRow({
+    episodeCode: '70711.01.01',
+    expectedVersion: version,
+    fields: { 'اسم فیلم': 'قسمت جدید', 'سازنده': 'آمریکا', 'Telegram File ID': 'file-new' },
+  });
+  assert.equal(updated.record['اسم فیلم'], 'قسمت جدید');
+  assert.equal(updated.record['سازنده'], 'آمریکا');
+  assert.equal(updated.record['Telegram File ID'], 'file-new');
+  assert.equal(updated.record['کد سریال'], '70711');
+  assert.equal(updated.record['کد قسمت'], '70711.01.01');
+  assert.deepEqual(rows[1], ['قسمت جدید', 'قسمت', 'آمریکا', '70711', '70711.01.01', 'file-new']);
+  await assert.rejects(
+    provider.updateSeriesEpisodeRow({
+      episodeCode: '70711.01.01',
+      expectedVersion: version,
+      fields: { 'کد قسمت': '70711.01.02' },
+    }),
+    (error) => error.code === 'COLUMN_UNAVAILABLE',
+  );
+});
+
+test('deletes one episode row without deleting its parent series', async () => {
+  const headers = ['اسم فیلم', 'نوع', 'سازنده', 'کد سریال', 'کد قسمت', 'Telegram File ID'];
+  const rows = [
+    headers,
+    ['سریال اول', 'سریال', 'ایران', '70711', '', ''],
+    ['قسمت یک', 'قسمت', 'ایران', '70711', '70711.01.01', 'file-a'],
+  ];
+  const source = { "'سریال'": rows };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(source),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const record = Object.fromEntries(headers.map((header, index) => [header, rows[2][index]]));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const result = await provider.deleteSeriesEpisodeRow({ episodeCode: '70711.01.01', expectedVersion: version });
+  assert.equal(result.deleted, true);
+  assert.deepEqual(source["'سریال'"].slice(1), [rows[1]]);
+});
+
 
 test('legacy rows remain mappable without country and internal Telegram IDs stay private', async () => {
   const legacyValues = [

@@ -714,6 +714,45 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.delete(`${BASE_PATH}/items/:contentId/source`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+    try {
+      requireBodyKeys(req.body, ['sourceVersion']);
+      if (typeof req.body.sourceVersion !== 'string' ||
+          !/^[A-Za-z0-9_-]{40,64}$/.test(req.body.sourceVersion) ||
+          typeof contentReader?.deleteItemSource !== 'function') {
+        throw new CatalogInputError();
+      }
+      const deleted = await contentReader.deleteItemSource(req.params.contentId, {
+        sourceVersion: req.body.sourceVersion,
+        actorId: res.locals.catalogAdminPrincipal.subjectId,
+      });
+      if (!deleted) return sendError(res, 404, 'NOT_FOUND', 'عنوان پیدا نشد.');
+      return res.json({ data: {
+        deleted: true,
+        deletedRows: deleted.deletedRows || 1,
+        deletedEpisodes: deleted.deletedEpisodes || 0,
+      } });
+    } catch (error) {
+      if (error instanceof CatalogInputError || error?.code === 'INVALID_INPUT') {
+        return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات حذف معتبر نیست.');
+      }
+      if (error?.code === 'VERSION_CONFLICT') {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'عنوان در Google Sheets تغییر کرده است؛ ابتدا اطلاعات را تازه‌سازی کنید.');
+      }
+      if (error?.code === 'ROW_NOT_FOUND') {
+        return sendError(res, 404, 'NOT_FOUND', 'ردیف عنوان در Google Sheets پیدا نشد یا شناسهٔ آن یکتا نیست.');
+      }
+      if (error?.code === 'COLUMN_UNAVAILABLE' || error?.code === 'DELETE_NOT_CONFIGURED') {
+        return sendError(res, 409, 'SOURCE_DELETE_UNAVAILABLE', 'حذف این ردیف با ساختار فعلی شیت امکان‌پذیر نیست.');
+      }
+      if (error?.code === 'DELETE_ROLLBACK_FAILED') {
+        return sendError(res, 503, 'DELETE_ROLLBACK_FAILED', 'حذف منبع انجام نشد و بازیابی فراداده هم ناموفق بود؛ با پشتیبانی تماس بگیرید.');
+      }
+      throw error;
+    }
+  }));
+
   app.get(`${BASE_PATH}/items/:contentId/metadata`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!isCanonicalContentId(req.params.contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
     const metadata = await provider.getContentMetadataWithVersion(req.params.contentId);
@@ -913,6 +952,76 @@ function createCatalogAdminApi({
         return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های لازم برای خواندن قسمت‌ها در شیت سریال پیدا نشدند.');
       }
       return sendKnownError(res, error);
+    }
+  }));
+
+  app.get(`${BASE_PATH}/episodes/:episodeCode`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
+    if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
+        typeof contentReader?.getSeriesEpisode !== 'function') {
+      return sendError(res, 400, 'INVALID_INPUT', 'کد قسمت معتبر نیست.');
+    }
+    const episode = await contentReader.getSeriesEpisode(req.params.episodeCode);
+    if (!episode) return sendError(res, 404, 'NOT_FOUND', 'قسمت موردنظر پیدا نشد.');
+    return res.json({ data: episode });
+  }));
+
+  app.put(`${BASE_PATH}/episodes/:episodeCode`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    try {
+      requireBodyKeys(req.body, ['sourceVersion', 'title', 'country', 'telegramFileId']);
+      const body = req.body;
+      if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
+          typeof body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(body.sourceVersion) ||
+          typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200 ||
+          !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
+          typeof body.telegramFileId !== 'string' || !body.telegramFileId.trim() || body.telegramFileId.length > 4096 ||
+          typeof contentReader?.updateSeriesEpisode !== 'function') {
+        throw new CatalogInputError();
+      }
+      const updated = await contentReader.updateSeriesEpisode(req.params.episodeCode, {
+        sourceVersion: body.sourceVersion,
+        title: body.title.trim(),
+        country: body.country,
+        telegramFileId: body.telegramFileId.trim(),
+      });
+      if (!updated) return sendError(res, 404, 'NOT_FOUND', 'قسمت موردنظر پیدا نشد.');
+      return res.json({ data: updated });
+    } catch (error) {
+      if (error instanceof CatalogInputError || error?.code === 'INVALID_INPUT') {
+        return sendError(res, 400, 'INVALID_INPUT', 'مشخصات واردشده برای قسمت معتبر نیست.');
+      }
+      if (error?.code === 'VERSION_CONFLICT') {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'اطلاعات قسمت در Google Sheets تغییر کرده است؛ دوباره بارگذاری کنید.');
+      }
+      if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 404, 'NOT_FOUND', 'ردیف قسمت پیدا نشد.');
+      if (error?.code === 'COLUMN_UNAVAILABLE') return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون لازم برای ویرایش قسمت در شیت وجود ندارد.');
+      throw error;
+    }
+  }));
+
+  app.delete(`${BASE_PATH}/episodes/:episodeCode`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    try {
+      requireBodyKeys(req.body, ['sourceVersion']);
+      if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
+          typeof req.body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(req.body.sourceVersion) ||
+          typeof contentReader?.deleteSeriesEpisode !== 'function') {
+        throw new CatalogInputError();
+      }
+      const deleted = await contentReader.deleteSeriesEpisode(req.params.episodeCode, {
+        sourceVersion: req.body.sourceVersion,
+      });
+      return res.json({ data: { deleted: true, deletedRows: deleted?.deletedRows || 1 } });
+    } catch (error) {
+      if (error instanceof CatalogInputError || error?.code === 'INVALID_INPUT') {
+        return sendError(res, 400, 'INVALID_INPUT', 'درخواست حذف قسمت معتبر نیست.');
+      }
+      if (error?.code === 'VERSION_CONFLICT') {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'اطلاعات قسمت تغییر کرده است؛ فهرست را تازه‌سازی کنید.');
+      }
+      if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 404, 'NOT_FOUND', 'قسمت پیدا نشد.');
+      if (error?.code === 'COLUMN_UNAVAILABLE' || error?.code === 'DELETE_NOT_CONFIGURED') {
+        return sendError(res, 409, 'SOURCE_DELETE_UNAVAILABLE', 'حذف قسمت با ساختار فعلی شیت امکان‌پذیر نیست.');
+      }
+      throw error;
     }
   }));
 

@@ -271,8 +271,15 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     if (!sheetName) return null;
     const snapshot = validateSnapshot(sheetName, await sheetProvider.readSheet(sheetName));
     const codeIndex = snapshot.headers.indexOf(CODE_HEADER(sheetName, snapshot.headers));
+    const episodeCodeHeader = sheetName === 'سریال'
+      ? (snapshot.headers.includes('کد قسمت') ? 'کد قسمت'
+        : snapshot.headers.includes('کد سیستم') ? 'کد سیستم' : null)
+      : null;
+    const episodeCodeIndex = episodeCodeHeader ? snapshot.headers.indexOf(episodeCodeHeader) : -1;
     const matches = snapshot.rows.map((row, index) => ({ row, index }))
-      .filter(({ row }) => String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode);
+      .filter(({ row }) =>
+        String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode &&
+        (episodeCodeIndex < 0 || String(row[episodeCodeIndex] ?? '').trim() === ''));
     if (matches.length !== 1) return null;
     const { row, index } = matches[0];
     const record = rowToRecord(snapshot.headers, row);
@@ -310,6 +317,91 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     },
     async listSeriesEpisodes() {
       return seriesEpisodeReader.listAllEpisodes();
+    },
+    async getSeriesEpisode(episodeCode) {
+      return seriesEpisodeReader.getEpisode(episodeCode);
+    },
+    async updateSeriesEpisode(episodeCode, { sourceVersion, title, country, telegramFileId } = {}) {
+      if (typeof sheetProvider.updateSeriesEpisodeRow !== 'function') {
+        throw new Error('Series episode updater is not configured.');
+      }
+      const current = await seriesEpisodeReader.getEpisode(episodeCode);
+      if (!current) return null;
+      if (current.sourceVersion !== sourceVersion) {
+        throw Object.assign(new Error('Episode row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      const fields = {
+        'اسم فیلم': title,
+        'سازنده': country,
+        [current.fileHeader]: telegramFileId,
+      };
+      await sheetProvider.updateSeriesEpisodeRow({ episodeCode, expectedVersion: sourceVersion, fields });
+      return seriesEpisodeReader.getEpisode(episodeCode);
+    },
+    async deleteSeriesEpisode(episodeCode, { sourceVersion } = {}) {
+      if (typeof sheetProvider.deleteSeriesEpisodeRow !== 'function') {
+        throw new Error('Series episode deletion is not configured.');
+      }
+      return sheetProvider.deleteSeriesEpisodeRow({ episodeCode, expectedVersion: sourceVersion });
+    },
+    async deleteItemSource(contentId, { sourceVersion, actorId } = {}) {
+      const { items } = await readAllItems();
+      const item = items.find((candidate) => candidate.id === contentId);
+      if (!item) return null;
+      const current = await readSourceRecord(item.kind, item.systemCode);
+      if (!current) return null;
+      if (current.sourceVersion !== sourceVersion) {
+        throw Object.assign(new Error('Catalog row changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+
+      // Remove Firestore metadata first, then remove the source row(s). If the
+      // Sheets operation fails, restore the metadata so the title remains usable.
+      const metadata = await writableProvider.getContentMetadataWithVersion(contentId);
+      let deletedMetadata = false;
+      if (metadata) {
+        if (typeof writableProvider.deleteContentMetadata !== 'function') {
+          throw Object.assign(new Error('Content metadata deletion is not configured.'), { code: 'DELETE_NOT_CONFIGURED' });
+        }
+        await writableProvider.deleteContentMetadata(contentId, {
+          expectedVersion: metadata.version,
+          actorId,
+        });
+        deletedMetadata = true;
+      }
+
+      try {
+        if (item.kind === 'series') {
+          if (typeof sheetProvider.deleteSeriesWithEpisodes !== 'function') {
+            throw Object.assign(new Error('Series deletion is not configured.'), { code: 'DELETE_NOT_CONFIGURED' });
+          }
+          return await sheetProvider.deleteSeriesWithEpisodes({
+            seriesCode: item.systemCode,
+            expectedVersion: sourceVersion,
+          });
+        }
+        if (typeof sheetProvider.deleteCatalogRow !== 'function') {
+          throw Object.assign(new Error('Catalog deletion is not configured.'), { code: 'DELETE_NOT_CONFIGURED' });
+        }
+        return await sheetProvider.deleteCatalogRow({
+          sheetName: current.sourceSheet,
+          systemCode: item.systemCode,
+          expectedVersion: sourceVersion,
+        });
+      } catch (error) {
+        if (deletedMetadata) {
+          try {
+            await writableProvider.upsertContentMetadata(contentId, metadata.value, {
+              expectedVersion: 0,
+              actorId,
+            });
+          } catch {
+            throw Object.assign(new Error('Source deletion failed and metadata restoration also failed.'), {
+              code: 'DELETE_ROLLBACK_FAILED',
+            });
+          }
+        }
+        throw error;
+      }
     },
     async createSeriesEpisode({ seriesCode, episodeCode, fields } = {}) {
       if (typeof sheetProvider.createSeriesEpisodeRow !== 'function') {

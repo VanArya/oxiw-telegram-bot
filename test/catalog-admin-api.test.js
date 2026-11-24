@@ -846,6 +846,83 @@ test('registered episodes API returns the episode list to admin readers', async 
 });
 
 
+
+test('admin API supports source deletion and episode detail, edit, and delete operations', async () => {
+  const sourceVersion = 'a'.repeat(43);
+  const episodeCode = '70711.01.13';
+  const calls = [];
+  const contentReader = {
+    async deleteItemSource(id, options) {
+      calls.push({ operation: 'deleteItemSource', id, options });
+      return { deleted: true, deletedRows: 3, deletedEpisodes: 2 };
+    },
+    async getSeriesEpisode(code) {
+      assert.equal(code, episodeCode);
+      return {
+        episodeCode,
+        seriesCode: '70711',
+        seriesTitle: 'سریال آزمایشی',
+        sourceVersion,
+        fields: { title: 'قسمت سیزدهم', country: 'ایران', telegramFileId: 'private-file-id' },
+      };
+    },
+    async updateSeriesEpisode(code, options) {
+      calls.push({ operation: 'updateSeriesEpisode', code, options });
+      return { episodeCode: code, episodeTitle: options.title, sourceVersion: 'b'.repeat(43) };
+    },
+    async deleteSeriesEpisode(code, options) {
+      calls.push({ operation: 'deleteSeriesEpisode', code, options });
+      return { deleted: true, deletedRows: 1 };
+    },
+  };
+  const app = createCatalogAdminApi({
+    writableProvider: createStore(),
+    contentReader,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+    roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
+    authorizePermission: roleAuthorizer,
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const removeTitle = await json(await fetch(`${baseUrl}${ADMIN_PATH}/items/${encodeURIComponent(contentId)}/source`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion }),
+    }));
+    assert.equal(removeTitle.status, 200, JSON.stringify(removeTitle.body));
+    assert.equal(removeTitle.body.data.deletedRows, 3);
+    assert.equal(calls[0].id, contentId);
+    assert.equal(calls[0].options.actorId, 'fixture-admin');
+
+    const details = await json(await fetch(`${baseUrl}${ADMIN_PATH}/episodes/${episodeCode}`));
+    assert.equal(details.status, 200);
+    assert.equal(details.body.data.fields.telegramFileId, 'private-file-id');
+
+    const update = await json(await fetch(`${baseUrl}${ADMIN_PATH}/episodes/${episodeCode}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sourceVersion,
+        title: 'عنوان اصلاح‌شده',
+        country: 'آمریکا',
+        telegramFileId: 'updated-file-id',
+      }),
+    }));
+    assert.equal(update.status, 200, JSON.stringify(update.body));
+    assert.equal(update.body.data.episodeTitle, 'عنوان اصلاح‌شده');
+    assert.equal(calls.find((call) => call.operation === 'updateSeriesEpisode').options.country, 'آمریکا');
+
+    const removeEpisode = await json(await fetch(`${baseUrl}${ADMIN_PATH}/episodes/${episodeCode}`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion }),
+    }));
+    assert.equal(removeEpisode.status, 200);
+    assert.equal(calls.find((call) => call.operation === 'deleteSeriesEpisode').options.sourceVersion, sourceVersion);
+  });
+});
+
+
 test('episode registration uses the live sheet columns and does not require a parent-code column', async () => {
   const store = createStore();
   const headers = [

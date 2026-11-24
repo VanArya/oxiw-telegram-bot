@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const { parseSeriesEpisodeCode } = require('./series-episode-code');
 const { mapSeriesEpisodeRecord } = require('./series-episode-record');
 
@@ -96,6 +97,7 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
           episodeCode: episode.systemCode,
           episodeTitle: episode.episodeTitle || 'بدون عنوان',
           rowNumber,
+          sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
           hasTelegramFile: Boolean(fileValue),
         }));
       } catch {
@@ -127,6 +129,43 @@ function createSeriesEpisodeSheetReader({ sheetProvider } = {}) {
       return Object.freeze({
         episodes: Object.freeze(episodes),
         invalidRows: Object.freeze(invalidRows),
+      });
+    },
+    async getEpisode(episodeCode) {
+      if (typeof episodeCode !== 'string' || !/^\d{5}\.\d{2}\.\d{2}$/.test(episodeCode)) {
+        throw new TypeError('Invalid episode code.');
+      }
+      const snapshot = await sheetProvider.readSheet('سریال');
+      if (!snapshot || !Array.isArray(snapshot.headers) || !Array.isArray(snapshot.rows)) {
+        throw new TypeError('Invalid series sheet snapshot.');
+      }
+      const { episodeCodeHeader, fileHeader } = resolveEpisodeLayout(snapshot.headers);
+      const index = snapshot.headers.indexOf(episodeCodeHeader);
+      const matches = snapshot.rows.map((row, rowIndex) => ({
+        rowNumber: rowIndex + 2,
+        row,
+        record: rowToRecord(snapshot.headers, row),
+      })).filter(({ row }) => String(row[index] ?? '').normalize('NFC').trim() === episodeCode);
+      if (matches.length !== 1) return null;
+      const { rowNumber, record } = matches[0];
+      const episode = mapSeriesEpisodeRecord(record);
+      const all = await readAllEpisodes();
+      const projected = all.episodes.find((item) => item.episodeCode === episodeCode);
+      return Object.freeze({
+        episodeCode,
+        seriesCode: episode.parentSeriesCode,
+        seriesTitle: projected?.seriesTitle || 'سریال بدون عنوان',
+        season: episode.season,
+        episode: episode.episode,
+        episodeTitle: episode.episodeTitle || 'بدون عنوان',
+        sourceRowNumber: rowNumber,
+        sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
+        fileHeader,
+        fields: Object.freeze({
+          title: String(record['اسم فیلم'] ?? ''),
+          country: String(record['سازنده'] ?? ''),
+          telegramFileId: String(record[fileHeader] ?? ''),
+        }),
       });
     },
     async listAllEpisodes() {

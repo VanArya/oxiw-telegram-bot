@@ -4,6 +4,7 @@ const { assertCatalogMetadataProvider } = require('./catalog-metadata-provider')
 
 const WRITABLE_METHODS = Object.freeze([
   'upsertContentMetadata',
+  'deleteContentMetadata',
   'updateApprovalStatus',
   'updatePublicationStatus',
   'upsertCategory',

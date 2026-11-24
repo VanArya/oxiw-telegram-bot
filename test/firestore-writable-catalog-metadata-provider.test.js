@@ -488,6 +488,34 @@ test('rejects stale writes, missing versions, invalid data and invalid status co
   );
 });
 
+
+test('deletes versioned content metadata and records an audit event', async () => {
+  const { firestore, provider } = setup();
+  await provider.upsertContentMetadata(contentId, metadata, {
+    expectedVersion: 0,
+    actorId: 'admin-delete-test',
+  });
+
+  const deleted = await provider.deleteContentMetadata(contentId, {
+    expectedVersion: 1,
+    actorId: 'admin-delete-test',
+  });
+  assert.deepEqual(deleted, { value: { contentId, ...metadata }, version: 2 });
+  assert.equal(await provider.getContentMetadataWithVersion(contentId), null);
+
+  const events = [...firestore.documents.entries()]
+    .filter(([path]) => path.startsWith('catalogAuditEvents/'))
+    .map(([, event]) => event);
+  assert.equal(events.at(-1).operation, 'metadata.deleted');
+  assert.equal(events.at(-1).entityId, contentId);
+  assert.equal(events.at(-1).actorId, 'admin-delete-test');
+  await assert.rejects(
+    provider.deleteContentMetadata(contentId, { expectedVersion: 1 }),
+    (error) => error.code === 'NOT_FOUND',
+  );
+});
+
+
 test('stores unknown states as non-public metadata without inferring publication', async () => {
   const { provider } = setup();
   const value = {

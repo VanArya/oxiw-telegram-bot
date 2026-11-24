@@ -261,7 +261,7 @@ function createFirestoreWritableCatalogMetadataProvider({
     }
   }
 
-  async function deleteVersionedRecord({ reference, projectExisting, entityType, entityId, options, referenceCheck }) {
+  async function deleteVersionedRecord({ reference, projectExisting, entityType, entityId, options, referenceCheck, operation }) {
     const writeOptions = validateExpectedVersion(options);
     try {
       return await firestore.runTransaction(async (transaction) => {
@@ -273,7 +273,7 @@ function createFirestoreWritableCatalogMetadataProvider({
         transaction.delete(reference);
         const version = stored.version + 1;
         const event = eventFor({
-          operation: `${entityType}.deleted`, entityType, entityId,
+          operation: operation || `${entityType}.deleted`, entityType, entityId,
           options: writeOptions, previousVersion: stored.version, version,
           fields: ['deleted'], clock,
         });
@@ -392,6 +392,17 @@ function createFirestoreWritableCatalogMetadataProvider({
         if (error instanceof CatalogConflictError || error instanceof CatalogInputError) throw error;
         throw safeStorageError();
       }
+    },
+    async deleteContentMetadata(contentId, options) {
+      if (!isCanonicalContentId(contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+      return deleteVersionedRecord({
+        reference: contentRef(contentId),
+        options,
+        projectExisting: (data) => projectContent(data, contentId),
+        entityType: 'content',
+        entityId: contentId,
+        operation: 'metadata.deleted',
+      });
     },
     async upsertContentMetadata(contentId, value, options) {
       const metadata = validateCatalogContentMetadata(contentId, value);

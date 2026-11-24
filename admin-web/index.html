@@ -119,8 +119,8 @@
               <div class="panel table-panel">
                 <div class="table-wrap">
                   <table>
-                    <thead><tr><th>سریال</th><th>کد سریال</th><th>فصل</th><th>قسمت</th><th>عنوان قسمت</th><th>کد قسمت</th><th>فایل تلگرام</th></tr></thead>
-                    <tbody id="episodes-rows"><tr><td colspan="7" class="empty-message">برای مشاهده، فهرست را به‌روزرسانی کنید.</td></tr></tbody>
+                    <thead><tr><th>سریال</th><th>کد سریال</th><th>فصل</th><th>قسمت</th><th>عنوان قسمت</th><th>کد قسمت</th><th>فایل تلگرام</th><th>عملیات</th></tr></thead>
+                    <tbody id="episodes-rows"><tr><td colspan="8" class="empty-message">برای مشاهده، فهرست را به‌روزرسانی کنید.</td></tr></tbody>
                   </table>
                 </div>
               </div>
@@ -206,6 +206,22 @@
       </form>
     </dialog>
 
+    <dialog id="episode-edit-dialog" class="content-dialog">
+      <div class="dialog-heading"><div><p class="eyebrow">Google Sheets · سریال</p><h2>ویرایش مشخصات قسمت</h2><p id="episode-edit-code" class="mono muted"></p></div><button id="episode-edit-close" class="icon-button" type="button" aria-label="بستن">×</button></div>
+      <p id="episode-edit-parent" class="muted"></p>
+      <form id="episode-edit-form" class="editor-form">
+        <label>عنوان قسمت<input id="episode-edit-title" maxlength="200" required></label>
+        <label>کشور<select id="episode-edit-country" required><option value="">انتخاب کشور</option><option value="ایران">ایران</option><option value="آمریکا">آمریکا</option><option value="کره جنوبی">کره جنوبی</option><option value="ژاپن">ژاپن</option><option value="هند">هند</option><option value="اسپانیا">اسپانیا</option><option value="مصر">مصر</option></select></label>
+        <label>Telegram File ID<input id="episode-edit-file-id" maxlength="4096" required dir="ltr" autocomplete="off"></label>
+        <p class="fine-print">کد سریال مادر و کد قسمت ثابت هستند و تغییر نمی‌کنند.</p>
+        <p id="episode-edit-message" class="fine-print" role="status" aria-live="polite"></p>
+        <div class="form-actions">
+          <button id="episode-edit-save" class="button button-primary" type="submit">ذخیرهٔ تغییرات</button>
+          <button id="episode-edit-delete" class="button button-danger" type="button">حذف قسمت</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="content-dialog" class="content-dialog">
       <div class="dialog-heading"><div><p id="dialog-kind" class="eyebrow"></p><h2 id="dialog-title"></h2><p id="dialog-code" class="mono muted"></p></div><button id="dialog-close" class="icon-button" type="button" aria-label="بستن">×</button></div>
       <div id="dialog-message" class="notice" hidden></div>
@@ -215,7 +231,10 @@
         <div class="panel-heading"><h3>ویرایش تمام ستون‌های Google Sheets</h3></div>
         <div id="source-fields" class="source-fields"></div>
         <p class="fine-print">تمام ستون‌های شیت نمایش داده می‌شوند. کد سیستم شناسهٔ ثابت رکورد است و پس از ایجاد قابل تغییر نیست.</p>
-        <button id="source-save" class="button button-primary" type="submit">ذخیرهٔ اطلاعات اصلی</button>
+        <div class="form-actions">
+          <button id="source-save" class="button button-primary" type="submit">ذخیرهٔ اطلاعات اصلی</button>
+          <button id="source-delete" class="button button-danger" type="button">حذف کامل عنوان</button>
+        </div>
       </form>
       <form id="metadata-form" class="editor-form inline-editor">
         <div class="panel-heading"><h3>فرادادهٔ قابل ویرایش</h3></div>

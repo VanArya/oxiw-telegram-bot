@@ -76,3 +76,22 @@ test('lists episodes across all series with parent titles and without returning 
   assert.equal(result.episodes.every((episode) => episode.hasTelegramFile), true);
   assert.equal(JSON.stringify(result.episodes).includes('private-file-'), false);
 });
+
+test('reads a single episode source with a stable version for authorized edits', async () => {
+  const reader = createSeriesEpisodeSheetReader({ sheetProvider: provider([
+    ['سریال مادر', 'سریال', 'ایران', 'درام', '70711', '', '2020', '', '', '', '', '', '', '', '', '', '', ''],
+    ['قسمت سیزدهم', 'قسمت', 'ایران', 'درام', '70711', '70711.01.13', '', '', '', '', '', '', '', '', '', '', '', 'file-13'],
+  ]) });
+
+  const episode = await reader.getEpisode('70711.01.13');
+  assert.equal(episode.seriesCode, '70711');
+  assert.equal(episode.episodeCode, '70711.01.13');
+  assert.equal(episode.episodeTitle, 'قسمت سیزدهم');
+  assert.deepEqual(episode.fields, {
+    title: 'قسمت سیزدهم',
+    country: 'ایران',
+    telegramFileId: 'file-13',
+  });
+  assert.match(episode.sourceVersion, /^[A-Za-z0-9_-]{40,64}$/);
+  assert.equal(await reader.getEpisode('70711.01.99'), null);
+});
