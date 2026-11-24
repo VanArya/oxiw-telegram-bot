@@ -259,7 +259,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
           insertDataOption: 'INSERT_ROWS',
           requestBody: { values: [values] },
         });
-        const rowNumber = Number(/!A(\\d+):/.exec(response?.data?.updates?.updatedRange || '')?.[1]) ||
+        const rowNumber = Number(/!A(\d+):/.exec(response?.data?.updates?.updatedRange || '')?.[1]) ||
           snapshot.rows.length + 2;
         return Object.freeze({
           rowNumber,
