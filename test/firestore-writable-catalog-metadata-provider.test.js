@@ -506,7 +506,7 @@ test('deletes versioned content metadata and records an audit event', async () =
   const events = [...firestore.documents.entries()]
     .filter(([path]) => path.startsWith('catalogAuditEvents/'))
     .map(([, event]) => event);
-  assert.equal(events.at(-1).operation, 'content.deleted');
+  assert.equal(events.at(-1).operation, 'metadata.deleted');
   assert.equal(events.at(-1).entityId, contentId);
   assert.equal(events.at(-1).actorId, 'admin-delete-test');
   await assert.rejects(
