@@ -50,6 +50,37 @@ test('admin content reader lists unpublished Sheet rows with metadata status and
   assert.equal(JSON.stringify(item).includes('sourceRecord'), false);
 });
 
+
+test('admin content reader lists registered episodes from the series sheet without exposing Telegram IDs', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد قسمت');
+  source['سریال'].rows.forEach((row) => row.push(''));
+  const row = Object.fromEntries(source['سریال'].headers.map((header) => [header, '']));
+  Object.assign(row, {
+    'کد سریال': '70711',
+    'کد قسمت': '',
+    'اسم فیلم': 'سریال مادر آزمایشی',
+    'سال شروع': '2020',
+  });
+  source['سریال'].rows.push(source['سریال'].headers.map((header) => row[header]));
+  const episode = {
+    ...row,
+    'کد قسمت': '70711.01.13',
+    'اسم فیلم': 'قسمت سیزدهم',
+    'Telegram File ID': 'private-episode-file-id',
+  };
+  source['سریال'].rows.push(source['سریال'].headers.map((header) => episode[header]));
+
+  const result = await makeReader({ source }).listSeriesEpisodes();
+  assert.equal(result.episodes.length, 1);
+  assert.equal(result.episodes[0].seriesTitle, 'سریال مادر آزمایشی');
+  assert.equal(result.episodes[0].episodeCode, '70711.01.13');
+  assert.equal(result.episodes[0].episodeTitle, 'قسمت سیزدهم');
+  assert.equal(result.episodes[0].hasTelegramFile, true);
+  assert.equal(JSON.stringify(result).includes('private-episode-file-id'), false);
+});
+
+
 test('admin reader tolerates whitespace and duplicate aliases in required sheet headings', async () => {
   const source = structuredClone(sheets);
   source['سریال'].headers.push(' کد سریال ', ' اسم فیلم ');
