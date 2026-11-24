@@ -30,9 +30,11 @@ function mapSeriesEpisodeRecord(row) {
   if (!parsed) throw new TypeError('Invalid episode system code.');
 
   const parentField = codeField === 'کد قسمت'
-    ? (typeof row['کد سریال'] === 'string' ? 'کد سریال' : 'کد سریال مادر')
+    ? (typeof row['کد سریال'] === 'string' && row['کد سریال'].trim()
+      ? 'کد سریال' : 'کد سریال مادر')
     : (codeField === 'کد سیستم'
-      ? (typeof row['کد سریال مادر'] === 'string' ? 'کد سریال مادر' : 'کد سریال')
+      ? (typeof row['کد سریال مادر'] === 'string' && row['کد سریال مادر'].trim()
+        ? 'کد سریال مادر' : 'کد سریال')
       : 'کد سریال مادر');
   const parentSeriesCode = requiredString(row[parentField], parentField);
   if (parsed.parentSeriesCode !== parentSeriesCode) {
