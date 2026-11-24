@@ -393,6 +393,16 @@ function createFirestoreWritableCatalogMetadataProvider({
         throw safeStorageError();
       }
     },
+    async deleteContentMetadata(contentId, options) {
+      if (!isCanonicalContentId(contentId)) throw new CatalogInputError('INVALID_CONTENT_ID');
+      return deleteVersionedRecord({
+        reference: contentRef(contentId),
+        options,
+        projectExisting: (data) => projectContent(data, contentId),
+        entityType: 'content',
+        entityId: contentId,
+      });
+    },
     async upsertContentMetadata(contentId, value, options) {
       const metadata = validateCatalogContentMetadata(contentId, value);
       if (metadata.publicationStatus === 'published' && metadata.approvalStatus !== 'approved') {
