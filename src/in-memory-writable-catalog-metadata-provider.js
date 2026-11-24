@@ -148,6 +148,15 @@ function createInMemoryWritableCatalogMetadataProvider({
       metadataVersions.set(newContentId, version);
       return { value: clone(moved), version };
     },
+    async deleteContentMetadata(contentId, options) {
+      const current = metadata.get(contentId);
+      if (!current) throw new CatalogNotFoundError('CONTENT_METADATA_NOT_FOUND');
+      checkExpectedVersion(metadataVersions, contentId, options);
+      const version = metadataVersions.get(contentId) + 1;
+      metadata.delete(contentId);
+      metadataVersions.delete(contentId);
+      return { value: clone(current), version };
+    },
     async upsertContentMetadata(contentId, value, options) {
       const record = validateCatalogContentMetadata(contentId, value);
       if (record.publicationStatus === 'published' && record.approvalStatus !== 'approved') {
