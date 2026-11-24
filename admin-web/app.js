@@ -44,6 +44,7 @@ let contentStats = null;
 let contentFilterOptionsLoaded = false;
 let currentItems = [];
 let registeredEpisodes = [];
+let selectedEpisodeSource = null;
 const selectedContentIds = new Set();
 let selectedItem = null;
 let selectedMetadata = null;
@@ -173,6 +174,8 @@ function messageForError(error) {
     ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED: 'مدیریت مدیران هنوز به منبع مورداعتماد متصل نشده است.',
     EPISODE_REGISTRATION_UNAVAILABLE: 'ثبت قسمت سریال هنوز به منبع شیت متصل نشده است.',
     EPISODE_LIST_UNAVAILABLE: 'فهرست قسمت‌های ثبت‌شده موقتاً در دسترس نیست.',
+    SOURCE_DELETE_UNAVAILABLE: 'حذف ردیف از شیت در دسترس نیست یا ساختار شیت با رکورد سازگار نیست.',
+    DELETE_ROLLBACK_FAILED: 'حذف منبع کامل نشد و بازیابی فراداده هم ناموفق بود؛ با پشتیبانی تماس بگیرید.',
     SOURCE_COLUMN_UNAVAILABLE: 'ستون‌های لازم برای ثبت قسمت در شیت سریال موجود نیستند.',
     INVALID_EPISODE_REQUEST: 'اطلاعات واردشده برای ثبت قسمت معتبر نیست.',
     EPISODE_DUPLICATE: 'این قسمت قبلاً ثبت شده است.',
@@ -716,7 +719,7 @@ function renderRegisteredEpisodes() {
   if (!filtered.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = 'empty-message';
     cell.textContent = query ? 'موردی با این عبارت پیدا نشد.' : 'هنوز قسمتی ثبت نشده است.';
     row.append(cell);
@@ -740,6 +743,23 @@ function renderRegisteredEpisodes() {
         if (index === 6) cell.className = episode.hasTelegramFile ? 'badge-published' : 'badge-pending';
         row.append(cell);
       });
+
+      const actions = document.createElement('td');
+      actions.className = 'form-actions episode-row-actions';
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'button button-small button-secondary';
+      edit.textContent = 'ویرایش';
+      edit.disabled = !hasPermission('catalog.metadata.write');
+      edit.addEventListener('click', () => void openEpisodeEditor(episode));
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'button button-small button-danger';
+      remove.textContent = 'حذف';
+      remove.disabled = !hasPermission('catalog.metadata.write');
+      remove.addEventListener('click', () => void deleteRegisteredEpisode(episode));
+      actions.append(edit, remove);
+      row.append(actions);
       tbody.append(row);
     });
   }
@@ -765,6 +785,90 @@ async function loadEpisodes() {
     renderRegisteredEpisodes();
   } catch (error) {
     reportApiError(error, 'فهرست قسمت‌های ثبت‌شده بارگذاری نشد.');
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function openEpisodeEditor(episode) {
+  if (!hasPermission('catalog.metadata.write')) return;
+  try {
+    const { body } = await api(`${API_ROOT}/episodes/${encodeURIComponent(episode.episodeCode)}`);
+    selectedEpisodeSource = body.data;
+    setText($('#episode-edit-code'), selectedEpisodeSource.episodeCode);
+    setText($('#episode-edit-parent'), `${selectedEpisodeSource.seriesTitle} · کد سریال: ${selectedEpisodeSource.seriesCode} · فصل ${selectedEpisodeSource.season}، قسمت ${selectedEpisodeSource.episode}`);
+    $('#episode-edit-title').value = selectedEpisodeSource.fields.title || '';
+    $('#episode-edit-country').value = selectedEpisodeSource.fields.country || '';
+    $('#episode-edit-file-id').value = selectedEpisodeSource.fields.telegramFileId || '';
+    setText($('#episode-edit-message'), '');
+    $('#episode-edit-dialog').showModal();
+  } catch (error) {
+    reportApiError(error, 'اطلاعات قسمت برای ویرایش بارگذاری نشد.');
+  }
+}
+
+async function saveEpisodeEdit(event) {
+  event.preventDefault();
+  if (!selectedEpisodeSource || !hasPermission('catalog.metadata.write')) return;
+  const button = $('#episode-edit-save');
+  setBusy(button, true);
+  setText($('#episode-edit-message'), 'در حال ذخیرهٔ تغییرات…');
+  try {
+    const { body } = await api(`${API_ROOT}/episodes/${encodeURIComponent(selectedEpisodeSource.episodeCode)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        sourceVersion: selectedEpisodeSource.sourceVersion,
+        title: $('#episode-edit-title').value.trim(),
+        country: $('#episode-edit-country').value,
+        telegramFileId: $('#episode-edit-file-id').value.trim(),
+      }),
+    });
+    selectedEpisodeSource = body.data;
+    $('#episode-edit-dialog').close();
+    await loadEpisodes();
+    showToast('مشخصات قسمت به‌روزرسانی شد.');
+  } catch (error) {
+    if (error.status === 412) {
+      setText($('#episode-edit-message'), 'اطلاعات قسمت هم‌زمان تغییر کرده است؛ پنجره را ببند و دوباره باز کن.');
+    } else setText($('#episode-edit-message'), error.message || 'ذخیرهٔ تغییرات انجام نشد.');
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function deleteRegisteredEpisode(episode) {
+  if (!hasPermission('catalog.metadata.write')) return;
+  const title = episode.episodeTitle || episode.episodeCode;
+  if (!window.confirm(`قسمت «${title}» از سریال «${episode.seriesTitle}» به‌طور کامل حذف شود؟ این عملیات قابل بازگشت خودکار نیست.`)) return;
+  try {
+    await api(`${API_ROOT}/episodes/${encodeURIComponent(episode.episodeCode)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ sourceVersion: episode.sourceVersion }),
+    });
+    await loadEpisodes();
+    showToast('قسمت حذف شد.');
+  } catch (error) {
+    reportApiError(error, 'حذف قسمت انجام نشد.');
+  }
+}
+
+async function deleteEpisodeFromEditor() {
+  if (!selectedEpisodeSource || !hasPermission('catalog.metadata.write')) return;
+  const title = selectedEpisodeSource.episodeTitle || selectedEpisodeSource.episodeCode;
+  if (!window.confirm(`قسمت «${title}» به‌طور کامل حذف شود؟`)) return;
+  const button = $('#episode-edit-delete');
+  setBusy(button, true);
+  try {
+    await api(`${API_ROOT}/episodes/${encodeURIComponent(selectedEpisodeSource.episodeCode)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ sourceVersion: selectedEpisodeSource.sourceVersion }),
+    });
+    $('#episode-edit-dialog').close();
+    selectedEpisodeSource = null;
+    await loadEpisodes();
+    showToast('قسمت حذف شد.');
+  } catch (error) {
+    setText($('#episode-edit-message'), error.message || 'حذف قسمت انجام نشد.');
   } finally {
     setBusy(button, false);
   }
@@ -913,7 +1017,42 @@ function renderSourceForm(source) {
     return;
   }
   renderSheetFields($('#source-fields'), source.headers, source.record, { fieldOptions: source.fieldOptions || {} });
+  $('#source-delete').hidden = !hasPermission('catalog.metadata.write');
+  $('#source-delete').textContent = selectedItem?.kind === 'series'
+    ? 'حذف کامل سریال و تمام قسمت‌ها' : 'حذف کامل عنوان';
   form.hidden = false;
+}
+
+async function deleteSelectedContentSource() {
+  if (!selectedItem || !selectedSource || !hasPermission('catalog.metadata.write')) return;
+  const item = selectedItem;
+  const seriesWarning = item.kind === 'series'
+    ? '\\nتمام قسمت‌های ثبت‌شده برای این سریال نیز حذف خواهند شد.'
+    : '';
+  if (!window.confirm(`عنوان «${item.title}» به‌طور کامل از شیت حذف شود؟${seriesWarning}\\nوضعیت و فرادادهٔ وابسته نیز حذف می‌شود. این عملیات قابل بازگشت خودکار نیست.`)) return;
+
+  const button = $('#source-delete');
+  setBusy(button, true);
+  try {
+    const { body } = await api(`${API_ROOT}/items/${encodeURIComponent(item.id)}/source`, {
+      method: 'DELETE',
+      body: JSON.stringify({ sourceVersion: selectedSource.sourceVersion }),
+    });
+    elements.contentDialog.close();
+    selectedContentIds.delete(item.id);
+    selectedItem = null;
+    selectedSource = null;
+    await loadContent();
+    void loadOverview();
+    void loadEpisodes();
+    showToast(item.kind === 'series'
+      ? `سریال و ${Number(body.data.deletedEpisodes || 0).toLocaleString('fa-IR')} قسمت وابسته حذف شدند.`
+      : 'عنوان سینمایی به‌طور کامل حذف شد.');
+  } catch (error) {
+    reportApiError(error, 'حذف کامل عنوان انجام نشد.');
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function saveSourceItem(event) {
@@ -1786,6 +1925,13 @@ function wireUi() {
     if (event.target === event.currentTarget) event.currentTarget.close();
   });
   $('#episodes-search').addEventListener('input', renderRegisteredEpisodes);
+  $('#episode-edit-close').addEventListener('click', () => $('#episode-edit-dialog').close());
+  $('#episode-edit-dialog').addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) event.currentTarget.close();
+  });
+  $('#episode-edit-form').addEventListener('submit', (event) => void saveEpisodeEdit(event));
+  $('#episode-edit-delete').addEventListener('click', () => void deleteEpisodeFromEditor());
+  $('#source-delete').addEventListener('click', () => void deleteSelectedContentSource());
   $('#episode-registration-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const submit = $('#episode-registration-submit');
