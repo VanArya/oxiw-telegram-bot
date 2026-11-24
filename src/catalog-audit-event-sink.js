@@ -5,7 +5,7 @@ const EVENT_KEYS = new Set([
   'previousVersion', 'version', 'changedFields', 'actorId',
 ]);
 const OPERATIONS = new Set([
-  'metadata.created', 'metadata.updated',
+  'metadata.created', 'metadata.updated', 'metadata.deleted',
   'approval.pending', 'approval.approved', 'approval.rejected', 'approval.unknown',
   'publication.draft', 'publication.published', 'publication.archived', 'publication.unknown',
   'category.created', 'category.updated', 'category.deleted',
