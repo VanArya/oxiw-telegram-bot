@@ -214,10 +214,17 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
       try {
         const metadata = await metadataProvider.getContentMetadata(content.id);
 
+        // For current schemas, legacy metadata country values are irrelevant.
+        // Do not let a stale country taxonomy entry invalidate approval/publication.
+        const hasProducerCountryHeader = sourceHasProducerCountryHeaderById.get(content.id);
+        const metadataForValidation = metadata && hasProducerCountryHeader
+          ? { ...metadata, countryIds: undefined }
+          : metadata;
+
         // Genre and publication workflow remain metadata-owned. Producer country
         // comes from the current sheet schema; old schemas may still fall back to metadata.
         delete content.genreIds;
-        if (!validMetadata(metadata, countryIds, genreIds)) {
+        if (!validMetadata(metadataForValidation, countryIds, genreIds)) {
           content.approvalStatus = 'unknown';
           content.publicationStatus = 'unknown';
           return content;
