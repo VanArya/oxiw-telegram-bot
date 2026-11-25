@@ -443,3 +443,69 @@ test('admin reader skips dotted episode records from standalone catalog listing'
   // Assert episode exclusion without coupling to the fixture's overall count.
   assert.equal(result.data.some((item) => item.systemCode === '70711.01.01'), false);
 });
+
+
+test('admin projection uses the live سازنده column and exposes its fixed dropdown options', async () => {
+  const source = structuredClone(sheets);
+  source['سینمایی'].headers.push('سازنده');
+  source['سینمایی'].rows.forEach((row, index) => row.push(index === 0 ? 'آمریکا' : 'ایران'));
+  source['سریال'].headers.push('سازنده');
+  source['سریال'].rows.forEach((row) => row.push('ایران'));
+  const reader = makeReader({
+    source,
+    contentMetadata: [{
+      contentId: createCatalogContentId('movie', 'fixture-movie-ir'),
+      approvalStatus: 'approved',
+      publicationStatus: 'draft',
+      countryIds: ['IR'],
+      genreIds: ['drama'],
+    }],
+  });
+
+  const result = await reader.list(new URLSearchParams('pageSize=100'));
+  const item = result.data.find((entry) => entry.id === 'movie:fixture-movie-ir');
+  assert.equal(item.producerCountry, 'آمریکا');
+  assert.deepEqual(item.countryIds, ['US']);
+  assert.ok(item.sourceAvailableFields.includes('producerCountry'));
+
+  const sourceItem = await reader.getItemSource(item.id);
+  assert.deepEqual(sourceItem.fieldOptions['سازنده'], [
+    'ایران', 'آمریکا', 'کره جنوبی', 'ژاپن', 'هند', 'مصر', 'اسپانیا',
+  ]);
+});
+
+test('creating a record on a schema with سازنده requires an approved producer country', async () => {
+  const headers = ['اسم فیلم', 'نوع', 'سازنده', 'ژانر', 'کد سیستم', 'سال',
+    'بازیگران', 'خلاصه داستان', 'امتیاز', 'زبان', 'پیشنهادی',
+    'لینک تریلر', 'پوستر فیلم', 'شناسه URL', 'Telegram File ID'];
+  const snapshots = {
+    'سینمایی': { headers, rows: [] },
+    'سریال': { headers: ['اسم فیلم', 'نوع', 'سازنده', 'ژانر', 'کد سریال', 'کد قسمت',
+      'سال شروع', 'سال پایان', 'تعداد فصل و قسمت', 'بازیگران', 'خلاصه داستان',
+      'امتیاز', 'زبان', 'پیشنهادی', 'لینک تریلر', 'پوستر فیلم', 'شناسه URL', 'Telegram File ID'], rows: [] },
+  };
+  const provider = {
+    async readSheet(name) { return { headers: [...snapshots[name].headers], rows: snapshots[name].rows.map((row) => [...row]) }; },
+    async getSheetSchema(name) { return [...snapshots[name].headers]; },
+    async createCatalogRow({ sheetName, fields }) {
+      const record = Object.fromEntries(snapshots[sheetName].headers.map((header) => [header, fields[header] ?? '']));
+      snapshots[sheetName].rows.push(snapshots[sheetName].headers.map((header) => record[header]));
+      return { record, rowNumber: snapshots[sheetName].rows.length + 1, sourceVersion: 'v'.repeat(43) };
+    },
+  };
+  const writableProvider = createInMemoryWritableCatalogMetadataProvider({
+    contentMetadata: [], categories: [],
+    taxonomies: { country: [], genre: [] },
+  });
+  const reader = createCatalogAdminContentReader({ sheetProvider: provider, writableProvider });
+
+  await assert.rejects(reader.createItemSource('movie', {
+    'کد سیستم': 'new-movie', 'اسم فیلم': 'فیلم جدید',
+  }), { code: 'INVALID_INPUT' });
+
+  const created = await reader.createItemSource('movie', {
+    'کد سیستم': 'new-movie', 'اسم فیلم': 'فیلم جدید', 'سازنده': 'اسپانیا',
+  });
+  assert.equal(created.record['سازنده'], 'اسپانیا');
+  assert.equal(created.id, 'movie:new-movie');
+});
