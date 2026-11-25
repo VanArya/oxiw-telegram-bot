@@ -88,7 +88,7 @@ test('reads headers and rows for both approved sheets using dynamic values.get a
   });
   assert.deepEqual(calls.map(({ range }) => range), ["'سینمایی'", "'سریال'"]);
   assert.equal(calls.every((call) => call.spreadsheetId === spreadsheetIdFixture), true);
-  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'deleteCatalogRow', 'deleteSeriesWithEpisodes', 'updateSeriesEpisodeRow', 'deleteSeriesEpisodeRow', 'getSheetSchema', 'createCatalogRow', 'createSeriesEpisodeRow']);
+  assert.deepEqual(Object.keys(provider), ['readSheet', 'updateCatalogRow', 'deleteCatalogRow', 'deleteSeriesWithEpisodes', 'updateSeriesEpisodeRow', 'deleteSeriesEpisodeRow', 'deleteSeriesSeasonRows', 'getSheetSchema', 'createCatalogRow', 'createSeriesEpisodeRow']);
 });
 
 test('normalizes whitespace and Unicode in live sheet header labels', async () => {
@@ -404,6 +404,43 @@ test('deletes one episode row without deleting its parent series', async () => {
   assert.deepEqual(source["'سریال'"].slice(1), [rows[1]]);
 });
 
+
+test('deletes every episode in one season while preserving other seasons and the parent, with version protection', async () => {
+  const headers = ['اسم فیلم', 'نوع', 'سازنده', 'کد سریال', 'کد قسمت', 'Telegram File ID'];
+  const rows = [
+    headers,
+    ['سریال فصل‌دار', 'سریال', 'ایران', '70711', '', ''],
+    ['قسمت ۱', 'قسمت', 'ایران', '70711', '70711.01.01', 'file-s1e1'],
+    ['قسمت ۲', 'قسمت', 'ایران', '70711', '70711.01.02', 'file-s1e2'],
+    ['قسمت فصل دوم', 'قسمت', 'ایران', '70711', '70711.02.01', 'file-s2e1'],
+  ];
+  const source = { "'سریال'": rows };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(source),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const crypto = require('node:crypto');
+  const fingerprint = rows.slice(2, 4).map((row) => ({
+    episodeCode: row[4],
+    sourceVersion: crypto.createHash('sha256').update(JSON.stringify(
+      Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ''])),
+    )).digest('base64url'),
+  })).sort((a, b) => a.episodeCode.localeCompare(b.episodeCode));
+  const version = crypto.createHash('sha256').update(JSON.stringify(fingerprint)).digest('base64url');
+
+  await assert.rejects(
+    provider.deleteSeriesSeasonRows({ seriesCode: '70711', season: 1, expectedVersion: 'a'.repeat(43) }),
+    (error) => error.code === 'VERSION_CONFLICT',
+  );
+  assert.equal(source["'سریال'"].length, 5);
+
+  const deleted = await provider.deleteSeriesSeasonRows({
+    seriesCode: '70711', season: 1, expectedVersion: version,
+  });
+  assert.equal(deleted.deletedEpisodes, 2);
+  assert.equal(deleted.deletedRows, 2);
+  assert.deepEqual(source["'سریال'"].slice(1).map((row) => row[4]), ['', '70711.02.01']);
+});
 
 test('legacy rows remain mappable without country and internal Telegram IDs stay private', async () => {
   const legacyValues = [

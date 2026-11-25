@@ -313,6 +313,64 @@ test('admin content reader still rejects duplicate identities rather than silent
 });
 
 
+test('admin content reader groups episodes into seasons and supplies a stable season version', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد قسمت');
+  source['سریال'].rows.forEach((row) => row.push(''));
+  const headers = source['سریال'].headers;
+  const parent = Object.fromEntries(headers.map((header) => [header, '']));
+  Object.assign(parent, { 'کد سریال': '70711', 'اسم فیلم': 'سریال فصل‌بندی‌شده' });
+  source['سریال'].rows.push(headers.map((header) => parent[header]));
+  for (const episodeCode of ['70711.01.01', '70711.01.02', '70711.02.01']) {
+    const episode = {
+      ...parent,
+      'کد قسمت': episodeCode,
+      'اسم فیلم': `قسمت ${episodeCode.slice(-2)}`,
+      'Telegram File ID': `private-${episodeCode}`,
+    };
+    source['سریال'].rows.push(headers.map((header) => episode[header]));
+  }
+  const reader = makeReader({ source });
+  const result = await reader.listSeriesSeasons();
+  assert.equal(result.seasons.length, 2);
+  assert.deepEqual(result.seasons.map(({ season, episodeCount }) => ({ season, episodeCount })), [
+    { season: 1, episodeCount: 2 },
+    { season: 2, episodeCount: 1 },
+  ]);
+  assert.equal(result.seasons[0].seriesTitle, 'سریال فصل‌بندی‌شده');
+  assert.match(result.seasons[0].sourceVersion, /^[A-Za-z0-9_-]{40,64}$/);
+  assert.equal(JSON.stringify(result).includes('private-70711'), false);
+});
+
+test('admin content reader forwards a versioned season deletion to the source provider', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد قسمت');
+  source['سریال'].rows.forEach((row) => row.push(''));
+  const headers = source['سریال'].headers;
+  const parent = Object.fromEntries(headers.map((header) => [header, '']));
+  Object.assign(parent, { 'کد سریال': '70711', 'اسم فیلم': 'سریال آزمایشی' });
+  source['سریال'].rows.push(headers.map((header) => parent[header]));
+  const episode = { ...parent, 'کد قسمت': '70711.03.01', 'اسم فیلم': 'قسمت اول', 'Telegram File ID': 'private-file' };
+  source['سریال'].rows.push(headers.map((header) => episode[header]));
+  let received;
+  const sheetProvider = {
+    async readSheet(name) {
+      return { headers: [...source[name].headers], rows: source[name].rows.map((row) => [...row]) };
+    },
+    async deleteSeriesSeasonRows(options) {
+      received = options;
+      return { deleted: true, deletedRows: 1, deletedEpisodes: 1 };
+    },
+  };
+  const reader = makeReader({ source, sheetProvider });
+  const season = (await reader.listSeriesSeasons()).seasons[0];
+  const deleted = await reader.deleteSeriesSeason('70711', 3, { sourceVersion: season.sourceVersion });
+  assert.equal(received.seriesCode, '70711');
+  assert.equal(received.season, 3);
+  assert.equal(received.expectedVersion, season.sourceVersion);
+  assert.equal(deleted.deletedEpisodes, 1);
+});
+
 test('deletes a series, its episode rows, and its Firestore metadata as one managed operation', async () => {
   const source = structuredClone(sheets);
   source['سریال'].headers.push('کد قسمت');

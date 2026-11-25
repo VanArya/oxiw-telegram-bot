@@ -318,6 +318,52 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     async listSeriesEpisodes() {
       return seriesEpisodeReader.listAllEpisodes();
     },
+    async listSeriesSeasons() {
+      const result = await seriesEpisodeReader.listAllEpisodes();
+      const grouped = new Map();
+      for (const episode of result.episodes) {
+        const season = Number(episode.season);
+        if (!Number.isInteger(season) || season < 1 || season > 99) continue;
+        const key = `${episode.seriesCode}:${season}`;
+        if (!grouped.has(key)) {
+          grouped.set(key, {
+            seriesCode: episode.seriesCode,
+            seriesTitle: episode.seriesTitle,
+            season,
+            episodes: [],
+          });
+        }
+        grouped.get(key).episodes.push(episode);
+      }
+      const seasons = [...grouped.values()].map((group) => {
+        const episodes = group.episodes.sort((a, b) => a.episode - b.episode);
+        const fingerprint = episodes.map(({ episodeCode, sourceVersion }) => ({
+          episodeCode, sourceVersion,
+        })).sort((a, b) => a.episodeCode.localeCompare(b.episodeCode));
+        return Object.freeze({
+          seriesCode: group.seriesCode,
+          seriesTitle: group.seriesTitle,
+          season: group.season,
+          episodeCount: episodes.length,
+          firstEpisode: episodes[0].episode,
+          lastEpisode: episodes[episodes.length - 1].episode,
+          sourceVersion: crypto.createHash('sha256').update(JSON.stringify(fingerprint)).digest('base64url'),
+        });
+      }).sort((a, b) =>
+        a.seriesCode.localeCompare(b.seriesCode) || a.season - b.season);
+      return Object.freeze({
+        seasons: Object.freeze(seasons),
+        invalidRows: Object.freeze(result.invalidRows),
+      });
+    },
+    async deleteSeriesSeason(seriesCode, season, { sourceVersion } = {}) {
+      if (typeof sheetProvider.deleteSeriesSeasonRows !== 'function') {
+        throw new Error('Series season deletion is not configured.');
+      }
+      return sheetProvider.deleteSeriesSeasonRows({
+        seriesCode, season, expectedVersion: sourceVersion,
+      });
+    },
     async getSeriesEpisode(episodeCode) {
       return seriesEpisodeReader.getEpisode(episodeCode);
     },

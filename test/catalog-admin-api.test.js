@@ -847,6 +847,61 @@ test('registered episodes API returns the episode list to admin readers', async 
 
 
 
+test('admin API lists season groups and supports permission-checked versioned season deletion', async () => {
+  const sourceVersion = 'c'.repeat(43);
+  const calls = [];
+  const contentReader = {
+    async listSeriesSeasons() {
+      return { seasons: [{
+        seriesCode: '70711', seriesTitle: 'سریال فصل‌دار', season: 2,
+        episodeCount: 4, firstEpisode: 1, lastEpisode: 4, sourceVersion,
+      }], invalidRows: [] };
+    },
+    async deleteSeriesSeason(seriesCode, season, options) {
+      calls.push({ seriesCode, season, options });
+      if (options.sourceVersion !== sourceVersion) throw Object.assign(new Error('Stale season'), { code: 'VERSION_CONFLICT' });
+      return { deleted: true, deletedRows: 4, deletedEpisodes: 4 };
+    },
+  };
+  const app = createCatalogAdminApi({
+    writableProvider: createStore(),
+    contentReader,
+    verifyAdminPrincipal: () => ({ authenticated: true, subjectId: 'fixture-admin' }),
+    roleProvider: createInMemoryCatalogAdminRoleProvider({ 'fixture-admin': ['administrator'] }),
+    authorizePermission: roleAuthorizer,
+  });
+  await withServer(app, async (baseUrl) => {
+    const listed = await json(await fetch(`${baseUrl}${ADMIN_PATH}/seasons`));
+    assert.equal(listed.status, 200);
+    assert.equal(listed.body.meta.total, 1);
+    assert.equal(listed.body.data[0].episodeCount, 4);
+
+    const deleted = await json(await fetch(`${baseUrl}${ADMIN_PATH}/seasons/70711/2`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion }),
+    }));
+    assert.equal(deleted.status, 200, JSON.stringify(deleted.body));
+    assert.equal(deleted.body.data.deletedEpisodes, 4);
+    assert.deepEqual(calls[0], {
+      seriesCode: '70711', season: 2, options: { sourceVersion },
+    });
+
+    const stale = await json(await fetch(`${baseUrl}${ADMIN_PATH}/seasons/70711/2`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion: 'd'.repeat(43) }),
+    }));
+    assert.equal(stale.status, 412);
+    const invalid = await json(await fetch(`${baseUrl}${ADMIN_PATH}/seasons/not-a-code/2`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sourceVersion }),
+    }));
+    assert.equal(invalid.status, 400);
+  });
+});
+
 test('admin API supports source deletion and episode detail, edit, and delete operations', async () => {
   const sourceVersion = 'a'.repeat(43);
   const episodeCode = '70711.01.13';

@@ -44,6 +44,7 @@ let contentStats = null;
 let contentFilterOptionsLoaded = false;
 let currentItems = [];
 let registeredEpisodes = [];
+let registeredSeasons = [];
 let selectedEpisodeSource = null;
 const selectedContentIds = new Set();
 let selectedItem = null;
@@ -174,6 +175,7 @@ function messageForError(error) {
     ADMIN_ROLE_MANAGEMENT_NOT_CONFIGURED: 'مدیریت مدیران هنوز به منبع مورداعتماد متصل نشده است.',
     EPISODE_REGISTRATION_UNAVAILABLE: 'ثبت قسمت سریال هنوز به منبع شیت متصل نشده است.',
     EPISODE_LIST_UNAVAILABLE: 'فهرست قسمت‌های ثبت‌شده موقتاً در دسترس نیست.',
+    SEASON_LIST_UNAVAILABLE: 'فهرست فصل‌ها موقتاً در دسترس نیست.',
     SOURCE_DELETE_UNAVAILABLE: 'حذف ردیف از شیت در دسترس نیست یا ساختار شیت با رکورد سازگار نیست.',
     DELETE_ROLLBACK_FAILED: 'حذف منبع کامل نشد و بازیابی فراداده هم ناموفق بود؛ با پشتیبانی تماس بگیرید.',
     SOURCE_COLUMN_UNAVAILABLE: 'ستون‌های لازم برای ثبت قسمت در شیت سریال موجود نیستند.',
@@ -282,6 +284,7 @@ function selectView(view, kind) {
     overview: loadOverview,
     content: loadContent,
     episodes: loadEpisodes,
+    seasons: loadSeasons,
     categories: loadCategories,
     countries: () => loadTaxonomy('country'),
     genres: () => loadTaxonomy('genre'),
@@ -783,10 +786,92 @@ async function loadEpisodes() {
       ? `هشدار: ${invalidRows.toLocaleString('fa-IR')} ردیف قسمت با اطلاعات ناقص در شیت وجود دارد و در فهرست نمایش داده نشده است.`
       : '');
     renderRegisteredEpisodes();
+    void loadSeasons();
   } catch (error) {
     reportApiError(error, 'فهرست قسمت‌های ثبت‌شده بارگذاری نشد.');
   } finally {
     setBusy(button, false);
+  }
+}
+
+function renderRegisteredSeasons() {
+  const tbody = $('#seasons-rows');
+  if (!tbody) return;
+  tbody.replaceChildren();
+  if (!registeredSeasons.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = 6;
+    cell.className = 'empty-message';
+    cell.textContent = 'هنوز فصلی با قسمت ثبت‌شده وجود ندارد.';
+    row.append(cell);
+    tbody.append(row);
+  } else {
+    registeredSeasons.forEach((season) => {
+      const row = document.createElement('tr');
+      const values = [
+        season.seriesTitle || 'سریال بدون عنوان',
+        season.seriesCode || '—',
+        Number(season.season).toLocaleString('fa-IR'),
+        Number(season.episodeCount).toLocaleString('fa-IR'),
+        `${Number(season.firstEpisode).toLocaleString('fa-IR')} تا ${Number(season.lastEpisode).toLocaleString('fa-IR')}`,
+      ];
+      values.forEach((value, index) => {
+        const cell = document.createElement('td');
+        cell.textContent = String(value);
+        if (index === 1) cell.className = 'mono';
+        row.append(cell);
+      });
+      const actions = document.createElement('td');
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'button button-small button-danger';
+      remove.textContent = 'حذف فصل';
+      remove.disabled = !hasPermission('catalog.metadata.write');
+      remove.addEventListener('click', () => void deleteRegisteredSeason(season));
+      actions.append(remove);
+      row.append(actions);
+      tbody.append(row);
+    });
+  }
+  setText($('#seasons-count'), `${registeredSeasons.length.toLocaleString('fa-IR')} فصل`);
+}
+
+async function loadSeasons() {
+  const button = $('[data-refresh="seasons"]');
+  setBusy(button, true);
+  try {
+    const { body } = await api(`${API_ROOT}/seasons`);
+    registeredSeasons = Array.isArray(body.data) ? body.data : [];
+    const invalidRows = Number(body.meta?.invalidRows) || 0;
+    const warning = $('#seasons-warning');
+    warning.hidden = invalidRows === 0;
+    setText(warning, invalidRows
+      ? `هشدار: ${invalidRows.toLocaleString('fa-IR')} ردیف قسمت ناقص است و در شمارش فصل‌ها لحاظ نشده است.`
+      : '');
+    renderRegisteredSeasons();
+  } catch (error) {
+    reportApiError(error, 'فهرست فصل‌ها بارگذاری نشد.');
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function deleteRegisteredSeason(season) {
+  if (!hasPermission('catalog.metadata.write')) return;
+  const title = `فصل ${season.season} از سریال «${season.seriesTitle}»`;
+  if (!window.confirm(`${title} و تمام ${season.episodeCount} قسمت آن به‌طور کامل حذف شوند؟ این عملیات قابل بازگشت خودکار نیست.`)) return;
+  try {
+    const path = `${API_ROOT}/seasons/${encodeURIComponent(season.seriesCode)}/${encodeURIComponent(season.season)}`;
+    const { body } = await api(path, {
+      method: 'DELETE',
+      body: JSON.stringify({ sourceVersion: season.sourceVersion }),
+    });
+    await loadEpisodes();
+    await loadSeasons();
+    showToast(`فصل حذف شد؛ ${Number(body.data.deletedEpisodes || 0).toLocaleString('fa-IR')} قسمت حذف شدند.`);
+  } catch (error) {
+    reportApiError(error, 'حذف فصل انجام نشد.');
   }
 }
 
@@ -1865,6 +1950,7 @@ function wireUi() {
     if (action === 'overview') void loadOverview();
     else if (action === 'content') void loadContent();
     else if (action === 'episodes') void loadEpisodes();
+    else if (action === 'seasons') void loadSeasons();
     else if (action === 'categories') void loadCategories();
     else if (action === 'countries') void loadTaxonomy('country');
     else if (action === 'genres') void loadTaxonomy('genre');
@@ -1914,6 +2000,13 @@ function wireUi() {
   $('#dialog-close').addEventListener('click', () => elements.contentDialog.close());
   elements.contentDialog.addEventListener('click', (event) => {
     if (event.target === elements.contentDialog) elements.contentDialog.close();
+  });
+  $('#season-add-episode').addEventListener('click', () => {
+    selectView('episodes');
+    $('#episode-registration-form').reset();
+    setText($('#episode-registration-message'), '');
+    $('#episode-registration-dialog').showModal();
+    $('#episode-series-code').focus();
   });
   $('#episode-new').addEventListener('click', () => {
     setText($('#episode-registration-message'), '');
