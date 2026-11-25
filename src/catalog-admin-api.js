@@ -11,6 +11,7 @@ const {
   ROLES,
 } = require('./catalog-admin-authorization');
 const { normalizeCatalogAdminRoles } = require('./catalog-admin-role-provider');
+const { isProducerCountry } = require('./catalog-producer-country');
 const {
   assertVersionedWritableCatalogMetadataProvider,
 } = require('./catalog-writable-metadata-provider');
@@ -1022,7 +1023,7 @@ function createCatalogAdminApi({
       if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
           typeof body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(body.sourceVersion) ||
           typeof body.title !== 'string' || !body.title.trim() || body.title.length > 200 ||
-          !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
+          !isProducerCountry(body.country) ||
           typeof body.telegramFileId !== 'string' || !body.telegramFileId.trim() || body.telegramFileId.length > 4096 ||
           typeof contentReader?.updateSeriesEpisode !== 'function') {
         throw new CatalogInputError();
@@ -1083,7 +1084,7 @@ function createCatalogAdminApi({
           !Number.isInteger(body.season) || body.season < 1 || body.season > 99 ||
           !Number.isInteger(body.episode) || body.episode < 1 || body.episode > 99 ||
           typeof body.title !== 'string' || body.title.length > 200 ||
-          !['ایران','آمریکا','کره جنوبی','ژاپن','هند','اسپانیا','مصر'].includes(body.country) ||
+          !isProducerCountry(body.country) ||
           typeof body.telegramFileId !== 'string' || !body.telegramFileId.trim() || body.telegramFileId.length > 4096) {
         throw new CatalogInputError();
       }
