@@ -127,6 +127,7 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
   async function loadContents() {
     const snapshots = await Promise.all(SHEETS.map((sheetName) => provider.readSheet(sheetName)));
     const contents = [];
+    const sourceHasProducerCountryHeaderById = new Map();
 
     const seenIds = new Set();
     snapshots.forEach((snapshot, sheetIndex) => {
@@ -165,9 +166,12 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
           );
         }
         seenIds.add(mapped.content.id);
-        // Country, genre, approval, and publication are maintained only in metadata;
-        // similarly named legacy/test source columns are never authoritative.
-        delete mapped.content.countryIds;
+        // The live `سازنده` column is authoritative when present. Metadata country
+        // remains a compatibility fallback only for older sheets without that header.
+        sourceHasProducerCountryHeaderById.set(
+          mapped.content.id,
+          snapshot.headers.includes('سازنده'),
+        );
         delete mapped.content.genreIds;
         mapped.content.approvalStatus = 'unknown';
         mapped.content.publicationStatus = 'unknown';
@@ -210,9 +214,8 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
       try {
         const metadata = await metadataProvider.getContentMetadata(content.id);
 
-        // Metadata mode is authoritative: source-sheet country/status values are
-        // deliberately ignored, including legacy fixture columns.
-        delete content.countryIds;
+        // Genre and publication workflow remain metadata-owned. Producer country
+        // comes from the current sheet schema; old schemas may still fall back to metadata.
         delete content.genreIds;
         if (!validMetadata(metadata, countryIds, genreIds)) {
           content.approvalStatus = 'unknown';
@@ -220,7 +223,9 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
           return content;
         }
 
-        if (metadata.countryIds !== undefined) content.countryIds = [...metadata.countryIds];
+        if (metadata.countryIds !== undefined && !sourceHasProducerCountryHeaderById.get(content.id)) {
+          content.countryIds = [...metadata.countryIds];
+        }
         if (metadata.genreIds !== undefined) content.genreIds = [...metadata.genreIds];
         content.categoryIds = metadata.categoryIds ? [...metadata.categoryIds] : [];
         content.approvalStatus = metadata.approvalStatus;
