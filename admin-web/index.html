@@ -66,10 +66,11 @@
               <button class="nav-item" data-view="content" data-kind="movie" type="button"><span>02</span> فیلم‌ها</button>
               <button class="nav-item" data-view="content" data-kind="series" type="button"><span>03</span> سریال‌ها</button>
               <button class="nav-item" data-view="episodes" data-permission="catalog.admin.read" type="button"><span>04</span> قسمت‌های ثبت‌شده</button>
-              <button class="nav-item" data-view="categories" data-permission="catalog.categories.manage" type="button"><span>04</span> تنظیمات کاتالوگ</button>
-              <button class="nav-item" data-view="audit" type="button"><span>06</span> تاریخچه عملیات</button>
-              <button class="nav-item" data-view="account" type="button"><span>07</span> حساب و دسترسی</button>
-              <button id="managers-nav" class="nav-item" data-view="managers" type="button"><span>08</span> مدیریت مدیران</button>
+              <button class="nav-item" data-view="seasons" data-permission="catalog.admin.read" type="button"><span>05</span> مدیریت فصل‌ها</button>
+              <button class="nav-item" data-view="categories" data-permission="catalog.categories.manage" type="button"><span>06</span> تنظیمات کاتالوگ</button>
+              <button class="nav-item" data-view="audit" type="button"><span>07</span> تاریخچه عملیات</button>
+              <button class="nav-item" data-view="account" type="button"><span>08</span> حساب و دسترسی</button>
+              <button id="managers-nav" class="nav-item" data-view="managers" type="button"><span>09</span> مدیریت مدیران</button>
             </nav>
             <div class="sidebar-note"><span class="status-dot"></span><span>اتصال امن سمت سرور</span></div>
           </aside>
@@ -124,6 +125,27 @@
                   </table>
                 </div>
               </div>
+            </section>
+
+            <section id="view-seasons" class="view">
+              <div class="page-heading">
+                <div><p class="eyebrow">Google Sheets · ساختار مشتق‌شده از قسمت‌ها</p><h1>مدیریت فصل‌ها</h1><p class="muted">هر فصل از شمارهٔ فصل در کد قسمت‌ها شناسایی می‌شود؛ برای ایجاد فصل، نخستین قسمت آن را ثبت کنید.</p></div>
+                <div class="form-actions">
+                  <button id="season-add-episode" data-permission="catalog.metadata.write" class="button button-primary" type="button">ثبت قسمت و ایجاد فصل</button>
+                  <button class="button button-secondary refresh-button" data-refresh="seasons" type="button">به‌روزرسانی</button>
+                </div>
+              </div>
+              <div id="seasons-warning" class="notice warning-panel" role="status" hidden></div>
+              <div class="panel table-panel">
+                <div class="panel-heading"><strong>فصل‌های شناسایی‌شده</strong><span id="seasons-count" class="muted"></span></div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>سریال</th><th>کد سریال</th><th>فصل</th><th>تعداد قسمت</th><th>بازهٔ قسمت‌ها</th><th>عملیات</th></tr></thead>
+                    <tbody id="seasons-rows"><tr><td colspan="6" class="empty-message">برای مشاهده، فهرست را به‌روزرسانی کنید.</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+              <p class="fine-print">حذف فصل، تمام ردیف‌های قسمت‌های همان فصل را به‌صورت دائمی از شیت سریال حذف می‌کند. کد قسمت‌ها تغییرناپذیرند و نام‌گذاری مستقل برای فصل در ساختار فعلی داده وجود ندارد.</p>
             </section>
 
             <section id="view-categories" class="view">
