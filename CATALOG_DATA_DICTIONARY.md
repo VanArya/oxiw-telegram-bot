@@ -58,6 +58,7 @@
 | لینک تریلر | `trailerUrl` | `inferred` | اعتبار URL و سیاست نمایش تأیید نشده است. |
 | پوستر فیلم | مرجع asset/پوستر | `inferred` | نوع مقدار معلوم نیست. |
 | شناسه URL | بدون نگاشت فعلاً | `unknown` | کاربرد و یکتایی روشن نیست. |
+| Telegram File ID | مرجع خصوصی فایل قسمت | `inferred` | در شیت سریال نیز وجود دارد؛ در پاسخ عمومی نمایش داده نمی‌شود. |
 
 ## فیلدهای canonical و وضعیتشان
 
@@ -96,7 +97,7 @@ CatalogMetadataProvider
   listCategories() -> Promise<CategoryDefinition[]>
 ```
 
-کلید metadata همان شناسهٔ عمومی ترکیبی است: `movie:<encoded-systemCode>` یا `series:<encoded-systemCode>`. `systemCode` به رشته تبدیل، Unicode آن به NFC نرمال و فاصله‌های ابتدا/انتها حذف می‌شود؛ حروف بزرگ/کوچک تغییر نمی‌کنند و باقی مقدار با `encodeURIComponent` کدگذاری می‌شود. `kind` فقط `movie` یا `series` است. شناسه به عنوان یا شمارهٔ ردیف وابسته نیست. کد خالی/نامعتبر و تکرار ID در یک نوع، کل snapshot عمومی را با خطای ساختاری امن متوقف می‌کند؛ یک کد در دو نوع، به دو شناسهٔ مجزا می‌رسد. پایداری و عدم تخصیص مجدد کد را مالک تأیید کرده است. `countryIds` و `genreIds` فقط از metadata معتبر و taxonomy فعال می‌آیند؛ دسته‌ها DSL محدود Core را نگه می‌دارند.
+کلید metadata همان شناسهٔ عمومی ترکیبی است: `movie:<encoded-systemCode>` یا `series:<encoded-systemCode>`. `systemCode` برای سینمایی از «کد سیستم» و برای سریال از «کد سریال» می‌آید، به رشته تبدیل، Unicode آن به NFC نرمال و فاصله‌های ابتدا/انتها حذف می‌شود؛ حروف بزرگ/کوچک تغییر نمی‌کنند و باقی مقدار با `encodeURIComponent` کدگذاری می‌شود. `kind` فقط `movie` یا `series` است. شناسه به عنوان یا شمارهٔ ردیف وابسته نیست. کد خالی/نامعتبر و تکرار ID در یک نوع، کل snapshot عمومی را با خطای ساختاری امن متوقف می‌کند؛ یک کد در دو نوع، به دو شناسهٔ مجزا می‌رسد. پایداری و عدم تخصیص مجدد کد را مالک تأیید کرده است. `countryIds` برای schema دارای ستون «سازنده» از همان ستون می‌آید؛ فقط schemaهای قدیمی فاقد این ستون از metadata fallback می‌گیرند. `genreIds` از metadata معتبر می‌آید؛ دسته‌ها DSL محدود Core را نگه می‌دارند.
 
 ### قواعد هویت محتوا و برخوردها
 
@@ -119,7 +120,7 @@ CatalogMetadataProvider
 
 `src/catalog-sheet-mapper.js` یک mapper خالص برای دادهٔ نمونه دارد. `kind` را از نام برگه می‌گیرد، نه ستون مبهم «نوع». شناسهٔ ترکیبی، `title`، سال‌های قابل‌اعتبارسنجی و فیلدهای فعلی را به مدل می‌برد. برای سریال، سال شروع/پایان و مقدار ترکیبی تعداد فصل/قسمت زیر `seriesMetadata` می‌مانند و به `releaseYear` تبدیل نمی‌شوند.
 
-Mapper ردیف‌های قدیمی فاقد ستون کشور را می‌پذیرد و هیچ مقدار کشور، ژانر، تأیید یا انتشار را از Sheet نمی‌سازد؛ حتی ستون‌های هم‌نام در fixture نیز مرجع این فیلدها نیستند. `countryIds`، `genreIds`، `approvalStatus` و `publicationStatus` فقط از metadata provider به مدل اضافه می‌شوند. ساختار Google Sheets تغییر نمی‌کند.
+Mapper ردیف‌های قدیمی فاقد ستون «سازنده» را می‌پذیرد. در schema دارای این ستون، یکی از هفت مقدار شناخته‌شده به `producerCountry` و شناسهٔ ISO متناظر در `countryIds` نگاشت می‌شود؛ مقدار ناشناخته warning امن می‌سازد و کشور تولید را تعیین نمی‌کند. در schema فاقد header، `countryIds` می‌تواند از metadata قدیمی به مدل اضافه شود. `genreIds`، `approvalStatus` و `publicationStatus` از metadata می‌آیند. ساختار و ترتیب ستون‌های Google Sheets تغییر نمی‌کند.
 
 `sourceRecord` کپی داخلی ردیف را برای مهاجرت نگه می‌دارد؛ ممکن است شامل Telegram File ID باشد. `toPublicCatalogDto` با allowlist فیلدها DTO عمومی می‌سازد، ردیف خام را حذف می‌کند و فقط وقتی `approvalStatus=approved` و `publicationStatus=published` هر دو صریح و معتبر باشند DTO می‌دهد. هیچ وضعیت تأیید یا انتشار برای ردیف قدیمی حدس زده نمی‌شود. وضعیت `unknown` یا فقدان هرکدام از دو فیلد عمومی نمی‌شود.
 
@@ -228,7 +229,7 @@ API مدیریتی نسخه را از طریق ETag قوی با قالب `"catal
 
 ### فعال‌سازی آینده در staging و بازگشت
 
-1. مالک منبع metadata و داده‌های taxonomy/approval/publication را تأیید کند؛ مالک پایداری و عدم تخصیص مجدد «کد سیستم» را تأیید کرده است، اما duplicateهای واقعی هنوز باید به‌صورت read-only بررسی شوند. نام شیت‌ها و headerهای فعلی تغییر نمی‌کنند.
+1. ساختار دو شیت و ستون «سازنده» با هفت کشور مجاز از سوی مالک تأیید شده است. منبع وضعیت‌های approval/publication و taxonomy ژانر همچنان جداست؛ duplicateهای واقعی کدها هنوز باید به‌صورت read-only بررسی شوند. نام شیت‌ها و headerهای تأییدشده تغییر نمی‌کنند.
 2. هویت Google فقط‌خواندنی staging برای spreadsheet موجود و دسترسی محدود به metadata store جدا آماده شود. credential و شناسه‌ها خارج از Git نگهداری شوند.
 3. در composition root staging، Google Sheets client به `createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId })` و metadata provider واقعی به `createCatalogSheetAdapter(provider, { metadataProvider })` داده شود. قرارداد شامل `getContentMetadata`, `listTaxonomyTerms`, `listCategories` است؛ در این مرحله فقط provider حافظه‌ای آزمایشی پیاده‌سازی شده است.
 4. با mock و سپس staging، تطبیق ID، هر دو وضعیت مستقل، کشور، DTO allowlist و برابری محتوای عمومی بررسی شود. برای spreadsheet فعلی فقط read و برای metadata تغییرات staging از API مدیریتی مجاز و احراز هویت‌شده انجام شود.
