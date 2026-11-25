@@ -67,3 +67,15 @@ test('season management stays sheet-backed, grouped and version-protected', () =
   assert.match(appSource, /sourceVersion: season\.sourceVersion/);
   assert.match(html, /ثبت قسمت و ایجاد فصل/);
 });
+
+
+test('admin source forms use the seven approved producer countries', () => {
+  assert.match(appSource, /\(نوع\|سازنده\|زبان\|پیشنهادی\)/);
+  assert.match(appSource, /normalizedHeader === 'سازنده'/);
+  assert.match(html, /سازنده<select id="episode-country"/);
+  assert.match(html, /سازنده<select id="episode-edit-country"/);
+  for (const country of ['ایران', 'آمریکا', 'کره جنوبی', 'ژاپن', 'هند', 'مصر', 'اسپانیا']) {
+    assert.ok(appSource.includes(country) || html.includes(country), country);
+  }
+  assert.match(html, /کشور سازنده از همان ستون تعیین می‌شود/);
+});
