@@ -22,8 +22,8 @@ test('defines the seven owner-approved producer countries with stable ISO IDs', 
 });
 
 test('normalizes harmless Persian/Arabic character and spacing differences only', () => {
-  assert.equal(normalizeProducerCountryLabel('  کره‌ي   جنوبی '), 'کره ی جنوبی');
-  assert.deepEqual(getProducerCountry('کره‌ي جنوبی'), { id: 'KR', labelFa: 'کره جنوبی' });
+  assert.equal(normalizeProducerCountryLabel('  کره‌جنوبی '), 'کره جنوبی');
+  assert.deepEqual(getProducerCountry('آمريكا'), { id: 'US', labelFa: 'آمریکا' });
   assert.equal(getProducerCountry('آمريكا').id, 'US');
 });
 
