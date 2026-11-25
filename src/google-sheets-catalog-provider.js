@@ -366,6 +366,56 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     return result;
   };
 
+  provider.deleteSeriesSeasonRows = async function deleteSeriesSeasonRows({
+    seriesCode, season, expectedVersion,
+  } = {}) {
+    if (typeof seriesCode !== 'string' || !/^\d{5}$/.test(seriesCode) ||
+        !Number.isInteger(season) || season < 1 || season > 99 ||
+        typeof expectedVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(expectedVersion)) {
+      throw Object.assign(new Error('Invalid season deletion.'), { code: 'INVALID_INPUT' });
+    }
+    const operation = async () => {
+      const snapshot = await provider.readSheet('سریال');
+      const parentHeader = snapshot.headers.includes('کد سریال') ? 'کد سریال' : 'کد سریال مادر';
+      const episodeHeader = snapshot.headers.includes('کد قسمت') ? 'کد قسمت' : 'کد سیستم';
+      const parentIndex = snapshot.headers.indexOf(parentHeader);
+      const episodeIndex = snapshot.headers.indexOf(episodeHeader);
+      if (parentIndex < 0 || episodeIndex < 0) {
+        throw Object.assign(new Error('Series identity columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
+      }
+      const matches = snapshot.rows.map((row, index) => ({
+        row, index,
+        record: recordFor(snapshot, row),
+        episodeCode: String(row[episodeIndex] ?? '').normalize('NFC').trim(),
+      })).filter(({ row, episodeCode }) => {
+        const parsed = /^(\d{5})\.(\d{2})\.(\d{2})$/.exec(episodeCode);
+        return parsed && parsed[1] === seriesCode &&
+          String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode &&
+          Number(parsed[2]) === season;
+      });
+      if (!matches.length) {
+        throw Object.assign(new Error('Season rows were not found.'), { code: 'ROW_NOT_FOUND' });
+      }
+      const fingerprint = matches.map(({ episodeCode, record }) => ({
+        episodeCode, sourceVersion: versionFor(record),
+      })).sort((a, b) => a.episodeCode.localeCompare(b.episodeCode));
+      if (versionFor(fingerprint) !== expectedVersion) {
+        throw Object.assign(new Error('Season changed since it was loaded.'), { code: 'VERSION_CONFLICT' });
+      }
+      await deleteSheetRows('سریال', matches.map(({ index }) => index + 2));
+      return Object.freeze({
+        deleted: true,
+        deletedRows: matches.length,
+        deletedEpisodes: matches.length,
+        seriesCode,
+        season,
+      });
+    };
+    const result = writeQueue.then(operation, operation);
+    writeQueue = result.catch(() => undefined);
+    return result;
+  };
+
   provider.getSheetSchema = async function getSheetSchema(sheetName) {
     const snapshot = await provider.readSheet(sheetName);
     return Object.freeze([...snapshot.headers]);
