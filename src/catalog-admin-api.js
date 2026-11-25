@@ -955,6 +955,56 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.get(`${BASE_PATH}/seasons`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (typeof contentReader?.listSeriesSeasons !== 'function') {
+      return sendError(res, 503, 'SEASON_LIST_UNAVAILABLE', 'فهرست فصل‌ها پیکربندی نشده است.');
+    }
+    try {
+      const result = await contentReader.listSeriesSeasons();
+      const seasons = Array.isArray(result?.seasons) ? result.seasons : [];
+      const invalidRows = Array.isArray(result?.invalidRows) ? result.invalidRows.length : 0;
+      return res.json({ data: seasons, meta: { total: seasons.length, invalidRows } });
+    } catch (error) {
+      if (error?.code === 'EPISODE_COLUMNS_UNAVAILABLE') {
+        return sendError(res, 409, 'SOURCE_COLUMN_UNAVAILABLE', 'ستون‌های لازم برای خواندن فصل‌ها در شیت سریال پیدا نشدند.');
+      }
+      return sendKnownError(res, error);
+    }
+  }));
+
+  app.delete(`${BASE_PATH}/seasons/:seriesCode/:season`, requirePermission(PERMISSIONS.METADATA_WRITE), parseJson, asyncRoute(async (req, res) => {
+    try {
+      requireBodyKeys(req.body, ['sourceVersion']);
+      const season = /^\d{1,2}$/.test(req.params.season) ? Number(req.params.season) : NaN;
+      if (!/^\d{5}$/.test(req.params.seriesCode) ||
+          !Number.isInteger(season) || season < 1 || season > 99 ||
+          typeof req.body.sourceVersion !== 'string' || !/^[A-Za-z0-9_-]{40,64}$/.test(req.body.sourceVersion) ||
+          typeof contentReader?.deleteSeriesSeason !== 'function') {
+        throw new CatalogInputError();
+      }
+      const deleted = await contentReader.deleteSeriesSeason(req.params.seriesCode, season, {
+        sourceVersion: req.body.sourceVersion,
+      });
+      return res.json({ data: {
+        deleted: true,
+        deletedRows: deleted?.deletedRows || 0,
+        deletedEpisodes: deleted?.deletedEpisodes || deleted?.deletedRows || 0,
+      } });
+    } catch (error) {
+      if (error instanceof CatalogInputError || error?.code === 'INVALID_INPUT') {
+        return sendError(res, 400, 'INVALID_INPUT', 'اطلاعات حذف فصل معتبر نیست.');
+      }
+      if (error?.code === 'VERSION_CONFLICT') {
+        return sendError(res, 412, 'PRECONDITION_FAILED', 'قسمت‌های این فصل هم‌زمان تغییر کرده‌اند؛ فهرست را تازه‌سازی کنید.');
+      }
+      if (error?.code === 'ROW_NOT_FOUND') return sendError(res, 404, 'NOT_FOUND', 'فصل موردنظر پیدا نشد.');
+      if (error?.code === 'COLUMN_UNAVAILABLE' || error?.code === 'DELETE_NOT_CONFIGURED') {
+        return sendError(res, 409, 'SOURCE_DELETE_UNAVAILABLE', 'حذف فصل با ساختار فعلی شیت امکان‌پذیر نیست.');
+      }
+      throw error;
+    }
+  }));
+
   app.get(`${BASE_PATH}/episodes/:episodeCode`, requirePermission(PERMISSIONS.METADATA_WRITE), asyncRoute(async (req, res) => {
     if (!/^\d{5}\.\d{2}\.\d{2}$/.test(req.params.episodeCode) ||
         typeof contentReader?.getSeriesEpisode !== 'function') {
