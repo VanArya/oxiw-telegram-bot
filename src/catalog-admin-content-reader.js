@@ -466,7 +466,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       if (typeof sheetProvider.createCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
       const schema = await this.getSheetSchema(kind);
       if (!schema) return null;
-      if (!isProducerCountry(fields?.['سازنده'])) {
+      if (schema.headers.includes('سازنده') && !isProducerCountry(fields?.['سازنده'])) {
         throw Object.assign(new Error('Invalid producer country.'), { code: 'INVALID_INPUT' });
       }
       const candidate = Object.fromEntries(schema.headers.map((header) => [header, fields[header] ?? '']));
