@@ -65,5 +65,5 @@ test('season management stays sheet-backed, grouped and version-protected', () =
   assert.match(appSource, /\$\{API_ROOT\}\/seasons/);
   assert.match(appSource, /deleteRegisteredSeason/);
   assert.match(appSource, /sourceVersion: season\.sourceVersion/);
-  assert.match(appSource, /ثبت قسمت و ایجاد فصل/);
+  assert.match(html, /ثبت قسمت و ایجاد فصل/);
 });
