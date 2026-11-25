@@ -248,3 +248,24 @@ test('does not fall back to legacy country metadata when the current سازند�
   assert.equal(results.length, 1);
   assert.equal(results[0].countries, undefined);
 });
+
+
+test('stale legacy country metadata cannot invalidate approval or publication for current سازنده sheets', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': {
+      headers: ['کد سیستم', 'اسم فیلم', 'سال', 'سازنده', 'Telegram File ID'],
+      rows: [['producer-egypt', 'فیلم مصری', '2024', 'مصر', 'private-file']],
+    },
+    'سریال': { headers: ['کد سریال', 'اسم فیلم', 'کد قسمت', 'Telegram File ID'], rows: [] },
+  });
+  const metadata = createFixtureMetadataProvider({
+    [createCatalogContentId('movie', 'producer-egypt')]: {
+      approvalStatus: 'approved', publicationStatus: 'published',
+      countryIds: ['EG'], genreIds: ['drama'],
+    },
+  });
+
+  const results = await createAdapter(provider, metadata).listItems();
+  assert.equal(results.length, 1);
+  assert.deepEqual(results[0].countries, [{ id: 'EG', labelFa: 'مصر' }]);
+});
