@@ -208,3 +208,26 @@ test('rejects unknown sheets and invalid row structures', () => {
   assert.throws(() => mapCatalogSheetRow('سینمایی ایرانی', movieRow), /Unsupported catalog sheet/);
   assert.throws(() => mapCatalogSheetRow('سینمایی', []), /Row must be an object/);
 });
+
+
+test('maps the exact سازنده header to a canonical country ID and public label', () => {
+  const mapped = mapCatalogSheetRow('سینمایی', { ...movieRow, 'سازنده': 'کره جنوبی' });
+  assert.deepEqual(mapped.content.countryIds, ['KR']);
+  assert.equal(mapped.content.producerCountry, 'کره جنوبی');
+  assert.deepEqual(mapped.mappingWarnings, []);
+
+  mapped.content.approvalStatus = 'approved';
+  mapped.content.publicationStatus = 'published';
+  assert.deepEqual(toPublicCatalogDto(mapped).countries, [
+    { id: 'KR', labelFa: 'کره جنوبی' },
+  ]);
+});
+
+test('does not classify an unknown producer country and records a safe warning', () => {
+  const mapped = mapCatalogSheetRow('سینمایی', { ...movieRow, 'سازنده': 'انگلستان' });
+  assert.equal(mapped.content.countryIds, undefined);
+  assert.equal(mapped.content.producerCountry, undefined);
+  assert.deepEqual(mapped.mappingWarnings, [
+    { field: 'سازنده', code: 'UNKNOWN_PRODUCER_COUNTRY' },
+  ]);
+});
