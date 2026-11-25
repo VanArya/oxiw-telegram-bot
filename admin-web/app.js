@@ -1051,9 +1051,10 @@ function renderSheetFields(container, headers, record = {}, { create = false, fi
       container.append(label);
       return;
     }
-    const dropdownField = /^(نوع|زبان|پیشنهادی)$/.test(normalizedHeader);
+    const dropdownField = /^(نوع|سازنده|زبان|پیشنهادی)$/.test(normalizedHeader);
     const options = dropdownField
-      ? (configuredOptions || (normalizedHeader === 'نوع' ? ['سینمایی', 'سریال'] : []))
+      ? (configuredOptions || (normalizedHeader === 'نوع' ? ['سینمایی', 'سریال'] : normalizedHeader === 'سازنده'
+        ? ['ایران', 'آمریکا', 'کره جنوبی', 'ژاپن', 'هند', 'مصر', 'اسپانیا'] : []))
       : [];
     let control;
     if (dropdownField) {
@@ -1073,7 +1074,8 @@ function renderSheetFields(container, headers, record = {}, { create = false, fi
     control.maxLength = 20000;
     control.dataset.sourceHeader = header;
     control.setAttribute('aria-label', header);
-    if (header === 'کد سیستم' || header === 'اسم فیلم') control.required = true;
+    if (['کد سیستم', 'کد سریال', 'اسم فیلم'].includes(normalizedHeader) ||
+        (create && normalizedHeader === 'سازنده')) control.required = true;
     if (/Telegram|File ID|URL|لینک|شناسه|کد/i.test(header)) control.dir = 'ltr';
     label.append(control);
     container.append(label);

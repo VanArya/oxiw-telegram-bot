@@ -6,6 +6,7 @@ const YEAR_MIN = 1800;
 const YEAR_MAX = 3000;
 const { createCatalogContentId } = require('./catalog-content-identity');
 const { isPubliclyVisible } = require('./catalog-core');
+const { PRODUCER_COUNTRIES, getProducerCountry } = require('./catalog-producer-country');
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -89,11 +90,23 @@ function mapCatalogSheetRow(sheetName, row) {
     }
   }
 
+  const producerCountryValue = row['سازنده'];
+  const producerCountry = getProducerCountry(producerCountryValue);
+  const mappingWarnings = [];
+  if (producerCountry) {
+    content.producerCountry = producerCountry.labelFa;
+    content.countryIds = [producerCountry.id];
+  } else if (typeof producerCountryValue === 'string' && producerCountryValue.trim() !== '') {
+    // Unknown values are preserved in the protected source row for admin repair,
+    // but never used to classify content or silently mapped to another country.
+    mappingWarnings.push({ field: 'سازنده', code: 'UNKNOWN_PRODUCER_COUNTRY' });
+  }
+
   // Keep the source row for a controlled migration adapter. Never expose this
   // object through the public Catalog API or log it; it may contain file IDs.
   return {
     content,
-    mappingWarnings: [],
+    mappingWarnings,
     sourceRecord: { ...row },
     sourceSheet: sheetName,
   };
@@ -115,11 +128,17 @@ function toPublicCatalogDto(mappedRecord, { countryLabels = {}, genreLabels = {}
   if (Number.isInteger(content.releaseYear)) {
     dto.releaseYear = content.releaseYear;
   }
+  const producerCountryLabels = Object.fromEntries(
+    PRODUCER_COUNTRIES.map(({ id, labelFa }) => [id, labelFa]),
+  );
+  const effectiveCountryLabels = { ...countryLabels, ...producerCountryLabels };
   if (
     Array.isArray(content.countryIds) &&
-    content.countryIds.every((id) => Object.hasOwn(countryLabels, id))
+    content.countryIds.every((id) => Object.hasOwn(effectiveCountryLabels, id))
   ) {
-    dto.countries = content.countryIds.map((id) => ({ id, labelFa: countryLabels[id] }));
+    dto.countries = content.countryIds.map((id) => ({
+      id, labelFa: effectiveCountryLabels[id],
+    }));
   }
   if (
     Array.isArray(content.genreIds) &&

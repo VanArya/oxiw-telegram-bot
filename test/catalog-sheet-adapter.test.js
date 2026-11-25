@@ -206,3 +206,66 @@ test('public catalog adapter skips dotted episode codes from public items', asyn
   assert.equal(results.some((item) => item.id === 'series:70711.01.01'), false);
   assert.equal(results.some((item) => item.id === 'series:70711'), true);
 });
+
+
+test('uses سازنده from the current sheet as the authoritative producer country', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': {
+      headers: ['کد سیستم', 'اسم فیلم', 'سال', 'سازنده', 'Telegram File ID'],
+      rows: [['producer-korea', 'فیلم کره‌ای', '2024', 'کره جنوبی', 'private-file']],
+    },
+    'سریال': { headers: ['کد سریال', 'اسم فیلم', 'کد قسمت', 'Telegram File ID'], rows: [] },
+  });
+  const metadata = createFixtureMetadataProvider({
+    [createCatalogContentId('movie', 'producer-korea')]: {
+      approvalStatus: 'approved', publicationStatus: 'published',
+      countryIds: ['IR'], genreIds: ['drama'],
+    },
+  });
+
+  const results = await createAdapter(provider, metadata).listItems();
+  assert.equal(results.length, 1);
+  assert.deepEqual(results[0].countries, [{ id: 'KR', labelFa: 'کره جنوبی' }]);
+  assert.equal(JSON.stringify(results).includes('private-file'), false);
+});
+
+test('does not fall back to legacy country metadata when the current سازنده column is blank', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': {
+      headers: ['کد سیستم', 'اسم فیلم', 'سال', 'سازنده', 'Telegram File ID'],
+      rows: [['producer-blank', 'فیلم بدون سازنده', '2024', '', 'private-file']],
+    },
+    'سریال': { headers: ['کد سریال', 'اسم فیلم', 'کد قسمت', 'Telegram File ID'], rows: [] },
+  });
+  const metadata = createFixtureMetadataProvider({
+    [createCatalogContentId('movie', 'producer-blank')]: {
+      approvalStatus: 'approved', publicationStatus: 'published',
+      countryIds: ['IR'], genreIds: ['drama'],
+    },
+  });
+
+  const results = await createAdapter(provider, metadata).listItems();
+  assert.equal(results.length, 1);
+  assert.equal(results[0].countries, undefined);
+});
+
+
+test('stale legacy country metadata cannot invalidate approval or publication for current سازنده sheets', async () => {
+  const provider = createFixtureProvider({
+    'سینمایی': {
+      headers: ['کد سیستم', 'اسم فیلم', 'سال', 'سازنده', 'Telegram File ID'],
+      rows: [['producer-egypt', 'فیلم مصری', '2024', 'مصر', 'private-file']],
+    },
+    'سریال': { headers: ['کد سریال', 'اسم فیلم', 'کد قسمت', 'Telegram File ID'], rows: [] },
+  });
+  const metadata = createFixtureMetadataProvider({
+    [createCatalogContentId('movie', 'producer-egypt')]: {
+      approvalStatus: 'approved', publicationStatus: 'published',
+      countryIds: ['EG'], genreIds: ['drama'],
+    },
+  });
+
+  const results = await createAdapter(provider, metadata).listItems();
+  assert.equal(results.length, 1);
+  assert.deepEqual(results[0].countries, [{ id: 'EG', labelFa: 'مصر' }]);
+});

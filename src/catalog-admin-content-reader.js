@@ -7,6 +7,7 @@ const { isCanonicalContentId, validateCatalogContentMetadata } = require('./cata
 const { createCatalogContentId } = require('./catalog-content-identity');
 const { isSeriesEpisodeRecord } = require('./series-episode-record');
 const { createSeriesEpisodeSheetReader } = require('./series-episode-sheet-reader');
+const { PRODUCER_COUNTRIES, isProducerCountry } = require('./catalog-producer-country');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 const CODE_HEADER = (sheetName, headers = []) => sheetName === 'سریال'
@@ -141,7 +142,10 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
     title: content.title,
     approvalStatus: metadata?.approvalStatus ?? 'unknown',
     publicationStatus: metadata?.publicationStatus ?? 'unknown',
-    countryIds: metadata?.countryIds ? [...metadata.countryIds] : [],
+    countryIds: Object.hasOwn(record, 'سازنده')
+      ? [...(content.countryIds || [])]
+      : (metadata?.countryIds ? [...metadata.countryIds] : []),
+    ...(content.producerCountry ? { producerCountry: content.producerCountry } : {}),
     genreIds: metadata?.genreIds ? [...metadata.genreIds] : [],
     directCategoryIds: metadata?.categoryIds ? [...metadata.categoryIds] : [],
     hasMetadata: Boolean(metadata),
@@ -149,7 +153,7 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
     sourceRowNumber,
     sourceVersion: crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url'),
     sourceAvailableFields: Object.entries({ title: 'اسم فیلم', releaseYear: 'سال', startYear: 'سال شروع',
-      endYear: 'سال پایان', seasonsAndEpisodes: 'تعداد فصل و قسمت', synopsis: 'خلاصه داستان',
+      endYear: 'سال پایان', seasonsAndEpisodes: 'تعداد فصل و قسمت', producerCountry: 'سازنده', synopsis: 'خلاصه داستان',
       cast: 'بازیگران', language: 'زبان', rating: 'امتیاز', trailerUrl: 'لینک تریلر', posterUrl: 'پوستر فیلم' })
       .filter(([, header]) => Object.hasOwn(record, header)).map(([field]) => field),
   };
@@ -252,7 +256,10 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
   }
 
   async function readFieldOptions() {
-    const options = { 'نوع': ['سینمایی', 'سریال'] };
+    const options = {
+      'نوع': ['سینمایی', 'سریال'],
+      'سازنده': PRODUCER_COUNTRIES.map(({ labelFa }) => labelFa),
+    };
     for (const sheetName of ['سینمایی', 'سریال']) {
       const snapshot = validateSnapshot(sheetName, await sheetProvider.readSheet(sheetName));
       for (const header of ['ژانر', 'زبان', 'پیشنهادی']) {
@@ -459,6 +466,9 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       if (typeof sheetProvider.createCatalogRow !== 'function') throw new Error('Catalog source writer is not configured.');
       const schema = await this.getSheetSchema(kind);
       if (!schema) return null;
+      if (schema.headers.includes('سازنده') && !isProducerCountry(fields?.['سازنده'])) {
+        throw Object.assign(new Error('Invalid producer country.'), { code: 'INVALID_INPUT' });
+      }
       const candidate = Object.fromEntries(schema.headers.map((header) => [header, fields[header] ?? '']));
       try { mapCatalogSheetRow(schema.sheetName, candidate); } catch {
         throw Object.assign(new Error('Invalid catalog source row.'), { code: 'INVALID_INPUT' });
@@ -480,6 +490,11 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       if (!current) return null;
       const record = { ...current.record };
       for (const [header, value] of Object.entries(fields)) record[header] = String(value);
+      if (Object.hasOwn(fields, 'سازنده') &&
+          String(record['سازنده'] ?? '') !== String(current.record['سازنده'] ?? '') &&
+          !isProducerCountry(record['سازنده'])) {
+        throw Object.assign(new Error('Invalid producer country.'), { code: 'INVALID_INPUT' });
+      }
       const codeHeader = CODE_HEADER(current.sourceSheet, Object.keys(current.record));
       const nextSystemCode = String(record[codeHeader] ?? '').normalize('NFC').trim();
       if (!nextSystemCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
