@@ -56,3 +56,14 @@ test('manager administration stays owner-gated and uses the manager APIs safely'
 test('source create form reads every generated field, not only the first', () => {
   assert.match(appSource, /container\.querySelectorAll\('\[data-source-header\]'\)\.forEach/);
 });
+
+
+test('season management stays sheet-backed, grouped and version-protected', () => {
+  assert.match(html, /data-view="seasons"/);
+  assert.match(html, /id="view-seasons"/);
+  assert.match(html, /id="seasons-rows"/);
+  assert.match(appSource, /\$\{API_ROOT\}\/seasons/);
+  assert.match(appSource, /deleteRegisteredSeason/);
+  assert.match(appSource, /sourceVersion: season\.sourceVersion/);
+  assert.match(appSource, /ثبت قسمت و ایجاد فصل/);
+});
