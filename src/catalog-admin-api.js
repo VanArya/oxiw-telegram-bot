@@ -893,6 +893,9 @@ function createCatalogAdminApi({
 
   app.put(`${BASE_PATH}/taxonomies/:type/:termId`, requirePermission(PERMISSIONS.TAXONOMIES_MANAGE), parseJson, asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+    if (req.params.type === 'country') {
+      return sendError(res, 409, 'PRODUCER_COUNTRY_FIXED', 'کشورهای سازنده مطابق ستون «سازنده» و فهرست هفت‌گانه ثابت هستند.');
+    }
     const precondition = readMutationPrecondition(req, res, `taxonomy-${req.params.type}`, req.params.termId);
     if (!precondition || res.headersSent) return;
     const body = validateCatalogTaxonomyTerm(req.params.type, req.params.termId, req.body);
@@ -924,6 +927,9 @@ function createCatalogAdminApi({
 
   app.delete(`${BASE_PATH}/taxonomies/:type/:termId`, requirePermission(PERMISSIONS.TAXONOMIES_MANAGE), asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+    if (req.params.type === 'country') {
+      return sendError(res, 409, 'PRODUCER_COUNTRY_FIXED', 'حذف کشورهای سازنده مجاز نیست؛ هفت مقدار ثابت در ستون «سازنده» استفاده می‌شوند.');
+    }
     const resourceType = `taxonomy-${req.params.type}`;
     const precondition = readIfMatch(req, res, resourceType, req.params.termId);
     if (!precondition || res.headersSent) return;
