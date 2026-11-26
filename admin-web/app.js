@@ -964,6 +964,37 @@ async function deleteEpisodeFromEditor() {
   }
 }
 
+async function loadSourceDiagnostics(output, button) {
+  setBusy(button, true);
+  button.textContent = 'در حال بررسی شیت‌ها…';
+  try {
+    const { body } = await api(`${API_ROOT}/diagnostics/source-rows`);
+    const rows = Array.isArray(body.data) ? body.data : [];
+    const meta = body.meta || {};
+    const lines = [
+      `تعداد کل ردیف‌های نامعتبر: ${Number(meta.total || 0).toLocaleString('fa-IR')}`,
+      `سینمایی: ${Number(meta.bySheet?.['سینمایی'] || 0).toLocaleString('fa-IR')} · سریال: ${Number(meta.bySheet?.['سریال'] || 0).toLocaleString('fa-IR')}`,
+      'شناسه‌های جایگزین فقط برای بررسی نمایش داده می‌شوند؛ این گزارش هیچ داده‌ای را تغییر نمی‌دهد.',
+    ];
+    rows.forEach((row) => {
+      const candidates = Object.entries(row.codeCandidates || {})
+        .map(([field, value]) => `${field}=${value}`)
+        .join(' | ') || 'هیچ شناسهٔ جایگزینی پیدا نشد';
+      const present = row.otherContentFieldsPresent?.join('، ') || '—';
+      lines.push(`• ${row.sheetName} · ردیف ${row.rowNumber} · ${row.fieldName || row.validationIssue} · عنوان: ${row.titlePresent ? 'دارد' : 'خالی'} · ${candidates} · فیلدهای دیگر: ${present}`);
+    });
+    if (meta.truncated) lines.push('گزارش به ۵۰۰ ردیف محدود شده است.');
+    output.textContent = lines.join('\n');
+    output.hidden = false;
+    button.textContent = 'به‌روزرسانی گزارش';
+  } catch (error) {
+    reportApiError(error);
+    button.textContent = 'تلاش دوباره';
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function loadContent() {
   const button = $('#content-search-button');
   setBusy(button, true);
@@ -979,10 +1010,21 @@ async function loadContent() {
     contentTotal = body.meta.total;
     contentStats = body.meta.stats;
     const invalidSourceRows = Number(body.meta.invalidSourceRows) || 0;
+    elements.contentSourceWarning.replaceChildren();
     elements.contentSourceWarning.hidden = invalidSourceRows === 0;
-    setText(elements.contentSourceWarning, invalidSourceRows
-      ? `هشدار: ${invalidSourceRows.toLocaleString('fa-IR')} ردیف نامعتبر از شیت نادیده گرفته شد. فهرست موارد سالم نمایش داده شده است؛ برای شناسایی دقیق ردیف‌ها، لاگ سرویس را بررسی کنید.`
-      : '');
+    if (invalidSourceRows > 0) {
+      const message = document.createElement('span');
+      message.textContent = `هشدار: ${invalidSourceRows.toLocaleString('fa-IR')} ردیف نامعتبر از شیت نادیده گرفته شد. شناسه‌های جایگزین را در گزارش زیر بررسی کن.`;
+      const detailsButton = document.createElement('button');
+      detailsButton.type = 'button';
+      detailsButton.className = 'button button-small button-secondary';
+      detailsButton.textContent = 'مشاهدهٔ جزئیات ردیف‌ها';
+      const output = document.createElement('pre');
+      output.className = 'fine-print';
+      output.hidden = true;
+      detailsButton.addEventListener('click', () => void loadSourceDiagnostics(output, detailsButton));
+      elements.contentSourceWarning.append(message, detailsButton, output);
+    }
     renderContentRows(currentItems);
     updateBulkControls();
     setText(elements.contentCount, `${contentTotal.toLocaleString('fa-IR')} مورد`);

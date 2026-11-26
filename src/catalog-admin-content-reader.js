@@ -10,9 +10,32 @@ const { createSeriesEpisodeSheetReader } = require('./series-episode-sheet-reade
 const { PRODUCER_COUNTRIES, isProducerCountry } = require('./catalog-producer-country');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
-const CODE_HEADER = (sheetName, headers = []) => sheetName === 'سریال'
-  ? (headers.includes('کد سریال') ? 'کد سریال' : 'کد سیستم')
-  : 'کد سیستم';
+function hasSourceValue(value) {
+  return (typeof value === 'string' && value.trim() !== '') ||
+    (typeof value === 'number' && Number.isFinite(value));
+}
+
+const CODE_HEADER = (sheetName, headers = [], record = null) => {
+  if (sheetName !== 'سریال') return 'کد سیستم';
+  if (record && hasSourceValue(record['کد سریال'])) return 'کد سریال';
+  if (record && hasSourceValue(record['کد سیستم'])) return 'کد سیستم';
+  return headers.includes('کد سریال') ? 'کد سریال' : 'کد سیستم';
+};
+
+const DIAGNOSTIC_CODE_FIELDS = Object.freeze([
+  'کد سریال', 'کد سیستم', 'کد قسمت', 'کد سریال مادر',
+]);
+const DIAGNOSTIC_CONTENT_FIELDS = Object.freeze([
+  'اسم فیلم', 'نوع', 'سال', 'سال شروع', 'سال پایان', 'تعداد فصل و قسمت',
+]);
+
+function safeDiagnosticCodeCandidates(record) {
+  return Object.fromEntries(DIAGNOSTIC_CODE_FIELDS.flatMap((field) => {
+    const value = record[field];
+    if (!hasSourceValue(value)) return [];
+    return [[field, String(value).normalize('NFC').trim().slice(0, 80)]];
+  }));
+}
 
 function splitSourceMultiValue(value) {
   return [...new Set(String(value ?? '').normalize('NFC').split(/[،,;؛|\n]+/).map((part) => part.trim()).filter(Boolean))];
@@ -138,7 +161,7 @@ function projectAdminItem(mapped, record, metadataRecord, sourceRowNumber) {
   const dto = {
     id: content.id,
     kind: content.kind,
-    systemCode: String(record[CODE_HEADER(mapped.sourceSheet, Object.keys(record))]).normalize('NFC').trim(),
+    systemCode: String(record[CODE_HEADER(mapped.sourceSheet, Object.keys(record), record)]).normalize('NFC').trim(),
     title: content.title,
     approvalStatus: metadata?.approvalStatus ?? 'unknown',
     publicationStatus: metadata?.publicationStatus ?? 'unknown',
@@ -277,19 +300,15 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
     const sheetName = kind === 'movie' ? 'سینمایی' : kind === 'series' ? 'سریال' : null;
     if (!sheetName) return null;
     const snapshot = validateSnapshot(sheetName, await sheetProvider.readSheet(sheetName));
-    const codeIndex = snapshot.headers.indexOf(CODE_HEADER(sheetName, snapshot.headers));
-    const episodeCodeHeader = sheetName === 'سریال'
-      ? (snapshot.headers.includes('کد قسمت') ? 'کد قسمت'
-        : snapshot.headers.includes('کد سیستم') ? 'کد سیستم' : null)
-      : null;
-    const episodeCodeIndex = episodeCodeHeader ? snapshot.headers.indexOf(episodeCodeHeader) : -1;
-    const matches = snapshot.rows.map((row, index) => ({ row, index }))
-      .filter(({ row }) =>
-        String(row[codeIndex] ?? '').normalize('NFC').trim() === systemCode &&
-        (episodeCodeIndex < 0 || String(row[episodeCodeIndex] ?? '').trim() === ''));
+    const matches = snapshot.rows.map((row, index) => ({
+      row, index, record: rowToRecord(snapshot.headers, row),
+    })).filter(({ record }) => {
+      if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return false;
+      const codeHeader = CODE_HEADER(sheetName, snapshot.headers, record);
+      return String(record[codeHeader] ?? '').normalize('NFC').trim() === systemCode;
+    });
     if (matches.length !== 1) return null;
-    const { row, index } = matches[0];
-    const record = rowToRecord(snapshot.headers, row);
+    const { row, index, record } = matches[0];
     return {
       sourceSheet: sheetName,
       sourceRowNumber: index + 2,
@@ -476,7 +495,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       const result = await sheetProvider.createCatalogRow({ sheetName: schema.sheetName, fields });
       const mapped = mapCatalogSheetRow(schema.sheetName, result.record);
       return Object.freeze({
-        id: mapped.content.id, kind, systemCode: String(result.record[CODE_HEADER(schema.sheetName, Object.keys(result.record))]).normalize('NFC').trim(),
+        id: mapped.content.id, kind, systemCode: String(result.record[CODE_HEADER(schema.sheetName, Object.keys(result.record), result.record)]).normalize('NFC').trim(),
         sourceSheet: schema.sheetName, sourceRowNumber: result.rowNumber,
         sourceVersion: result.sourceVersion, headers: schema.headers, record: result.record,
       });
@@ -495,7 +514,7 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
           !isProducerCountry(record['سازنده'])) {
         throw Object.assign(new Error('Invalid producer country.'), { code: 'INVALID_INPUT' });
       }
-      const codeHeader = CODE_HEADER(current.sourceSheet, Object.keys(current.record));
+      const codeHeader = CODE_HEADER(current.sourceSheet, Object.keys(current.record), current.record);
       const nextSystemCode = String(record[codeHeader] ?? '').normalize('NFC').trim();
       if (!nextSystemCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
       try { mapCatalogSheetRow(current.sourceSheet, record); } catch {
@@ -533,6 +552,75 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
         id: nextId, kind: item.kind, systemCode: nextSystemCode,
         sourceSheet: current.sourceSheet, sourceRowNumber: result.rowNumber,
         sourceVersion: result.sourceVersion, headers: current.headers, record,
+      });
+    },
+    async listSourceDiagnostics() {
+      const snapshots = await Promise.all(SHEETS.map((name) =>
+        atStage('sheet_read', () => sheetProvider.readSheet(name))));
+      const diagnostics = [];
+
+      snapshots.forEach((sourceSnapshot, sheetIndex) => {
+        const sheetName = SHEETS[sheetIndex];
+        let snapshot;
+        try {
+          snapshot = validateSnapshot(sheetName, sourceSnapshot);
+        } catch (cause) {
+          const error = new Error('Catalog sheet snapshot validation failed.');
+          error.name = 'CatalogAdminListStageError';
+          error.dependency = 'sheets';
+          error.stage = 'sheet_snapshot_validation';
+          error.errorCode = 'CATALOG_STAGE_FAILED';
+          error.cause = cause;
+          throw error;
+        }
+
+        snapshot.rows.forEach((row, rowIndex) => {
+          const record = rowToRecord(snapshot.headers, row);
+          if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return;
+          try {
+            mapCatalogSheetRow(sheetName, record);
+          } catch (cause) {
+            const message = typeof cause?.message === 'string' ? cause.message : '';
+            const requiredFieldMatch = /^Missing or invalid required field: (.+)$/.exec(message);
+            const yearFieldMatch = /^Invalid year field: (.+)$/.exec(message);
+            const validationIssue = requiredFieldMatch
+              ? 'required_field_invalid'
+              : yearFieldMatch
+                ? 'year_field_invalid'
+                : message.includes('start year cannot be after end year')
+                  ? 'series_year_range_invalid'
+                  : 'row_mapping_invalid';
+            diagnostics.push(Object.freeze({
+              sheetName,
+              rowNumber: rowIndex + 2,
+              validationIssue,
+              ...(requiredFieldMatch ? { fieldName: requiredFieldMatch[1] } : {}),
+              ...(yearFieldMatch ? { fieldName: yearFieldMatch[1] } : {}),
+              codeCandidates: safeDiagnosticCodeCandidates(record),
+              titlePresent: hasSourceValue(record['اسم فیلم']),
+              otherContentFieldsPresent: DIAGNOSTIC_CONTENT_FIELDS
+                .filter((field) => field !== 'اسم فیلم' && hasSourceValue(record[field])),
+            }));
+          }
+        });
+      });
+
+      const bySheet = {};
+      const byField = {};
+      for (const diagnostic of diagnostics) {
+        bySheet[diagnostic.sheetName] = (bySheet[diagnostic.sheetName] || 0) + 1;
+        const field = diagnostic.fieldName || diagnostic.validationIssue;
+        byField[field] = (byField[field] || 0) + 1;
+      }
+      return Object.freeze({
+        data: Object.freeze(diagnostics.slice(0, 500)),
+        meta: Object.freeze({
+          total: diagnostics.length,
+          returned: Math.min(diagnostics.length, 500),
+          truncated: diagnostics.length > 500,
+          bySheet: Object.freeze(bySheet),
+          byField: Object.freeze(byField),
+        }),
       });
     },
     async list(query) {

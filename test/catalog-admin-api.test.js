@@ -25,6 +25,7 @@ const roleAuthorizer = createCatalogRoleAuthorizer();
 function createAdminApi(writableProvider, {
   roles = ['administrator'],
   subjectId = 'fixture-admin',
+  contentReader,
   verifyAdminPrincipal,
   roleProvider = createInMemoryCatalogAdminRoleProvider({ [subjectId]: roles }),
   reportRoleResolutionFailure,
@@ -36,6 +37,7 @@ function createAdminApi(writableProvider, {
 } = {}) {
   return createCatalogAdminApi({
     writableProvider,
+    contentReader,
     verifyAdminPrincipal: verifyAdminPrincipal || (() => ({ authenticated: true, subjectId })),
     roleProvider,
     reportRoleResolutionFailure,
@@ -616,6 +618,33 @@ test('metadata approval and publication are separate and only their approved/pub
   await withServer(publicApi, async (baseUrl) => {
     const result = await json(await fetch(`${baseUrl}/api/v1/catalog/items`));
     assert.deepEqual(result.body.data, []);
+  });
+});
+
+test('source diagnostics endpoint requires read access and returns safe row details', async () => {
+  const store = createStore();
+  const diagnostics = {
+    data: [{
+      sheetName: 'سریال',
+      rowNumber: 74,
+      validationIssue: 'required_field_invalid',
+      fieldName: 'کد سریال',
+      codeCandidates: { 'کد سیستم': '70711' },
+      titlePresent: true,
+      otherContentFieldsPresent: ['سال شروع'],
+    }],
+    meta: { total: 1, returned: 1, truncated: false, bySheet: { 'سریال': 1 }, byField: { 'کد سریال': 1 } },
+  };
+  const app = createAdminApi(store, {
+    roles: ['observer'],
+    contentReader: { async listSourceDiagnostics() { return diagnostics; } },
+  });
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/diagnostics/source-rows`,
+    ));
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, diagnostics);
   });
 });
 

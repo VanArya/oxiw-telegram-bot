@@ -2,7 +2,35 @@
 
 const crypto = require('node:crypto');
 const SHEETS = new Set(['سینمایی', 'سریال']);
-const codeHeaderFor = (sheetName) => sheetName === 'سریال' ? 'کد سریال' : 'کد سیستم';
+const { isSeriesEpisodeRecord } = require('./series-episode-record');
+
+function hasIdentityValue(value) {
+  return (typeof value === 'string' && value.trim() !== '') ||
+    (typeof value === 'number' && Number.isFinite(value));
+}
+
+const codeHeaderFor = (sheetName, record = null) => {
+  if (sheetName !== 'سریال') return 'کد سیستم';
+  if (record && hasIdentityValue(record['کد سریال'])) return 'کد سریال';
+  if (record && hasIdentityValue(record['کد سیستم'])) return 'کد سیستم';
+  return 'کد سریال';
+};
+
+function episodeCodeDetails(record) {
+  const field = ['کد قسمت', 'کد سیستم', 'کد سریال']
+    .find((candidate) => typeof record?.[candidate] === 'string' &&
+      /^\d{5}\.\d{2}\.\d{2}$/.test(record[candidate].normalize('NFC').trim()));
+  return field ? { field, code: record[field].normalize('NFC').trim() } : null;
+}
+
+function episodeParentCode(record, episodeField) {
+  const parentField = episodeField === 'کد قسمت'
+    ? (hasIdentityValue(record['کد سریال']) ? 'کد سریال' : 'کد سریال مادر')
+    : episodeField === 'کد سیستم'
+      ? (hasIdentityValue(record['کد سریال مادر']) ? 'کد سریال مادر' : 'کد سریال')
+      : 'کد سریال مادر';
+  return String(record[parentField] ?? '').normalize('NFC').trim();
+}
 
 const { markCatalogProviderKind } = require('./catalog-provider-kind');
 const {
@@ -145,21 +173,29 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     }
     const operation = async () => {
       const snapshot = await provider.readSheet(sheetName);
-      const codeHeader = codeHeaderFor(sheetName);
-      const codeIndex = snapshot.headers.indexOf(codeHeader);
-      if (codeIndex < 0) throw new Error('Catalog identity column is unavailable.');
-      const matches = snapshot.rows.map((row, index) => ({ row, index }))
-        .filter(({ row }) => String(row[codeIndex] ?? '').trim() === systemCode.trim());
+      const matches = snapshot.rows.map((row, index) => {
+        const record = recordFor(snapshot, row);
+        const codeHeader = codeHeaderFor(sheetName, record);
+        return { row, index, record, codeHeader };
+      }).filter(({ record, codeHeader }) =>
+        !(sheetName === 'سریال' && isSeriesEpisodeRecord(record)) &&
+        String(record[codeHeader] ?? '').normalize('NFC').trim() === systemCode.trim());
       if (matches.length !== 1) {
         throw Object.assign(new Error('Catalog row identity is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
       }
-      const { row, index } = matches[0];
-      const record = Object.fromEntries(snapshot.headers.map((header, i) => [header, row[i] ?? '']));
+      const { row, index, record, codeHeader } = matches[0];
+      const codeIndex = snapshot.headers.indexOf(codeHeader);
+      if (codeIndex < 0) throw new Error('Catalog identity column is unavailable.');
       if (Object.hasOwn(fields, codeHeader)) {
         const nextCode = String(fields[codeHeader]).normalize('NFC').trim();
         if (!nextCode) throw Object.assign(new Error('Invalid system code.'), { code: 'INVALID_INPUT' });
-        const duplicate = snapshot.rows.some((candidate, rowIndex) => rowIndex !== index &&
-          String(candidate[codeIndex] ?? '').normalize('NFC').trim() === nextCode);
+        const duplicate = snapshot.rows.some((candidate, rowIndex) => {
+          if (rowIndex === index) return false;
+          const candidateRecord = recordFor(snapshot, candidate);
+          if (sheetName === 'سریال' && isSeriesEpisodeRecord(candidateRecord)) return false;
+          const candidateHeader = codeHeaderFor(sheetName, candidateRecord);
+          return String(candidateRecord[candidateHeader] ?? '').normalize('NFC').trim() === nextCode;
+        });
         if (duplicate) throw Object.assign(new Error('System code already exists.'), { code: 'ALREADY_EXISTS' });
       }
       const currentVersion = crypto.createHash('sha256').update(JSON.stringify(record)).digest('base64url');
@@ -240,16 +276,15 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     }
     const operation = async () => {
       const snapshot = await provider.readSheet('سریال');
-      const parentHeader = snapshot.headers.includes('کد سریال') ? 'کد سریال' : 'کد سریال مادر';
-      const episodeHeader = snapshot.headers.includes('کد قسمت') ? 'کد قسمت' : 'کد سیستم';
-      const parentIndex = snapshot.headers.indexOf(parentHeader);
-      const episodeIndex = snapshot.headers.indexOf(episodeHeader);
-      if (parentIndex < 0 || episodeIndex < 0) {
-        throw Object.assign(new Error('Series identity columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
-      }
-      const matchingRows = snapshot.rows.map((row, index) => ({ row, index, record: recordFor(snapshot, row) }))
-        .filter(({ row }) => String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode);
-      const parents = matchingRows.filter(({ row }) => String(row[episodeIndex] ?? '').trim() === '');
+      const matchingRows = snapshot.rows.map((row, index) => {
+        const record = recordFor(snapshot, row);
+        const episode = episodeCodeDetails(record);
+        const parentCode = episode
+          ? episodeParentCode(record, episode.field)
+          : String(record[codeHeaderFor('سریال', record)] ?? '').normalize('NFC').trim();
+        return { row, index, record, episode, parentCode };
+      }).filter((entry) => entry.parentCode === seriesCode);
+      const parents = matchingRows.filter((entry) => !entry.episode);
       if (parents.length !== 1) {
         throw Object.assign(new Error('Parent series row is missing or ambiguous.'), { code: 'ROW_NOT_FOUND' });
       }
@@ -376,23 +411,19 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     }
     const operation = async () => {
       const snapshot = await provider.readSheet('سریال');
-      const parentHeader = snapshot.headers.includes('کد سریال') ? 'کد سریال' : 'کد سریال مادر';
-      const episodeHeader = snapshot.headers.includes('کد قسمت') ? 'کد قسمت' : 'کد سیستم';
-      const parentIndex = snapshot.headers.indexOf(parentHeader);
-      const episodeIndex = snapshot.headers.indexOf(episodeHeader);
-      if (parentIndex < 0 || episodeIndex < 0) {
-        throw Object.assign(new Error('Series identity columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
-      }
-      const matches = snapshot.rows.map((row, index) => ({
-        row, index,
-        record: recordFor(snapshot, row),
-        episodeCode: String(row[episodeIndex] ?? '').normalize('NFC').trim(),
-      })).filter(({ row, episodeCode }) => {
-        const parsed = /^(\d{5})\.(\d{2})\.(\d{2})$/.exec(episodeCode);
-        return parsed && parsed[1] === seriesCode &&
-          String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode &&
-          Number(parsed[2]) === season;
-      });
+      const matches = snapshot.rows.map((row, index) => {
+        const record = recordFor(snapshot, row);
+        const episode = episodeCodeDetails(record);
+        const parsed = episode ? /^(\d{5})\.(\d{2})\.(\d{2})$/.exec(episode.code) : null;
+        return {
+          row, index, record,
+          episodeCode: episode?.code || '',
+          parsed,
+          parentCode: episode ? episodeParentCode(record, episode.field) : '',
+        };
+      }).filter(({ parsed, parentCode }) =>
+        parsed && parsed[1] === seriesCode && parentCode === seriesCode &&
+        Number(parsed[2]) === season);
       if (!matches.length) {
         throw Object.assign(new Error('Season rows were not found.'), { code: 'ROW_NOT_FOUND' });
       }
@@ -421,14 +452,15 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
     return Object.freeze([...snapshot.headers]);
   };
   provider.createCatalogRow = async function createCatalogRow({ sheetName, fields } = {}) {
+    const requestedCodeHeader = codeHeaderFor(sheetName, fields);
     if (!SHEETS.has(sheetName) || !fields || typeof fields !== 'object' || Array.isArray(fields) ||
-        typeof fields[codeHeaderFor(sheetName)] !== 'string' || !fields[codeHeaderFor(sheetName)].trim() ||
+        typeof fields[requestedCodeHeader] !== 'string' || !fields[requestedCodeHeader].trim() ||
         typeof fields['اسم فیلم'] !== 'string' || !fields['اسم فیلم'].trim()) {
       throw Object.assign(new Error('Invalid new catalog row.'), { code: 'INVALID_INPUT' });
     }
     const operation = async () => {
       const snapshot = await provider.readSheet(sheetName);
-      const codeHeader = codeHeaderFor(sheetName);
+      const codeHeader = requestedCodeHeader;
       if (!snapshot.headers.includes(codeHeader) || !snapshot.headers.includes('اسم فیلم')) {
         throw Object.assign(new Error('Required catalog columns are unavailable.'), { code: 'COLUMN_UNAVAILABLE' });
       }
@@ -436,8 +468,13 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
         throw Object.assign(new Error('Unknown catalog column.'), { code: 'INVALID_INPUT' });
       }
       const code = fields[codeHeader].normalize('NFC').trim();
-      const codeIndex = snapshot.headers.indexOf(codeHeader);
-      if (snapshot.rows.some((row) => String(row[codeIndex] ?? '').normalize('NFC').trim() === code)) {
+      const duplicate = snapshot.rows.some((row) => {
+        const record = recordFor(snapshot, row);
+        if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return false;
+        const identityHeader = codeHeaderFor(sheetName, record);
+        return String(record[identityHeader] ?? '').normalize('NFC').trim() === code;
+      });
+      if (duplicate) {
         throw Object.assign(new Error('Catalog system code already exists.'), { code: 'ALREADY_EXISTS' });
       }
       const values = snapshot.headers.map((header) => fields[header] === undefined ? '' : String(fields[header]));
@@ -500,9 +537,12 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const parentIndex = headers.indexOf(parentHeader);
       const episodeIndex = headers.indexOf(episodeHeader);
-      const parentExists = snapshot.rows.some((row) =>
-        String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode &&
-        String(row[episodeIndex] ?? '').normalize('NFC').trim() === '');
+      const parentExists = snapshot.rows.some((row) => {
+        const record = recordFor(snapshot, row);
+        if (isSeriesEpisodeRecord(record)) return false;
+        const identityHeader = codeHeaderFor('سریال', record);
+        return String(record[identityHeader] ?? '').normalize('NFC').trim() === seriesCode;
+      });
       if (!parentExists) {
         throw Object.assign(new Error('Parent series was not found.'), { code: 'PARENT_SERIES_NOT_FOUND' });
       }

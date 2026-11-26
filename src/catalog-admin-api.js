@@ -506,6 +506,13 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.get(`${BASE_PATH}/diagnostics/source-rows`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!contentReader || typeof contentReader.listSourceDiagnostics !== 'function') {
+      return sendError(res, 503, 'SOURCE_DIAGNOSTICS_UNAVAILABLE', 'گزارش ردیف‌های نامعتبر پیکربندی نشده است.');
+    }
+    return res.json(await contentReader.listSourceDiagnostics());
+  }));
+
   app.get(`${BASE_PATH}/items`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!contentReader || typeof contentReader.list !== 'function') {
       return sendError(res, 503, 'ADMIN_CONTENT_READ_NOT_CONFIGURED', 'فهرست مدیریتی محتوا پیکربندی نشده است.');
@@ -674,7 +681,10 @@ function createCatalogAdminApi({
       if (!['movie', 'series'].includes(req.body.kind) || typeof contentReader?.getSheetSchema !== 'function' ||
           typeof contentReader?.createItemSource !== 'function') throw new CatalogInputError();
       const schema = await contentReader.getSheetSchema(req.body.kind);
-      const identityHeader = req.body.kind === 'series' && schema.headers.includes('کد سریال')
+      const requestedSeriesCode = req.body.kind === 'series' ? req.body.fields?.['کد سریال'] : null;
+      const hasSeriesCode = (typeof requestedSeriesCode === 'string' && requestedSeriesCode.trim() !== '') ||
+        (typeof requestedSeriesCode === 'number' && Number.isFinite(requestedSeriesCode));
+      const identityHeader = req.body.kind === 'series' && hasSeriesCode
         ? 'کد سریال'
         : 'کد سیستم';
       validateSourceFields(req.body.fields, schema.headers, { create: true, identityHeader });

@@ -12,6 +12,11 @@ function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function hasNonEmptyIdentity(value) {
+  return (typeof value === 'string' && value.trim() !== '') ||
+    (typeof value === 'number' && Number.isFinite(value));
+}
+
 function requiredText(row, fieldName) {
   const value = row[fieldName];
   if (
@@ -56,8 +61,11 @@ function mapCatalogSheetRow(sheetName, row) {
     throw new TypeError('Unsupported catalog sheet.');
   }
 
+  // Older/mixed Sheets layouts can contain both columns while leaving
+  // "کد سریال" blank on rows whose actual parent identity is in "کد سیستم".
+  // Resolve by row value, not merely by header presence.
   const codeHeader = kind === 'series'
-    ? (row['کد سریال'] !== undefined ? 'کد سریال' : 'کد سیستم')
+    ? (hasNonEmptyIdentity(row['کد سریال']) ? 'کد سریال' : 'کد سیستم')
     : 'کد سیستم';
   const content = {
     id: createCatalogContentId(kind, requiredText(row, codeHeader)),
