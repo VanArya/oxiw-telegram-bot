@@ -250,3 +250,15 @@ test('origin filters reject ambiguous combinations and incomplete country taxono
     assert.equal(result.body.error.code, 'FILTER_NOT_READY');
   });
 });
+
+
+test('country taxonomy fallback exposes all seven approved producer countries without metadata storage', async () => {
+  await withApiServer({ provider: createFixtureProvider(), categories }, async (baseUrl) => {
+    const response = await jsonResponse(`${baseUrl}/api/v1/catalog/taxonomies`);
+    assert.equal(response.response.status, 200);
+    assert.deepEqual(response.body.data.country.map((term) => term.id), [
+      'IR', 'US', 'KR', 'JP', 'IN', 'EG', 'ES',
+    ]);
+    assert.deepEqual(response.body.meta.availableTypes, ['country']);
+  });
+});
