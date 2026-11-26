@@ -236,7 +236,7 @@ providerهای عملیاتی از مجموعه‌های `catalogContentMetadata
 4. با mock و سپس staging، تطبیق ID، هر دو وضعیت مستقل، کشور، DTO allowlist و برابری محتوای عمومی بررسی شود. برای spreadsheet فعلی فقط read و برای metadata تغییرات staging از API مدیریتی مجاز و احراز هویت‌شده انجام شود.
 5. تا تأیید parity، سرویس فعلی همچنان مسیر ارائهٔ محتوا می‌ماند. برای rollback در staging، composition قبلی/provider قبلی فعال شود؛ Sheet، metadata production، Apps Script، webhook یا تنظیمات میزبان لازم نیست تغییر کند.
 
-تست‌های Provider با mock client انجام می‌شوند و هیچ حساب، credential، Spreadsheet یا شبکه‌ای را فراخوانی نمی‌کنند. هیچ storage فراداده یا اتصال staging در این مرحله ساخته یا فعال نشده است.
+تست‌های automated Provider با mock client انجام می‌شوند و هیچ حساب یا شبکه‌ای را فراخوانی نمی‌کنند. این موضوع فقط دربارهٔ محیط تست است: runtime عملیاتی Catalog Core روی Render مستقر شده و clientهای واقعی Google/Firestore را می‌سازد؛ با این حال، در بررسی 2026-11-26 درخواست خواندن دادهٔ زنده، تطبیق مجموعهٔ شناسه‌های عمومی و parity با سرویس فعلی هنوز انجام/تأیید نشده است. محیط staging مستقل نیز جداگانه provision نشده است.
 
 
 ## اصلاح ساختار بر اساس تأیید مالک در 2026-11-25
