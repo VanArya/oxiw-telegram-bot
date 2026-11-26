@@ -12,6 +12,7 @@
     "catalog:dry-run-genre-migration": "node scripts/dry-run-genre-migration.js",
     "test": "node --test",
     "catalog:seed-genre-taxonomy": "node scripts/seed-genre-taxonomy.js",
+    "catalog:seed-country-taxonomy": "node scripts/seed-country-taxonomy.js",
     "catalog:sync-genre-metadata": "node scripts/sync-genre-metadata.js"
   },
   "engines": {
