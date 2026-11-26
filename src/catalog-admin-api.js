@@ -14,6 +14,11 @@ const { normalizeCatalogAdminRoles } = require('./catalog-admin-role-provider');
 const { PRODUCER_COUNTRIES } = require('./catalog-producer-country');
 const { isProducerCountry } = require('./catalog-producer-country');
 const {
+  COUNTRY_CATEGORIES,
+  COUNTRY_TERMS,
+  planCountryTaxonomySeed,
+} = require('./catalog-country-taxonomy-seed');
+const {
   assertVersionedWritableCatalogMetadataProvider,
 } = require('./catalog-writable-metadata-provider');
 const {
@@ -870,6 +875,74 @@ function createCatalogAdminApi({
     });
     return sendVersioned(res, precondition.isCreate ? 201 : 200, 'category', req.params.categoryId,
       saved, publicAdminCategory);
+  }));
+
+  app.get(`${BASE_PATH}/maintenance/country-taxonomy/seed-plan`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    // Read-only preview of the exact plan used by the guarded seed command.
+    // No provider write method is called from this endpoint.
+    const [existingTerms, existingCategories] = await Promise.all([
+      provider.listAllTaxonomyTerms('country'),
+      provider.listCategories(),
+    ]);
+    const plan = planCountryTaxonomySeed(existingTerms, existingCategories);
+    const managedCountryIds = new Set(COUNTRY_TERMS.map((term) => term.id));
+    const managedCategoryIds = new Set(COUNTRY_CATEGORIES.map((category) => category.id));
+    const report = {
+      mode: 'dry-run',
+      counts: {
+        requestedCountries: COUNTRY_TERMS.length,
+        existingCountryTerms: existingTerms.length,
+        createTerms: plan.createTerms.length,
+        updateTerms: plan.updateTerms.length,
+        alreadyPresentTerms: plan.alreadyPresentTerms.length,
+        additionalCountryTerms: existingTerms.filter((term) => !managedCountryIds.has(term?.id)).length,
+        requestedCategories: COUNTRY_CATEGORIES.length,
+        existingCategories: existingCategories.length,
+        createCategories: plan.createCategories.length,
+        updateCategories: plan.updateCategories.length,
+        alreadyPresentCategories: plan.alreadyPresentCategories.length,
+        additionalCategories: existingCategories.filter((category) => !managedCategoryIds.has(category?.id)).length,
+        conflicts: plan.conflicts.length,
+      },
+      createTerms: plan.createTerms.map(({ id, labelFa, enabled, sortOrder }) => ({
+        id, labelFa, enabled, sortOrder,
+      })),
+      updateTerms: plan.updateTerms.map(({ id, previous, value }) => ({
+        id,
+        previousLabelFa: previous.labelFa,
+        labelFa: value.labelFa,
+        previousEnabled: previous.enabled,
+        enabled: value.enabled,
+        sortOrder: value.sortOrder,
+      })),
+      alreadyPresentTerms: plan.alreadyPresentTerms,
+      additionalCountryTerms: existingTerms
+        .filter((term) => !managedCountryIds.has(term?.id))
+        .map((term) => ({ id: term.id, labelFa: term.labelFa, enabled: term.enabled })),
+      createCategories: plan.createCategories.map(({ id, slug, localizedTitle, mode, sortOrder }) => ({
+        id, slug, titleFa: localizedTitle.fa, mode, sortOrder,
+      })),
+      updateCategories: plan.updateCategories.map(({ id, previous, value }) => ({
+        id,
+        slug: value.slug,
+        previousTitleFa: previous.localizedTitle?.fa || '',
+        titleFa: value.localizedTitle.fa,
+        previousMode: previous.mode || 'dynamic',
+        mode: value.mode,
+        sortOrder: value.sortOrder,
+      })),
+      alreadyPresentCategories: plan.alreadyPresentCategories,
+      additionalCategories: existingCategories
+        .filter((category) => !managedCategoryIds.has(category?.id))
+        .map((category) => ({ id: category.id, slug: category.slug, titleFa: category.localizedTitle?.fa || '' })),
+      conflicts: plan.conflicts.map((conflict) => ({
+        entity: conflict.entity,
+        ...(conflict.id ? { id: conflict.id } : {}),
+        ...(conflict.slug ? { slug: conflict.slug } : {}),
+        ...(conflict.reason ? { reason: conflict.reason } : {}),
+      })),
+    };
+    return res.json({ data: report });
   }));
 
   app.get(`${BASE_PATH}/taxonomies/:type`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
