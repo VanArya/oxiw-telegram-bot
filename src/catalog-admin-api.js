@@ -16,6 +16,7 @@ const { isProducerCountry } = require('./catalog-producer-country');
 const {
   COUNTRY_CATEGORIES,
   COUNTRY_TERMS,
+  applyCountryTaxonomySeed,
   planCountryTaxonomySeed,
 } = require('./catalog-country-taxonomy-seed');
 const {
@@ -889,6 +890,7 @@ function createCatalogAdminApi({
     const managedCategoryIds = new Set(COUNTRY_CATEGORIES.map((category) => category.id));
     const report = {
       mode: 'dry-run',
+      planHash: crypto.createHash('sha256').update(JSON.stringify(plan)).digest('hex'),
       counts: {
         requestedCountries: COUNTRY_TERMS.length,
         existingCountryTerms: existingTerms.length,
@@ -944,6 +946,61 @@ function createCatalogAdminApi({
     };
     return res.json({ data: report });
   }));
+
+  app.post(`${BASE_PATH}/maintenance/country-taxonomy/seed-apply`,
+    requirePermission(PERMISSIONS.TAXONOMIES_MANAGE),
+    requirePermission(PERMISSIONS.CATEGORIES_MANAGE),
+    parseJson,
+    asyncRoute(async (req, res) => {
+      requireBodyKeys(req.body, ['confirmation', 'planHash']);
+      if (req.body.confirmation !== 'APPLY_COUNTRY_TAXONOMY_SEED' ||
+          typeof req.body.planHash !== 'string' || !/^[a-f0-9]{64}$/.test(req.body.planHash)) {
+        throw new CatalogInputError();
+      }
+
+      const [existingTerms, existingCategories] = await Promise.all([
+        provider.listAllTaxonomyTerms('country'),
+        provider.listCategories(),
+      ]);
+      const currentPlan = planCountryTaxonomySeed(existingTerms, existingCategories);
+      if (currentPlan.conflicts.length) {
+        return sendError(res, 409, 'SEED_CONFLICTS', 'تعارض در داده‌های فعلی وجود دارد؛ هیچ تغییری اعمال نشد.');
+      }
+      const currentPlanHash = crypto.createHash('sha256')
+        .update(JSON.stringify(currentPlan)).digest('hex');
+      if (currentPlanHash !== req.body.planHash) {
+        return sendError(res, 409, 'SEED_PLAN_STALE', 'داده‌ها پس از پیش‌نمایش تغییر کرده‌اند؛ ابتدا Dry Run تازه اجرا کنید.');
+      }
+
+      try {
+        const result = await applyCountryTaxonomySeed({
+          writableProvider: provider,
+          actorId: res.locals.catalogAdminPrincipal.subjectId,
+        });
+        if (result.blocked) {
+          return sendError(res, 409, 'SEED_CONFLICTS', 'تعارضی در زمان اجرا شناسایی شد؛ عملیات متوقف شد.');
+        }
+        return res.json({ data: {
+          mode: 'apply',
+          createdTerms: result.createdTerms,
+          updatedTerms: result.updatedTerms,
+          createdCategories: result.createdCategories,
+          updatedCategories: result.updatedCategories,
+          counts: {
+            createdTerms: result.createdTerms.length,
+            updatedTerms: result.updatedTerms.length,
+            createdCategories: result.createdCategories.length,
+            updatedCategories: result.updatedCategories.length,
+          },
+        } });
+      } catch (error) {
+        if (error?.code === 'SEED_PLAN_STALE' || error?.code === 'VERSION_CONFLICT' ||
+            error?.code === 'ALREADY_EXISTS') {
+          return sendError(res, 409, 'SEED_PLAN_STALE', 'داده‌ها هم‌زمان تغییر کرده‌اند؛ عملیات را متوقف و Dry Run را دوباره اجرا کنید.');
+        }
+        throw error;
+      }
+    }));
 
   app.get(`${BASE_PATH}/taxonomies/:type`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
