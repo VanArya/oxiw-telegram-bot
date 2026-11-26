@@ -84,6 +84,7 @@ test('admin source forms use the seven approved producer countries', () => {
 test('producer country taxonomy is fixed and rendered read-only in the admin panel', () => {
   assert.match(html, /فهرست ثابت هفت کشور ستون «سازنده»/);
   assert.match(html, /data-type="country"[^>]*hidden/);
-  assert.match(appSource, /if (type === 'country') {s*const record = document.createElement('div')/);
+  assert.match(appSource, /if \(type === 'country'\)/);
+  assert.match(appSource, /const record = document.createElement\('div'\)/);
   assert.match(appSource, /مقدار ثابت ستون «سازنده»/);
 });
