@@ -1531,7 +1531,8 @@ test('direct category writes stay disabled when the server flag is false', async
 
 
 test('admin API keeps the fixed producer-country taxonomy read-only', async () => {
-  const app = createAdminApi(createStore());
+  const store = createStore();
+  const app = createAdminApi(store);
   await withServer(app, async (baseUrl) => {
     const update = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`, {
       method: 'PUT',
@@ -1547,6 +1548,6 @@ test('admin API keeps the fixed producer-country taxonomy read-only', async () =
     assert.equal(remove.status, 409);
     assert.equal(remove.body.error.code, 'PRODUCER_COUNTRY_FIXED');
 
-    assert.deepEqual(await createStore().listAllTaxonomyTerms('country'), [countryFixture]);
+    assert.deepEqual(await store.listAllTaxonomyTerms('country'), [countryFixture]);
   });
 });
