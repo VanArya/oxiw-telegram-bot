@@ -362,8 +362,20 @@ test('creates an episode linked to a parent whose identity is in کد سیستم
       ['', '70711', '', 'سریال قدیمی', ''],
     ],
   };
+  const sheetsClient = {
+    spreadsheets: {
+      values: {
+        async get({ range }) { return { data: { values: values[range] || [] } }; },
+        async batchUpdate() { return { data: {} }; },
+        async append(args) {
+          values["'سریال'"].push(args.requestBody.values[0]);
+          return { data: { updates: { updatedRange: "'سریال'!A3:E3" } } };
+        },
+      },
+    },
+  };
   const provider = createGoogleSheetsCatalogProvider({
-    sheetsClient: mockSheetsClient(values),
+    sheetsClient,
     spreadsheetId: spreadsheetIdFixture,
   });
   const fields = {
