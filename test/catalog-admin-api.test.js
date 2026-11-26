@@ -662,25 +662,15 @@ test('admin API creates and edits categories and country/genre taxonomy with val
     }));
     assert.equal(duplicateSlug.status, 409);
 
-    const newCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`, {
+    const countryWrite = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`, {
       method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
       body: JSON.stringify({ labelFa: 'آمریکا', enabled: false, sortOrder: 2 }),
     }));
-    assert.equal(newCountry.status, 201);
-    const fetchedCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`));
-    assert.equal(fetchedCountry.status, 200);
-    assert.equal(fetchedCountry.body.data.enabled, false);
-    const updatedCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/US`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json', 'if-match': fetchedCountry.etag },
-      body: JSON.stringify({ labelFa: 'آمریکا', enabled: true, sortOrder: 2 }),
-    }));
-    assert.equal(updatedCountry.status, 200);
-    assert.notEqual(updatedCountry.etag, fetchedCountry.etag);
+    assert.equal(countryWrite.status, 409);
+    assert.equal(countryWrite.body.error.code, 'PRODUCER_COUNTRY_FIXED');
     const countries = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country`));
     assert.equal(countries.status, 200);
-    assert.deepEqual(countries.body.data.map(({ id }) => id).sort(), ['IR', 'US']);
-    assert.equal(countries.body.data.find(({ id }) => id === 'US').enabled, true);
+    assert.deepEqual(countries.body.data.map(({ id }) => id), ['IR']);
 
     const newGenre = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/genre/comedy`, {
       method: 'PUT', headers: { 'content-type': 'application/json', 'if-none-match': '*' },
@@ -1095,13 +1085,20 @@ test('category and taxonomy delete endpoints require current ETags and call guar
     assert.equal(removedCategory.status, 200);
     assert.equal(removedCategory.body.data.deleted, true);
 
+    const genre = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/genre/drama`));
+    assert.equal(genre.status, 200);
+    const removedGenre = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/genre/drama`, {
+      method: 'DELETE', headers: { 'If-Match': genre.etag },
+    }));
+    assert.equal(removedGenre.status, 200);
+    assert.equal(removedGenre.body.data.deleted, true);
     const country = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`));
     assert.equal(country.status, 200);
     const removedCountry = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`, {
       method: 'DELETE', headers: { 'If-Match': country.etag },
     }));
-    assert.equal(removedCountry.status, 200);
-    assert.equal(removedCountry.body.data.deleted, true);
+    assert.equal(removedCountry.status, 409);
+    assert.equal(removedCountry.body.error.code, 'PRODUCER_COUNTRY_FIXED');
   });
 });
 
