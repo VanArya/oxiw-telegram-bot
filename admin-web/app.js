@@ -23,7 +23,7 @@ const elements = Object.fromEntries([
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'contentCountry', 'contentGenre', 'contentCategory', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
-  'countrySeedPlanButton', 'countrySeedPlanOutput',
+  'countrySeedPlanButton', 'countrySeedApplyButton', 'countrySeedPlanOutput',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
   'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
   'managerCancel', 'managerEmail', 'managerRoles', 'managerSave', 'managerRows',
@@ -54,6 +54,8 @@ let selectedSource = null;
 let creatingSourceKind = null;
 let selectedEtag = null;
 let countryTerms = [];
+let countrySeedPlanHash = null;
+let countrySeedPlanReport = null;
 let genreTerms = [];
 let categoryTerms = [];
 let selectedTaxonomy = { type: null, id: null, etag: null };
@@ -154,6 +156,8 @@ function roleLabel(role) {
 function messageForError(error) {
   const messages = {
     INVALID_INPUT: 'داده‌های واردشده معتبر نیستند.',
+    SEED_CONFLICTS: 'تعارض داده وجود دارد؛ هیچ تغییری اعمال نشد.',
+    SEED_PLAN_STALE: 'داده‌ها پس از پیش‌نمایش تغییر کرده‌اند؛ Dry Run تازه اجرا کنید.',
     INVALID_FILTER: 'فیلتر یا جست‌وجو معتبر نیست.',
     INVALID_PAGINATION: 'صفحه‌بندی معتبر نیست.',
     UNAUTHENTICATED: 'نشست معتبر نیست؛ دوباره وارد شوید.',
@@ -1672,6 +1676,8 @@ async function deleteCategory(id) {
 
 function renderCountryTaxonomySeedPlan(report) {
   const counts = report?.counts || {};
+  countrySeedPlanHash = typeof report?.planHash === 'string' ? report.planHash : null;
+  countrySeedPlanReport = report || null;
   const lines = [
     'وضعیت: پیش‌نمایش فقط‌خواندنی؛ هیچ داده‌ای تغییر نکرده است.',
     `کشورها: ${counts.createTerms || 0} ایجاد · ${counts.updateTerms || 0} اصلاح · ${counts.alreadyPresentTerms || 0} بدون تغییر`,
@@ -1695,9 +1701,20 @@ function renderCountryTaxonomySeedPlan(report) {
     `${conflict.entity || 'item'} · ${conflict.id || conflict.slug || 'بدون شناسه'} · ${conflict.reason || 'نیازمند بررسی'}`);
   elements.countrySeedPlanOutput.textContent = lines.join('\n');
   elements.countrySeedPlanOutput.hidden = false;
+  const changeCount = (counts.createTerms || 0) + (counts.updateTerms || 0) +
+    (counts.createCategories || 0) + (counts.updateCategories || 0);
+  const canApply = hasPermission('catalog.taxonomies.manage') &&
+    hasPermission('catalog.categories.manage') &&
+    Boolean(countrySeedPlanHash) && (counts.conflicts || 0) === 0 && changeCount > 0;
+  elements.countrySeedApplyButton.hidden = !canApply;
+  elements.countrySeedApplyButton.disabled = !canApply;
 }
 
 async function loadCountryTaxonomySeedPlan() {
+  countrySeedPlanHash = null;
+  countrySeedPlanReport = null;
+  elements.countrySeedApplyButton.hidden = true;
+  elements.countrySeedApplyButton.disabled = true;
   setBusy(elements.countrySeedPlanButton, true);
   elements.countrySeedPlanButton.textContent = 'در حال خواندن Firestore…';
   try {
@@ -1708,6 +1725,54 @@ async function loadCountryTaxonomySeedPlan() {
     reportApiError(error);
   } finally {
     setBusy(elements.countrySeedPlanButton, false);
+  }
+}
+
+async function applyCountryTaxonomySeedPlan() {
+  if (!hasPermission('catalog.taxonomies.manage') ||
+      !hasPermission('catalog.categories.manage') ||
+      !countrySeedPlanHash || !countrySeedPlanReport) return;
+
+  const counts = countrySeedPlanReport.counts || {};
+  const createCount = (counts.createTerms || 0) + (counts.createCategories || 0);
+  const updateCount = (counts.updateTerms || 0) + (counts.updateCategories || 0);
+  if ((counts.conflicts || 0) > 0 || createCount + updateCount === 0) return;
+
+  const confirmation = [
+    'همسان‌سازی کشورها و چهار دستهٔ وابسته در Firestore اجرا شود؟',
+    `ایجاد: ${createCount} رکورد`,
+    `اصلاح: ${updateCount} رکورد`,
+    'موارد اضافی و سفارشی حذف نمی‌شوند.',
+    'پیش از نوشتن، سرور دوباره تعارض و تازگی گزارش را بررسی می‌کند.',
+  ].join('\n');
+  if (!window.confirm(confirmation)) return;
+
+  const planHash = countrySeedPlanHash;
+  setBusy(elements.countrySeedApplyButton, true);
+  elements.countrySeedApplyButton.textContent = 'در حال اعمال…';
+  try {
+    const { body } = await api(`${API_ROOT}/maintenance/country-taxonomy/seed-apply`, {
+      method: 'POST',
+      body: JSON.stringify({
+        confirmation: 'APPLY_COUNTRY_TAXONOMY_SEED',
+        planHash,
+      }),
+    });
+    const result = body.data;
+    const appliedCount = (result.counts?.createdTerms || 0) +
+      (result.counts?.updatedTerms || 0) +
+      (result.counts?.createdCategories || 0) +
+      (result.counts?.updatedCategories || 0);
+    showToast(`همسان‌سازی انجام شد؛ ${appliedCount} تغییر ثبت شد.`);
+    await loadCountryTaxonomySeedPlan();
+  } catch (error) {
+    reportApiError(error);
+    if (error.status === 409) await loadCountryTaxonomySeedPlan();
+  } finally {
+    setBusy(elements.countrySeedApplyButton, false);
+    if (!elements.countrySeedApplyButton.hidden) {
+      elements.countrySeedApplyButton.textContent = 'اعمال همسان‌سازی';
+    }
   }
 }
 
@@ -2123,6 +2188,7 @@ function wireUi() {
   $('#add-localized-title').addEventListener('click', () => addLocalizedTitle());
   $$('.taxonomy-new').forEach((button) => button.addEventListener('click', () => newTaxonomy(button.dataset.type)));
   elements.countrySeedPlanButton.addEventListener('click', () => void loadCountryTaxonomySeedPlan());
+  elements.countrySeedApplyButton.addEventListener('click', () => void applyCountryTaxonomySeedPlan());
   elements.countryForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'country'));
   elements.genreForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'genre'));
   $$('[data-close-form]').forEach((button) => button.addEventListener('click', () => {
