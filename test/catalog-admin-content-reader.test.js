@@ -81,6 +81,52 @@ test('admin content reader lists registered episodes from the series sheet witho
 });
 
 
+test('admin reader uses the populated legacy code column when کد سریال is blank', async () => {
+  const source = structuredClone(sheets);
+  source['سریال'].headers.push('کد سیستم', 'کد قسمت');
+  source['سریال'].rows.forEach((row) => row.push('', ''));
+  const headers = source['سریال'].headers;
+  const fallbackParent = Object.fromEntries(headers.map((header) => [header, '']));
+  Object.assign(fallbackParent, {
+    'کد سریال': '',
+    'کد سیستم': '70711',
+    'کد قسمت': '',
+    'اسم فیلم': 'سریال بازیابی‌شده',
+  });
+  source['سریال'].rows.push(headers.map((header) => fallbackParent[header]));
+
+  const reader = makeReader({ source });
+  const listed = await reader.list(new URLSearchParams('kind=series&pageSize=100'));
+  const recovered = listed.data.find((item) => item.id === 'series:70711');
+  assert.ok(recovered);
+  assert.equal(recovered.systemCode, '70711');
+
+  const sourceRecord = await reader.getItemSource('series:70711');
+  assert.ok(sourceRecord);
+  assert.equal(sourceRecord.record['کد سیستم'], '70711');
+  assert.equal(sourceRecord.sourceRowNumber, source['سریال'].rows.length + 1);
+});
+
+test('source diagnostics report only safe identity candidates and never expose file IDs', async () => {
+  const source = structuredClone(sheets);
+  const headers = source['سریال'].headers;
+  const invalid = Object.fromEntries(headers.map((header) => [header, '']));
+  Object.assign(invalid, {
+    'کد سریال': '',
+    'اسم فیلم': 'ردیف بدون شناسه',
+    'Telegram File ID': 'never-return-this-file-id',
+  });
+  source['سریال'].rows.push(headers.map((header) => invalid[header]));
+  const reader = makeReader({ source });
+  const report = await reader.listSourceDiagnostics();
+  const row = report.data.find((entry) => entry.sheetName === 'سریال');
+  assert.ok(row);
+  assert.equal(row.titlePresent, true);
+  assert.deepEqual(row.codeCandidates, {});
+  assert.equal(JSON.stringify(report).includes('never-return-this-file-id'), false);
+  assert.equal(report.meta.total, 1);
+});
+
 test('admin reader tolerates whitespace and duplicate aliases in required sheet headings', async () => {
   const source = structuredClone(sheets);
   source['سریال'].headers.push(' کد سریال ', ' اسم فیلم ');
