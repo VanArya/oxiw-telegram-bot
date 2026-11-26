@@ -11,6 +11,7 @@ const {
   ROLES,
 } = require('./catalog-admin-authorization');
 const { normalizeCatalogAdminRoles } = require('./catalog-admin-role-provider');
+const { PRODUCER_COUNTRIES } = require('./catalog-producer-country');
 const { isProducerCountry } = require('./catalog-producer-country');
 const {
   assertVersionedWritableCatalogMetadataProvider,
@@ -873,8 +874,12 @@ function createCatalogAdminApi({
 
   app.get(`${BASE_PATH}/taxonomies/:type`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
-    const terms = await provider.listAllTaxonomyTerms(req.params.type);
+    let terms = await provider.listAllTaxonomyTerms(req.params.type);
     if (!Array.isArray(terms)) throw new Error('Invalid taxonomy provider response.');
+    if (req.params.type === 'country') {
+      const byId = new Map(terms.map((term) => [term.id, term]));
+      terms = PRODUCER_COUNTRIES.map(({ id }) => byId.get(id)).filter(Boolean);
+    }
     return res.json({ data: terms.map((term) => publicAdminTaxonomy(req.params.type, term)) });
   }));
 
