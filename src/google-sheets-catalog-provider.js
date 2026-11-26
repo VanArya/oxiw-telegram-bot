@@ -537,9 +537,12 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       }
       const parentIndex = headers.indexOf(parentHeader);
       const episodeIndex = headers.indexOf(episodeHeader);
-      const parentExists = snapshot.rows.some((row) =>
-        String(row[parentIndex] ?? '').normalize('NFC').trim() === seriesCode &&
-        String(row[episodeIndex] ?? '').normalize('NFC').trim() === '');
+      const parentExists = snapshot.rows.some((row) => {
+        const record = recordFor(snapshot, row);
+        if (isSeriesEpisodeRecord(record)) return false;
+        const identityHeader = codeHeaderFor('سریال', record);
+        return String(record[identityHeader] ?? '').normalize('NFC').trim() === seriesCode;
+      });
       if (!parentExists) {
         throw Object.assign(new Error('Parent series was not found.'), { code: 'PARENT_SERIES_NOT_FOUND' });
       }
