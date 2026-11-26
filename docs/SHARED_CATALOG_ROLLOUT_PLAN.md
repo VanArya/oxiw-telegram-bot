@@ -52,13 +52,13 @@
 
 ## مرحلهٔ ۴ — اتصال آزمایشی Sheets و Firestore با حداقل دسترسی
 
-**وضعیت فعلی:** runtime عملیاتی Google Sheets و Firestore روی Render مستقر است؛ این با staging مجزا و پذیرش دادهٔ زنده یکی نیست. مرحلهٔ ۴ برای reconciliation کنترل‌شدهٔ data و تأیید IAM/read access همچنان gate پذیرش دارد.
+**وضعیت فعلی:** runtime عملیاتی Google Sheets و Firestore روی Render مستقر است؛ این با staging مجزا و پذیرش دادهٔ زنده یکی نیست. یک ابزار گزارش تطبیق فقط‌خواندنی در شاخهٔ کاری این مرحله اضافه شده است؛ تا اجرای گزارش با حساب مدیر و بازبینی نتایج، gate پذیرش مرحلهٔ ۴ باز می‌ماند.
 
 **پیش‌نیازها:** spreadsheet فعال و هویت/مجوز حداقلی آن تأییدشده؛ Firestore مقصد و IAM بازبینی‌شده؛ دادهٔ metadata آزمایشی با تصمیم صریح دربارهٔ محتوا.
 
-**کارها:** فقط backend staging، Sheets provider را با scope/read permission حداقلی به برگه‌های تأییدشده وصل کند. metadata provider و audit sink به Firestore staging تزریق شود. هیچ ساختار/سلول Sheet تغییر نکند. قبل از انتشار، duplicate/empty systemCode و missing metadata را گزارش کن و برای هیچ محتوایی approval یا publication نساز.
+**کارها:** فقط backend موردتأیید، Sheets provider را با scope/read permission حداقلی به برگه‌های تأییدشده وصل کند. metadata provider را فقط برای خواندن Firestore استفاده کند. endpoint مدیریتی `GET /api/v1/admin/catalog/diagnostics/reconciliation` و دکمهٔ «اجرای تطبیق فقط‌خواندنی» در نمای کلی، شناسه‌های تکراری منبع، ردیف‌های ناقص (با نادیده‌گرفتن ردیف‌های کاملاً خالی و ردیف‌های قسمت)، metadata مفقود/سرگردان، ارجاع‌های taxonomy ناموجود/غیرفعال و وضعیت منتشرشدهٔ ناسازگار را گزارش می‌کنند. نمونهٔ هر گروه حداکثر ۲۵ مورد است؛ شمارنده‌ها کامل‌اند. هیچ ساختار/سلول Sheet یا سند Firestore تغییر نمی‌کند و هیچ approval/publication ساخته نمی‌شود. اجرای گزارش واقعی و بازبینی اختلاف‌ها هنوز بر عهدهٔ مالک داده است.
 
-**آزمون‌ها:** connectivity read-only؛ header/row parsing؛ stale/duplicate identities؛ transaction conflict؛ audit atomicity؛ دو status مستقل؛ metadata غایب/نامعتبر؛ Sheets quota/error handling؛ cache invalidation.
+**آزمون‌ها:** connectivity read-only؛ header/row parsing؛ stale/duplicate identities؛ transaction conflict؛ audit atomicity؛ دو status مستقل؛ metadata غایب/نامعتبر؛ Sheets quota/error handling؛ cache invalidation؛ عدم افشای Telegram File ID؛ کنترل permission برای endpoint گزارش.
 
 **پذیرش:** سرویس staging به داده‌های موردتأیید دسترسی حداقلی دارد؛ هیچ write به Sheet رخ نمی‌دهد؛ audit و version با Firestore fake و staging proof برقرارند؛ metadata فاقد تأیید عمومی نیست.
 
