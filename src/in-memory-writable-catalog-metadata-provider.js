@@ -111,6 +111,12 @@ function createInMemoryWritableCatalogMetadataProvider({
       if (!value) return null;
       return { value: clone(value), version: metadataVersions.get(contentId) };
     },
+    async listContentMetadataWithVersion() {
+      return clone([...metadata.entries()].map(([contentId, value]) => ({
+        value,
+        version: metadataVersions.get(contentId),
+      })));
+    },
     async listCategories() {
       return clone([...categoryStore.values()]);
     },
