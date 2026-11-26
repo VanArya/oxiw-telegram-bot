@@ -354,6 +354,34 @@ test('creates an episode using the existing series and episode columns without a
 });
 
 
+test('creates an episode linked to a parent whose identity is in کد سیستم', async () => {
+  const headers = ['کد سریال', 'کد سیستم', 'کد قسمت', 'اسم فیلم', 'Telegram File ID'];
+  const values = {
+    "'سریال'": [
+      headers,
+      ['', '70711', '', 'سریال قدیمی', ''],
+    ],
+  };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(values),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const fields = {
+    'کد سریال': '70711',
+    'کد قسمت': '70711.01.01',
+    'اسم فیلم': 'قسمت جدید',
+    'Telegram File ID': 'episode-file-id',
+  };
+  const created = await provider.createSeriesEpisodeRow({
+    seriesCode: '70711',
+    episodeCode: '70711.01.01',
+    fields,
+  });
+  assert.equal(created.rowNumber, 3);
+  assert.equal(values["'سریال'"][2][0], '70711');
+  assert.equal(values["'سریال'"][2][2], '70711.01.01');
+});
+
 test('deletes a movie row physically after checking the row version', async () => {
   const values = [movieValues[0], ['delete-me', 'فیلم برای حذف', 'IR', 'draft', 'file-delete']];
   const source = { "'سینمایی'": values };
