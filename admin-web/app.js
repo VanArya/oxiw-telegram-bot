@@ -24,6 +24,7 @@ const elements = Object.fromEntries([
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
   'countrySeedPlanButton', 'countrySeedApplyButton', 'countrySeedPlanOutput',
+  'reconciliationButton', 'reconciliationOutput',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
   'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
   'managerCancel', 'managerEmail', 'managerRoles', 'managerSave', 'managerRows',
@@ -961,6 +962,93 @@ async function deleteEpisodeFromEditor() {
     setText($('#episode-edit-message'), error.message || 'حذف قسمت انجام نشد.');
   } finally {
     setBusy(button, false);
+  }
+}
+
+async function loadReconciliationReport() {
+  const button = elements.reconciliationButton;
+  const output = elements.reconciliationOutput;
+  const previousText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'در حال تطبیق Sheets و Firestore…';
+  output.hidden = false;
+  output.textContent = 'گزارش در حال آماده‌سازی است…';
+
+  const fa = (value) => Number(value || 0).toLocaleString('fa-IR');
+  const appendSamples = (lines, title, samples, formatter) => {
+    if (!Array.isArray(samples) || samples.length === 0) return;
+    lines.push('', `${title}:`);
+    samples.forEach((sample) => lines.push(`• ${formatter(sample)}`));
+  };
+
+  try {
+    const { body } = await api(`${API_ROOT}/diagnostics/reconciliation`);
+    const summary = body.summary || {};
+    const sheets = body.sheets || {};
+    const metadata = body.metadata || {};
+    const taxonomy = body.taxonomy || {};
+    const issues = body.issues || {};
+    const lines = [
+      'گزارش تطبیق داده‌ها · فقط‌خواندنی',
+      `زمان اجرا: ${body.generatedAt ? new Date(body.generatedAt).toLocaleString('fa-IR') : 'نامشخص'}`,
+      '',
+      'منبع Sheets',
+      `ردیف‌های خوانده‌شده: ${fa(summary.sourceRows)}`,
+      `ردیف‌های معتبرِ نگاشت‌شده: ${fa(summary.mappedSourceRows)}`,
+      `رکوردهای یکتای منبع: ${fa(summary.uniqueSourceRecords)}`,
+      `ردیف‌های خالیِ نادیده‌گرفته‌شده: ${fa(summary.blankRowsIgnored)}`,
+      `ردیف‌های قسمت که جداگانه بررسی می‌شوند: ${fa(summary.episodeRowsExcluded)}`,
+      `ردیف‌های ناقص: ${fa(summary.invalidSourceRows)}`,
+      `شناسه‌های تکراری: ${fa(summary.duplicateSourceIds)}`,
+      '',
+      'فرادادهٔ Firestore',
+      `کل اسناد معتبر: ${fa(summary.metadataRecords)}`,
+      `دارای تطبیق با منبع: ${fa(summary.matchedMetadata)}`,
+      `محتواهای فاقد فراداده: ${fa(summary.missingMetadata)}`,
+      `فراداده‌های بدون محتوای متناظر: ${fa(summary.orphanedMetadata)}`,
+      `اعتبارسنجی ساختار فراداده: ${metadata.validation === 'passed' ? 'موفق' : 'نامشخص'}`,
+      '',
+      'ارجاع‌ها و وضعیت انتشار',
+      `ارجاع‌های نامعتبر taxonomy: ${fa(summary.taxonomyReferenceIssues)}`,
+      `مورد منتشرشده بدون تأیید: ${fa(summary.inconsistentPublication)}`,
+      `کل یافته‌ها: ${fa(summary.totalFindings)}`,
+      `دسته‌بندی‌ها: ${fa(taxonomy.categories)} · کشورها: ${fa(taxonomy.countries)} · ژانرها: ${fa(taxonomy.genres)}`,
+      '',
+      'تفکیک شیت‌ها',
+    ];
+
+    Object.entries(sheets).forEach(([name, stats]) => {
+      lines.push(
+        `${name}: ${fa(stats.mappedRows)} معتبر، ${fa(stats.invalidRows)} ناقص، ${fa(stats.duplicateIdentityRows)} تکراری، ${fa(stats.blankRowsIgnored)} خالی، ${fa(stats.episodeRowsExcluded)} قسمت`,
+      );
+    });
+
+    appendSamples(lines, 'ردیف‌های ناقص منبع', issues.invalidSourceRows, (sample) =>
+      `${sample.sheetName}، ردیف ${fa(sample.rowNumber)}، ${sample.fieldName || sample.validationIssue}`);
+    appendSamples(lines, 'شناسه‌های تکراری منبع', issues.duplicateSourceIds, (sample) =>
+      `${sample.contentId} · ${sample.sheetName}، ردیف ${fa(sample.rowNumber)}`);
+    appendSamples(lines, 'محتواهای فاقد فراداده', issues.missingMetadata, (sample) =>
+      `${sample.contentId} · ${sample.sheetName}، ردیف ${fa(sample.rowNumber)}`);
+    appendSamples(lines, 'فراداده‌های سرگردان', issues.orphanedMetadata, (sample) =>
+      sample.contentId);
+    appendSamples(lines, 'ارجاع‌های نامعتبر taxonomy', issues.taxonomyReferences, (sample) =>
+      `${sample.contentId} · ${sample.taxonomyType}:${sample.termId} · ${sample.reason}`);
+    appendSamples(lines, 'انتشار ناسازگار', issues.inconsistentPublication, (sample) =>
+      `${sample.contentId} · تأیید: ${sample.approvalStatus} · انتشار: ${sample.publicationStatus}`);
+
+    const truncated = Object.values(body.samplesTruncated || {}).some(Boolean);
+    if (truncated) lines.push('', 'توجه: نمونه‌ها برای هر گروه حداکثر به ۲۵ مورد محدود شده‌اند؛ شمارنده‌ها کامل هستند.');
+    lines.push('', 'این گزارش هیچ ردیف یا سندی را ایجاد، ویرایش یا حذف نمی‌کند.');
+    output.textContent = lines.join('\n');
+    button.textContent = 'به‌روزرسانی گزارش';
+    clearGlobalMessage();
+  } catch (error) {
+    reportApiError(error, 'گزارش تطبیق داده‌ها در دسترس نیست.');
+    output.textContent = error.message || 'گزارش تطبیق انجام نشد.';
+    button.textContent = 'تلاش دوباره';
+  } finally {
+    button.disabled = false;
+    if (!output.textContent) button.textContent = previousText;
   }
 }
 
@@ -2230,6 +2318,7 @@ function wireUi() {
   $('#add-localized-title').addEventListener('click', () => addLocalizedTitle());
   $$('.taxonomy-new').forEach((button) => button.addEventListener('click', () => newTaxonomy(button.dataset.type)));
   elements.countrySeedPlanButton.addEventListener('click', () => void loadCountryTaxonomySeedPlan());
+  elements.reconciliationButton.addEventListener('click', () => void loadReconciliationReport());
   elements.countrySeedApplyButton.addEventListener('click', () => void applyCountryTaxonomySeedPlan());
   elements.countryForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'country'));
   elements.genreForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'genre'));
