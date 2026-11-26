@@ -75,6 +75,15 @@ test('maps series years and keeps combined season/episode data unparsed', () => 
   assert.equal('releaseYear' in result.content, false);
 });
 
+test('falls back to a populated کد سیستم when the کد سریال cell is blank', () => {
+  const mapped = mapCatalogSheetRow('سریال', {
+    ...seriesRow,
+    'کد سریال': '',
+    'کد سیستم': '70711',
+  });
+  assert.equal(mapped.content.id, 'series:70711');
+});
+
 test('maps the in-progress series marker and exposes it in the public DTO', () => {
   const mapped = mapCatalogSheetRow('سریال', {
     ...seriesRow,
