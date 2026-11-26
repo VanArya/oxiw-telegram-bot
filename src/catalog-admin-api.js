@@ -11,6 +11,7 @@ const {
   ROLES,
 } = require('./catalog-admin-authorization');
 const { normalizeCatalogAdminRoles } = require('./catalog-admin-role-provider');
+const { PRODUCER_COUNTRIES } = require('./catalog-producer-country');
 const { isProducerCountry } = require('./catalog-producer-country');
 const {
   assertVersionedWritableCatalogMetadataProvider,
@@ -873,8 +874,12 @@ function createCatalogAdminApi({
 
   app.get(`${BASE_PATH}/taxonomies/:type`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
-    const terms = await provider.listAllTaxonomyTerms(req.params.type);
+    let terms = await provider.listAllTaxonomyTerms(req.params.type);
     if (!Array.isArray(terms)) throw new Error('Invalid taxonomy provider response.');
+    if (req.params.type === 'country') {
+      const byId = new Map(terms.map((term) => [term.id, term]));
+      terms = PRODUCER_COUNTRIES.map(({ id }) => byId.get(id)).filter(Boolean);
+    }
     return res.json({ data: terms.map((term) => publicAdminTaxonomy(req.params.type, term)) });
   }));
 
@@ -888,6 +893,9 @@ function createCatalogAdminApi({
 
   app.put(`${BASE_PATH}/taxonomies/:type/:termId`, requirePermission(PERMISSIONS.TAXONOMIES_MANAGE), parseJson, asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+    if (req.params.type === 'country') {
+      return sendError(res, 409, 'PRODUCER_COUNTRY_FIXED', 'کشورهای سازنده مطابق ستون «سازنده» و فهرست هفت‌گانه ثابت هستند.');
+    }
     const precondition = readMutationPrecondition(req, res, `taxonomy-${req.params.type}`, req.params.termId);
     if (!precondition || res.headersSent) return;
     const body = validateCatalogTaxonomyTerm(req.params.type, req.params.termId, req.body);
@@ -919,6 +927,9 @@ function createCatalogAdminApi({
 
   app.delete(`${BASE_PATH}/taxonomies/:type/:termId`, requirePermission(PERMISSIONS.TAXONOMIES_MANAGE), asyncRoute(async (req, res) => {
     if (!TAXONOMY_TYPES.has(req.params.type)) throw new CatalogInputError('INVALID_TAXONOMY_TYPE');
+    if (req.params.type === 'country') {
+      return sendError(res, 409, 'PRODUCER_COUNTRY_FIXED', 'حذف کشورهای سازنده مجاز نیست؛ هفت مقدار ثابت در ستون «سازنده» استفاده می‌شوند.');
+    }
     const resourceType = `taxonomy-${req.params.type}`;
     const precondition = readIfMatch(req, res, resourceType, req.params.termId);
     if (!precondition || res.headersSent) return;

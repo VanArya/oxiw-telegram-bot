@@ -16,6 +16,7 @@ const {
 } = require('./catalog-operational-errors');
 const { MAX_DIRECT_CATEGORIES } = require('./catalog-metadata-validation');
 const { isSeriesEpisodeRecord } = require('./series-episode-record');
+const { PRODUCER_COUNTRIES } = require('./catalog-producer-country');
 
 const SHEETS = Object.freeze(['سینمایی', 'سریال']);
 const REQUIRED_HEADERS = Object.freeze({ movie: ['کد سیستم', 'اسم فیلم'], series: ['کد سریال', 'اسم فیلم'] });
@@ -286,10 +287,9 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
       if (!TAXONOMY_TYPES.includes(type)) return [];
       if (!metadataProvider) {
         if (type === 'country') {
-          return [
-            { id: 'IR', labelFa: 'ایران', enabled: true },
-            { id: 'US', labelFa: 'ایالات متحده', enabled: true },
-          ];
+          return PRODUCER_COUNTRIES.map(({ id, labelFa }, index) => ({
+            id, labelFa, enabled: true, sortOrder: (index + 1) * 10,
+          }));
         }
         return [];
       }
@@ -304,6 +304,12 @@ function createCatalogSheetAdapter(provider, { metadataProvider } = {}) {
       }
       try {
         validTaxonomyTerms(terms, type);
+        if (type === 'country') {
+          const byId = new Map(terms.map((term) => [term.id, term]));
+          return PRODUCER_COUNTRIES
+            .map(({ id }) => byId.get(id))
+            .filter(Boolean);
+        }
         return terms;
       } catch {
         throw createCatalogDataValidationError(

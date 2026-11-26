@@ -1677,12 +1677,28 @@ async function loadTaxonomy(type) {
     else genreTerms = body.data;
     list.replaceChildren();
     if (!body.data.length) list.append(emptyMessage('موردی ثبت نشده است. برای افزودن، دکمهٔ جدید را بزنید.'));
-    body.data.forEach((term) => list.append(makeRecordButton(
-      term.labelFa,
-      `${term.id} · ${term.enabled ? 'فعال' : 'غیرفعال'}`,
-      () => void editTaxonomy(type, term.id),
-      () => void deleteTaxonomy(type, term.id),
-    )));
+    body.data.forEach((term) => {
+      if (type === 'country') {
+        const record = document.createElement('div');
+        record.className = 'record-button';
+        const details = document.createElement('div');
+        details.className = 'record-details';
+        const title = document.createElement('strong');
+        title.textContent = term.labelFa;
+        const detail = document.createElement('span');
+        detail.textContent = `${term.id} · مقدار ثابت ستون «سازنده»`;
+        details.append(title, detail);
+        record.append(details);
+        list.append(record);
+        return;
+      }
+      list.append(makeRecordButton(
+        term.labelFa,
+        `${term.id} · ${term.enabled ? 'فعال' : 'غیرفعال'}`,
+        () => void editTaxonomy(type, term.id),
+        () => void deleteTaxonomy(type, term.id),
+      ));
+    });
     clearGlobalMessage();
   } catch (error) { reportApiError(error); }
 }

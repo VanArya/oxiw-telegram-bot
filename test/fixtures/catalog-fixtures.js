@@ -1,5 +1,7 @@
 'use strict';
 
+const { FOREIGN_COUNTRY_IDS } = require('../../src/catalog-country-taxonomy-seed');
+
 const items = [
   {
     id: 'fixture-movie-ir-1',
@@ -84,6 +86,32 @@ const categories = [
       all: [
         { field: 'kind', op: 'eq', value: 'movie' },
         { field: 'countryIds', op: 'contains', value: 'IR' },
+      ],
+    },
+  },
+  {
+    id: 'foreign-movies',
+    slug: 'foreign-movies',
+    localizedTitle: { fa: 'فیلم سینمایی خارجی' },
+    enabled: true,
+    sortOrder: 30,
+    filters: {
+      all: [
+        { field: 'kind', op: 'eq', value: 'movie' },
+        { any: FOREIGN_COUNTRY_IDS.map((id) => ({ field: 'countryIds', op: 'contains', value: id })) },
+      ],
+    },
+  },
+  {
+    id: 'foreign-series',
+    slug: 'foreign-series',
+    localizedTitle: { fa: 'سریال خارجی' },
+    enabled: true,
+    sortOrder: 40,
+    filters: {
+      all: [
+        { field: 'kind', op: 'eq', value: 'series' },
+        { any: FOREIGN_COUNTRY_IDS.map((id) => ({ field: 'countryIds', op: 'contains', value: id })) },
       ],
     },
   },

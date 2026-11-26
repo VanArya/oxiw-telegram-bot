@@ -12,6 +12,7 @@
 - مالک تأیید کرده کد پایدار فیلم («کد سیستم») و کد والد سریال («کد سریال») بعد از ثبت مجدداً به محتوای دیگری تخصیص داده نمی‌شوند. کد خالی/نامعتبر یا شناسهٔ تکراری در همان نوع باعث خطای fail-closed امن می‌شود؛ کد برابر میان movie و series مجاز است چون namespace جداست.
 - فهرست‌های عمومی فقط محتوای منتشرشده را برمی‌گردانند.
 - کشور سازنده در مدل از ستون «سازنده» خوانده و به شناسهٔ ISO دوحرفی نگاشت می‌شود. مقدار خالی یا ناشناخته کشور را نامشخص می‌گذارد و در دستهٔ کشورمحور قرار نمی‌گیرد. اتصال کامل فهرست taxonomy و فیلتر کشور به هر هفت شناسه، گام بعدی هم‌راستاسازی است.
+- `origin=iranian` و `origin=foreign` می‌توانند با `kind`، `genreId` و `year` ترکیب شوند؛ با `countryId` یا `category` قابل ترکیب نیستند. فیلتر خارجی فقط وقتی فعال است که هر شش کشور غیرایرانی در taxonomy فعال باشند؛ در غیر این صورت `FILTER_NOT_READY` برمی‌گردد.
 - فیلترها فقط روی فیلدهای مجاز اجرا می‌شوند؛ ورودی به‌عنوان کد یا expression ارزیابی نمی‌شود.
 - DSL دسته‌بندی حداکثر ۸ سطح عمق و حداکثر ۳۲ شرط برای هر `all` یا `any` می‌پذیرد.
 - فایل، Telegram file_id، token دانلود و شناسهٔ محرمانه در پاسخ کاتالوگ قرار نمی‌گیرند.
@@ -28,7 +29,8 @@
 | نام | نوع | معنا |
 |---|---|---|
 | kind | enum اختیاری | movie یا series |
-| countryId | رشتهٔ taxonomy اختیاری | فیلتر کشور سازنده |
+| countryId | شناسهٔ ISO اختیاری از هفت کشور سازنده | فیلتر کشور مشخص |
+| origin | `iranian` یا `foreign` | ایرانی: فقط IR؛ خارجی: هرکدام از US، KR، JP، IN، EG، ES |
 | genreId | رشتهٔ taxonomy اختیاری | فقط با metadata provider و taxonomy ژانر فعال؛ در غیر این صورت `FILTER_NOT_READY` |
 | category | slug اختیاری | انتخاب یک دستهٔ فعال داده‌محور؛ با فیلترهای kind/countryId/genreId/year قابل ترکیب نیست |
 | q | رشتهٔ اختیاری | فعلاً رد می‌شود؛ جست‌وجوی عنوان و نرمال‌سازی فارسی پیاده‌سازی نشده |
@@ -51,7 +53,7 @@
 
 فهرست CategoryDefinitionهای فعال و داده‌محور.
 
-هر دسته شامل id، slug، localizedTitle، sortOrder و یک تعریف فیلتر محدود است. کلاینت‌ها عنوان و فهرست دسته را از این endpoint می‌گیرند؛ نام دسته در شرط ثابت هر رابط قرار نمی‌گیرد.
+هر دسته شامل id، slug، localizedTitle، sortOrder و یک تعریف فیلتر محدود است. چهار دستهٔ canonical عبارت‌اند از `iranian-movies`، `iranian-series`، `foreign-movies` و `foreign-series`. دسته‌های خارجی با شرط `any` روی شش شناسهٔ غیرایرانی ساخته می‌شوند. کلاینت‌ها عنوان و فهرست دسته را از این endpoint می‌گیرند؛ نام دسته در شرط ثابت هر رابط قرار نمی‌گیرد.
 
 ### GET /api/v1/catalog/taxonomies
 
@@ -153,7 +155,7 @@ CatalogMetadataProvider
 
 `approvalStatus` اجباری و محدود به `pending | approved | rejected | unknown` است؛ `publicationStatus` اجباری و محدود به `draft | published | archived | unknown`. این‌ها دو تصمیم مستقل‌اند: `approved` فقط تأیید محتوا را بیان می‌کند و به‌تنهایی اجازهٔ نمایش نمی‌دهد. API تنها با هر دو مقدار `approved` و `published` رکورد را عمومی می‌کند. مقدار قدیمی `visibility=approved`، `status=published`، فیلد مفقود، enum نامعتبر یا metadata غایب رد می‌شود و به وضعیت عمومی نگاشت نمی‌شود. اگر رکورد metadata نامعتبر باشد یا شناسه‌های country/genre به taxonomy فعال تعلق نداشته باشند، محتوا عمومی نمی‌شود. `listTaxonomyTerms` باید اصطلاحات فعال و دارای `id`, `labelFa`, `enabled: true` برگرداند. `listCategories` تعریف‌های Category را برمی‌گرداند؛ فیلتر هر دسته فقط با DSL محدود Core اعتبارسنجی می‌شود. این interface عملیات نوشتن ندارد.
 
-نمونهٔ محلی این interface را از طریق `createCatalogSheetAdapter(provider, { metadataProvider })` متصل می‌کند. metadata فقط با ID ترکیبی دقیق join می‌شود. فقط زوج معتبر `approvalStatus=approved` و `publicationStatus=published` عمومی است؛ `approved` در وضعیت تأیید، `published` در وضعیت انتشار، مقدارهای قدیمی `visibility`/`status`، وضعیت نامعلوم، metadata ناقص/نامعتبر و کدهای تکراری مجوز عمومی نمی‌دهند. در schema دارای header «سازنده»، کشور از مقدار شیت می‌آید و metadata کشور قدیمی نه آن را override می‌کند و نه در صورت نامعتبر بودن، وضعیت تأیید/انتشار را خراب می‌کند. فقط schemaهای قدیمی فاقد این header می‌توانند از countryIds metadata استفاده کنند؛ ژانر و وضعیت‌های تأیید/انتشار همچنان metadata-owned هستند. این رفتار fixtureمحور است؛ برای جلوگیری از پنهان‌شدن ناخواستهٔ محتوای جاری، تعویض consumer تا تأیید رفتار سرویس فعلی و تطبیق مجموعهٔ شناسه‌های public متوقف می‌ماند.
+نمونهٔ محلی این interface را از طریق `createCatalogSheetAdapter(provider, { metadataProvider })` متصل می‌کند. metadata فقط با ID ترکیبی دقیق join می‌شود. فقط زوج معتبر `approvalStatus=approved` و `publicationStatus=published` عمومی است؛ `approved` در وضعیت تأیید، `published` در وضعیت انتشار، مقدارهای قدیمی `visibility`/`status`، وضعیت نامعلوم، metadata ناقص/نامعتبر و کدهای تکراری مجوز عمومی نمی‌دهند. در schema دارای header «سازنده»، کشور از مقدار شیت می‌آید و metadata کشور قدیمی نه آن را override می‌کند و نه در صورت نامعتبر بودن، وضعیت تأیید/انتشار را خراب می‌کند. فقط schemaهای قدیمی فاقد این header می‌توانند از countryIds metadata استفاده کنند؛ ژانر و وضعیت‌های تأیید/انتشار همچنان metadata-owned هستند. command مربوط به `catalog:seed-country-taxonomy` هفت term و چهار category را با dry-run پیش‌فرض و `--apply` محافظت‌شده و auditشده ایجاد/هم‌راستا می‌کند. این رفتار fixtureمحور است؛ برای جلوگیری از پنهان‌شدن ناخواستهٔ محتوای جاری، تعویض consumer تا تأیید رفتار سرویس فعلی و تطبیق مجموعهٔ شناسه‌های public متوقف می‌ماند.
 
 `createFirestoreCatalogMetadataProvider({ firestore })` همین interface را با کلاینت تزریق‌شده پیاده می‌کند و فقط `collection/doc/get` می‌خواند. تست‌ها از fake client استفاده می‌کنند؛ SDK، credential و شبکه لازم نیست. provider حافظه‌ای همچنان گزینهٔ پیش‌فرض fixtureهاست و Core هیچ وابستگی‌ای به نوع storage ندارد. در staging بعدی می‌توان فقط `metadataProvider` را در composition root به provider حافظه‌ای یا Firestore تغییر داد؛ برای بازگشت، همان تزریق staging دوباره به provider حافظه‌ای/آزمایشی برگردانده می‌شود. این کار نیازمند تغییر Core نیست و در این مرحله composition زنده‌ای ساخته نشده است.
 

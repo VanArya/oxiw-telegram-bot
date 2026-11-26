@@ -5,6 +5,7 @@ const http = require('node:http');
 const test = require('node:test');
 const { createCatalogApi } = require('../src/catalog-api');
 const { categories } = require('./fixtures/catalog-fixtures');
+const { PRODUCER_COUNTRIES } = require('../src/catalog-producer-country');
 const {
   createFixtureMetadataProvider,
   createFixtureProvider,
@@ -115,13 +116,14 @@ test('serves data-driven Iranian categories and only implemented taxonomy terms'
     const categoryResult = await jsonResponse(`${baseUrl}/api/v1/catalog/categories`);
     assert.equal(categoryResult.response.status, 200);
     assert.deepEqual(categoryResult.body.data.map((item) => item.slug), [
-      'iranian-movies', 'iranian-series',
+      'iranian-movies', 'iranian-series', 'foreign-movies', 'foreign-series',
     ]);
 
     const taxonomies = await jsonResponse(`${baseUrl}/api/v1/catalog/taxonomies`);
     assert.equal(taxonomies.response.status, 200);
     assert.deepEqual(taxonomies.body.meta.availableTypes, ['country', 'genre']);
-    assert.deepEqual(taxonomies.body.data.country.map((term) => term.id), ['IR', 'US']);
+    assert.deepEqual(taxonomies.body.data.country.map((term) => term.id), ['IR', 'US', 'KR', 'JP', 'IN', 'EG', 'ES']);
+    assert.deepEqual(taxonomies.body.data.country.map((term) => term.labelFa), ['ایران', 'آمریکا', 'کره جنوبی', 'ژاپن', 'هند', 'مصر', 'اسپانیا']);
     assert.deepEqual(taxonomies.body.data.genre.map((term) => term.id), ['drama', 'comedy']);
   });
 });
@@ -156,5 +158,107 @@ test('exposes no write or download operations', async () => {
     assert.equal(response.status, 404);
     const body = await response.json();
     assert.equal(body.error.code, 'NOT_FOUND');
+  });
+});
+
+
+function producerCountryApiOptions({ activeCountryIds } = {}) {
+  const rows = PRODUCER_COUNTRIES.map((country, index) => [
+    `origin-${country.id}`,
+    `عنوان ${country.labelFa}`,
+    String(2020 + index),
+    country.labelFa,
+  ]);
+  const provider = {
+    async readSheet(sheetName) {
+      if (sheetName === 'سینمایی') {
+        return {
+          headers: ['کد سیستم', 'اسم فیلم', 'سال', 'سازنده'],
+          rows: rows.map((row) => [...row]),
+        };
+      }
+      return {
+        headers: ['کد سریال', 'اسم فیلم', 'سازنده', 'کد قسمت', 'Telegram File ID'],
+        rows: [],
+      };
+    },
+  };
+  const overrides = Object.fromEntries(PRODUCER_COUNTRIES.map((country) => [
+    `movie:origin-${country.id}`,
+    { approvalStatus: 'approved', publicationStatus: 'published', genreIds: ['drama'] },
+  ]));
+  const baseMetadata = createFixtureMetadataProvider(overrides);
+  const metadataProvider = activeCountryIds
+    ? {
+      ...baseMetadata,
+      async listTaxonomyTerms(type) {
+        if (type === 'country') {
+          return baseMetadata.listTaxonomyTerms('country')
+            .then((terms) => terms.filter((term) => activeCountryIds.includes(term.id)));
+        }
+        return baseMetadata.listTaxonomyTerms(type);
+      },
+    }
+    : baseMetadata;
+  return { provider, categories, metadataProvider };
+}
+
+test('supports countryId and origin filters for all seven producer countries', async () => {
+  await withApiServer(producerCountryApiOptions(), async (baseUrl) => {
+    const iranian = await jsonResponse(`${baseUrl}/api/v1/catalog/items?origin=iranian`);
+    assert.equal(iranian.response.status, 200);
+    assert.deepEqual(iranian.body.data.map((item) => item.id), ['movie:origin-IR']);
+    assert.deepEqual(iranian.body.meta.filtersApplied, { origin: 'iranian' });
+
+    const foreign = await jsonResponse(`${baseUrl}/api/v1/catalog/items?kind=movie&origin=foreign&genreId=drama`);
+    assert.equal(foreign.response.status, 200);
+    assert.deepEqual(foreign.body.data.map((item) => item.id), [
+      'movie:origin-US', 'movie:origin-KR', 'movie:origin-JP',
+      'movie:origin-IN', 'movie:origin-EG', 'movie:origin-ES',
+    ]);
+    assert.deepEqual(foreign.body.meta.filtersApplied, {
+      kind: 'movie', origin: 'foreign', genreId: 'drama',
+    });
+
+    const korean = await jsonResponse(`${baseUrl}/api/v1/catalog/items?countryId=KR`);
+    assert.equal(korean.response.status, 200);
+    assert.deepEqual(korean.body.data.map((item) => item.id), ['movie:origin-KR']);
+    assert.deepEqual(korean.body.data[0].countries, [{ id: 'KR', labelFa: 'کره جنوبی' }]);
+
+    const foreignCategory = await jsonResponse(`${baseUrl}/api/v1/catalog/items?category=foreign-movies`);
+    assert.equal(foreignCategory.response.status, 200);
+    assert.deepEqual(foreignCategory.body.data.map((item) => item.id), foreign.body.data.map((item) => item.id));
+  });
+});
+
+test('origin filters reject ambiguous combinations and incomplete country taxonomies', async () => {
+  await withApiServer(producerCountryApiOptions(), async (baseUrl) => {
+    for (const query of [
+      'origin=somewhere',
+      'origin=foreign&countryId=US',
+      'origin=iranian&category=iranian-movies',
+    ]) {
+      const result = await jsonResponse(`${baseUrl}/api/v1/catalog/items?${query}`);
+      assert.equal(result.response.status, 400, query);
+      assert.equal(result.body.error.code, 'INVALID_FILTER', query);
+    }
+  });
+
+  await withApiServer(producerCountryApiOptions({ activeCountryIds: ['IR', 'US'] }), async (baseUrl) => {
+    const result = await jsonResponse(`${baseUrl}/api/v1/catalog/items?origin=foreign`);
+    assert.equal(result.response.status, 400);
+    assert.equal(result.body.error.code, 'FILTER_NOT_READY');
+  });
+});
+
+
+test('country taxonomy fallback exposes all seven approved producer countries without metadata storage', async () => {
+  await withApiServer({ provider: createFixtureProvider(), categories }, async (baseUrl) => {
+    const response = await jsonResponse(`${baseUrl}/api/v1/catalog/taxonomies`);
+    assert.equal(response.response.status, 200);
+    assert.deepEqual(response.body.data.country.map((term) => term.id), [
+      'IR', 'US', 'KR', 'JP', 'IN', 'EG', 'ES',
+    ]);
+    assert.deepEqual(response.body.meta.availableTypes, ['country']);
   });
 });

@@ -9,6 +9,7 @@ const { createCatalogRoleAuthorizer } = require('../src/catalog-admin-authorizat
 const { createInMemoryCatalogAdminRoleProvider } = require('../src/catalog-admin-role-provider');
 const { createCatalogApi } = require('../src/catalog-api');
 const { createCatalogContentId } = require('../src/catalog-content-identity');
+const { PRODUCER_COUNTRIES } = require('../src/catalog-producer-country');
 const { createFirestoreCatalogAuditEventSink } = require('../src/firestore-catalog-audit-event-sink');
 const { createFirestoreCatalogMetadataProvider } = require('../src/firestore-catalog-metadata-provider');
 const {
@@ -176,6 +177,13 @@ test('integrates sheet identity, shared Firestore metadata, admin authorization,
   const auditEventSink = createFirestoreCatalogAuditEventSink({ firestore });
   const writableProvider = createFirestoreWritableCatalogMetadataProvider({ firestore, auditEventSink });
   const metadataProvider = createFirestoreCatalogMetadataProvider({ firestore });
+  // Producer countries are a fixed, system-owned taxonomy, provisioned before
+  // the admin workflow rather than created through the editable admin API.
+  for (const [index, country] of PRODUCER_COUNTRIES.entries()) {
+    await writableProvider.upsertTaxonomyTerm('country', country.id, {
+      labelFa: country.labelFa, enabled: true, sortOrder: (index + 1) * 10,
+    }, { expectedVersion: 0, actorId: 'fixture-country-bootstrap' });
+  }
   const sheets = {
     async readSheet(sheetName) {
       if (sheetName === 'سینمایی') {
@@ -202,8 +210,6 @@ test('integrates sheet identity, shared Firestore metadata, admin authorization,
 
   await withServer(taxonomyApi, async (baseUrl) => {
     for (const [type, id, labelFa, enabled] of [
-      ['country', 'IR', 'ایران', true],
-      ['country', 'US', 'ایالات متحده', false],
       ['genre', 'drama', 'درام', true],
     ]) {
       const result = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/${type}/${id}`, {
@@ -405,7 +411,7 @@ test('integrates sheet identity, shared Firestore metadata, admin authorization,
     const categories = await json(await fetch(`${baseUrl}/api/v1/catalog/categories`));
     assert.deepEqual(categories.body.data.map(({ slug }) => slug).sort(), ['iranian-movies', 'iranian-series']);
     const taxonomies = await json(await fetch(`${baseUrl}/api/v1/catalog/taxonomies`));
-    assert.deepEqual(taxonomies.body.data.country.map(({ id }) => id), ['IR']);
+    assert.deepEqual(taxonomies.body.data.country.map(({ id }) => id), ['IR', 'US', 'KR', 'JP', 'IN', 'EG', 'ES']);
     assert.deepEqual(taxonomies.body.data.genre.map(({ id }) => id), ['drama']);
   });
 
