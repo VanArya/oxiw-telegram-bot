@@ -76,7 +76,12 @@ function createFixtureMetadataProvider(overrides = {}) {
     taxonomies: {
       country: [
         { id: 'IR', labelFa: 'ایران', enabled: true },
-        { id: 'US', labelFa: 'ایالات متحده', enabled: true },
+        { id: 'US', labelFa: 'آمریکا', enabled: true },
+        { id: 'KR', labelFa: 'کره جنوبی', enabled: true },
+        { id: 'JP', labelFa: 'ژاپن', enabled: true },
+        { id: 'IN', labelFa: 'هند', enabled: true },
+        { id: 'EG', labelFa: 'مصر', enabled: true },
+        { id: 'ES', labelFa: 'اسپانیا', enabled: true },
       ],
       genre: [
         { id: 'drama', labelFa: 'درام', enabled: true },
