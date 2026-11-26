@@ -117,6 +117,7 @@ test('source diagnostics report only safe identity candidates and never expose f
     'Telegram File ID': 'never-return-this-file-id',
   });
   source['سریال'].rows.push(headers.map((header) => invalid[header]));
+  source['سریال'].rows.push(headers.map(() => ''));
   const reader = makeReader({ source });
   const report = await reader.listSourceDiagnostics();
   const row = report.data.find((entry) => entry.sheetName === 'سریال');
@@ -324,6 +325,7 @@ test('admin content reader skips invalid source rows and reports safe row diagno
   const titleIndex = source['سینمایی'].headers.indexOf('اسم فیلم');
   invalidRow[titleIndex] = '';
   source['سینمایی'].rows.splice(1, 0, invalidRow);
+  source['سینمایی'].rows.push(source['سینمایی'].headers.map(() => ''));
   const diagnostics = [];
   const writableProvider = createInMemoryWritableCatalogMetadataProvider({
     contentMetadata: [], categories: [],

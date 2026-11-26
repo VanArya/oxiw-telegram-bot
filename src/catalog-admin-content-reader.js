@@ -15,6 +15,10 @@ function hasSourceValue(value) {
     (typeof value === 'number' && Number.isFinite(value));
 }
 
+function isCompletelyBlankSourceRow(record) {
+  return !Object.values(record).some(hasSourceValue);
+}
+
 const CODE_HEADER = (sheetName, headers = [], record = null) => {
   if (sheetName !== 'سریال') return 'کد سیستم';
   if (record && hasSourceValue(record['کد سریال'])) return 'کد سریال';
@@ -216,6 +220,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
       try { snapshot = validateSnapshot(sheetName, sourceSnapshot); } catch (cause) { const error = new Error('Catalog sheet snapshot validation failed.'); error.name = 'CatalogAdminListStageError'; error.dependency = 'sheets'; error.stage = 'sheet_snapshot_validation'; error.errorCode = 'CATALOG_STAGE_FAILED'; error.cause = cause; throw error; }
       snapshot.rows.forEach((row, rowIndex) => {
         const record = rowToRecord(snapshot.headers, row);
+        // Intentionally unused sheet rows are not invalid catalog entries.
+        if (isCompletelyBlankSourceRow(record)) return;
         // Episode rows are linked children, never standalone admin catalog titles.
         if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return;
         const sourceRowNumber = rowIndex + 2;
@@ -576,6 +582,8 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
 
         snapshot.rows.forEach((row, rowIndex) => {
           const record = rowToRecord(snapshot.headers, row);
+          // Do not report reserved/unused blank rows as bad source data.
+          if (isCompletelyBlankSourceRow(record)) return;
           if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) return;
           try {
             mapCatalogSheetRow(sheetName, record);
