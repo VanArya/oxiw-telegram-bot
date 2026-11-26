@@ -23,6 +23,7 @@ const elements = Object.fromEntries([
   'contentSearch', 'contentKind', 'contentApproval', 'contentPublication', 'contentCountry', 'contentGenre', 'contentCategory', 'statsGrid',
   'contentDialog', 'dialogMessage', 'metadataForm', 'metadataSave', 'metadataCountries',
   'metadataGenres', 'metadataCategories', 'toast', 'categoryList', 'categoryForm', 'countryList', 'genreList',
+  'countrySeedPlanButton', 'countrySeedPlanOutput',
   'countryForm', 'genreForm', 'auditRows', 'auditPage', 'auditPrev', 'auditNext',
   'managerNav', 'managerNew', 'managerRefresh', 'managerMessage', 'managerForm',
   'managerCancel', 'managerEmail', 'managerRoles', 'managerSave', 'managerRows',
@@ -1669,6 +1670,47 @@ async function deleteCategory(id) {
   }
 }
 
+function renderCountryTaxonomySeedPlan(report) {
+  const counts = report?.counts || {};
+  const lines = [
+    'وضعیت: پیش‌نمایش فقط‌خواندنی؛ هیچ داده‌ای تغییر نکرده است.',
+    `کشورها: ${counts.createTerms || 0} ایجاد · ${counts.updateTerms || 0} اصلاح · ${counts.alreadyPresentTerms || 0} بدون تغییر`,
+    `دسته‌ها: ${counts.createCategories || 0} ایجاد · ${counts.updateCategories || 0} اصلاح · ${counts.alreadyPresentCategories || 0} بدون تغییر`,
+    `تعارض‌ها: ${counts.conflicts || 0}`,
+    `موارد خارج از مجموعهٔ canonical که حفظ می‌شوند: ${counts.additionalCountryTerms || 0} کشور و ${counts.additionalCategories || 0} دسته`,
+  ];
+  const append = (heading, entries, format) => {
+    if (!Array.isArray(entries) || entries.length === 0) return;
+    lines.push('', heading);
+    entries.forEach((entry) => lines.push(`• ${format(entry)}`));
+  };
+  append('کشورهای پیشنهادی برای ایجاد', report.createTerms, (term) => `${term.id} — ${term.labelFa}`);
+  append('کشورهای پیشنهادی برای اصلاح', report.updateTerms, (term) =>
+    `${term.id} — ${term.previousLabelFa} ← ${term.labelFa}`);
+  append('دسته‌های پیشنهادی برای ایجاد', report.createCategories, (category) =>
+    `${category.slug} — ${category.titleFa}`);
+  append('دسته‌های پیشنهادی برای اصلاح', report.updateCategories, (category) =>
+    `${category.slug} — ${category.previousTitleFa} ← ${category.titleFa}`);
+  append('تعارض‌هایی که Apply را متوقف می‌کنند', report.conflicts, (conflict) =>
+    `${conflict.entity || 'item'} · ${conflict.id || conflict.slug || 'بدون شناسه'} · ${conflict.reason || 'نیازمند بررسی'}`);
+  elements.countrySeedPlanOutput.textContent = lines.join('\n');
+  elements.countrySeedPlanOutput.hidden = false;
+}
+
+async function loadCountryTaxonomySeedPlan() {
+  setBusy(elements.countrySeedPlanButton, true);
+  elements.countrySeedPlanButton.textContent = 'در حال خواندن Firestore…';
+  try {
+    const { body } = await api(`${API_ROOT}/maintenance/country-taxonomy/seed-plan`);
+    renderCountryTaxonomySeedPlan(body.data);
+    showToast('پیش‌نمایش از داده‌های فعلی Firestore دریافت شد.');
+  } catch (error) {
+    reportApiError(error);
+  } finally {
+    setBusy(elements.countrySeedPlanButton, false);
+  }
+}
+
 async function loadTaxonomy(type) {
   const list = type === 'country' ? elements.countryList : elements.genreList;
   try {
@@ -2080,6 +2122,7 @@ function wireUi() {
   $('#add-filter').addEventListener('click', () => addFilterCondition());
   $('#add-localized-title').addEventListener('click', () => addLocalizedTitle());
   $$('.taxonomy-new').forEach((button) => button.addEventListener('click', () => newTaxonomy(button.dataset.type)));
+  elements.countrySeedPlanButton.addEventListener('click', () => void loadCountryTaxonomySeedPlan());
   elements.countryForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'country'));
   elements.genreForm.addEventListener('submit', (event) => void saveTaxonomy(event, 'genre'));
   $$('[data-close-form]').forEach((button) => button.addEventListener('click', () => {

@@ -619,6 +619,68 @@ test('metadata approval and publication are separate and only their approved/pub
   });
 });
 
+test('country taxonomy seed preview uses live provider reads and never writes', async () => {
+  const store = createStore({
+    taxonomies: {
+      country: [
+        { id: 'IR', labelFa: 'ایران', enabled: true, sortOrder: 10 },
+        { id: 'US', labelFa: 'ایالات متحده', enabled: false, sortOrder: 20 },
+        { id: 'XX', labelFa: 'کشور اضافه', enabled: true, sortOrder: 90 },
+      ],
+      genre: [genreFixture],
+    },
+    categories: [
+      {
+        id: 'iranian-movies',
+        slug: 'iranian-movies',
+        localizedTitle: { fa: 'فیلم ایرانی' },
+        enabled: true,
+        sortOrder: 10,
+        mode: 'manual',
+      },
+      {
+        id: 'custom-category',
+        slug: 'custom-category',
+        localizedTitle: { fa: 'دستهٔ سفارشی' },
+        enabled: true,
+        sortOrder: 90,
+        mode: 'dynamic',
+      },
+    ],
+  });
+  const beforeTerms = await store.listAllTaxonomyTerms('country');
+  const beforeCategories = await store.listCategories();
+  let writeCalls = 0;
+  const observedProvider = {
+    ...store,
+    async upsertTaxonomyTerm(...args) { writeCalls += 1; return store.upsertTaxonomyTerm(...args); },
+    async upsertCategory(...args) { writeCalls += 1; return store.upsertCategory(...args); },
+  };
+  const app = createAdminApi(observedProvider, { roles: ['observer'] });
+
+  await withServer(app, async (baseUrl) => {
+    const result = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/maintenance/country-taxonomy/seed-plan`,
+    ));
+    assert.equal(result.status, 200);
+    assert.equal(result.body.data.mode, 'dry-run');
+    assert.equal(result.body.data.counts.requestedCountries, 7);
+    assert.equal(result.body.data.counts.createTerms, 5);
+    assert.equal(result.body.data.counts.updateTerms, 1);
+    assert.equal(result.body.data.counts.additionalCountryTerms, 1);
+    assert.equal(result.body.data.counts.createCategories, 3);
+    assert.equal(result.body.data.counts.additionalCategories, 1);
+    assert.equal(result.body.data.counts.conflicts, 1);
+    assert.equal(result.body.data.conflicts[0].reason, 'NON_DYNAMIC_CATEGORY_REQUIRES_REVIEW');
+    assert.deepEqual(result.body.data.additionalCountryTerms.map(({ id }) => id), ['XX']);
+    assert.deepEqual(result.body.data.additionalCategories.map(({ id }) => id), ['custom-category']);
+  });
+
+  assert.equal(writeCalls, 0);
+  assert.deepEqual(await store.listAllTaxonomyTerms('country'), beforeTerms);
+  assert.deepEqual(await store.listCategories(), beforeCategories);
+});
+
 test('admin API creates and edits categories and country/genre taxonomy with validation', async () => {
   const store = createStore();
   const app = createAdminApi(store);
