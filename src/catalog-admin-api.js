@@ -513,6 +513,13 @@ function createCatalogAdminApi({
     return res.json(await contentReader.listSourceDiagnostics());
   }));
 
+  app.get(`${BASE_PATH}/diagnostics/reconciliation`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!contentReader || typeof contentReader.listReconciliationReport !== 'function') {
+      return sendError(res, 503, 'RECONCILIATION_UNAVAILABLE', 'گزارش تطبیق منابع داده پیکربندی نشده است.');
+    }
+    return res.json(await contentReader.listReconciliationReport());
+  }));
+
   app.get(`${BASE_PATH}/items`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!contentReader || typeof contentReader.list !== 'function') {
       return sendError(res, 503, 'ADMIN_CONTENT_READ_NOT_CONFIGURED', 'فهرست مدیریتی محتوا پیکربندی نشده است.');
