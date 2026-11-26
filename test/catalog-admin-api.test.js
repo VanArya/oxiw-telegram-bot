@@ -681,6 +681,99 @@ test('country taxonomy seed preview uses live provider reads and never writes', 
   assert.deepEqual(await store.listCategories(), beforeCategories);
 });
 
+test('country taxonomy seed apply requires both management permissions and a current conflict-free preview', async () => {
+  const store = createStore({
+    taxonomies: { country: [], genre: [genreFixture] },
+    categories: [],
+  });
+  let writeCalls = 0;
+  const observedProvider = {
+    ...store,
+    async upsertTaxonomyTerm(...args) {
+      writeCalls += 1;
+      return store.upsertTaxonomyTerm(...args);
+    },
+    async upsertCategory(...args) {
+      writeCalls += 1;
+      return store.upsertCategory(...args);
+    },
+  };
+
+  const observer = createAdminApi(observedProvider, { roles: ['observer'] });
+  await withServer(observer, async (baseUrl) => {
+    const denied = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/maintenance/country-taxonomy/seed-apply`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          confirmation: 'APPLY_COUNTRY_TAXONOMY_SEED',
+          planHash: 'a'.repeat(64),
+        }),
+      },
+    ));
+    assert.equal(denied.status, 403);
+    assert.equal(denied.body.error.code, 'FORBIDDEN');
+  });
+  assert.equal(writeCalls, 0);
+
+  const manager = createAdminApi(observedProvider, { roles: ['taxonomy_manager'] });
+  await withServer(manager, async (baseUrl) => {
+    const preview = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/maintenance/country-taxonomy/seed-plan`,
+    ));
+    assert.equal(preview.status, 200);
+    assert.match(preview.body.data.planHash, /^[a-f0-9]{64}$/);
+    assert.equal(preview.body.data.counts.conflicts, 0);
+    assert.equal(preview.body.data.counts.createTerms, 7);
+    assert.equal(preview.body.data.counts.createCategories, 4);
+
+    const stale = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/maintenance/country-taxonomy/seed-apply`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          confirmation: 'APPLY_COUNTRY_TAXONOMY_SEED',
+          planHash: '0'.repeat(64),
+        }),
+      },
+    ));
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.error.code, 'SEED_PLAN_STALE');
+    assert.equal(writeCalls, 0);
+
+    const applied = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/maintenance/country-taxonomy/seed-apply`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          confirmation: 'APPLY_COUNTRY_TAXONOMY_SEED',
+          planHash: preview.body.data.planHash,
+        }),
+      },
+    ));
+    assert.equal(applied.status, 200);
+    assert.equal(applied.body.data.mode, 'apply');
+    assert.equal(applied.body.data.counts.createdTerms, 7);
+    assert.equal(applied.body.data.counts.createdCategories, 4);
+    assert.equal(applied.body.data.counts.updatedTerms, 0);
+    assert.equal(applied.body.data.counts.updatedCategories, 0);
+    assert.equal((await store.listAllTaxonomyTerms('country')).length, 7);
+    assert.equal((await store.listCategories()).length, 4);
+
+    const after = await json(await fetch(
+      `${baseUrl}${ADMIN_PATH}/maintenance/country-taxonomy/seed-plan`,
+    ));
+    assert.equal(after.body.data.counts.createTerms, 0);
+    assert.equal(after.body.data.counts.updateTerms, 0);
+    assert.equal(after.body.data.counts.createCategories, 0);
+    assert.equal(after.body.data.counts.updateCategories, 0);
+    assert.equal(after.body.data.counts.conflicts, 0);
+  });
+});
+
 test('admin API creates and edits categories and country/genre taxonomy with validation', async () => {
   const store = createStore();
   const app = createAdminApi(store);
