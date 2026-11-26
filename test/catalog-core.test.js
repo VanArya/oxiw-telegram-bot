@@ -15,7 +15,7 @@ test('categories are data-driven, enabled-only, and sorted', () => {
   const result = listCategories(categories);
   assert.deepEqual(
     result.map((category) => category.slug),
-    ['iranian-movies', 'iranian-series'],
+    ['iranian-movies', 'iranian-series', 'foreign-movies', 'foreign-series'],
   );
 });
 
@@ -144,4 +144,39 @@ test('manual and hybrid categories union direct and dynamic membership without d
   });
   assert.equal(new Set(hybrid.map(({ id }) => id)).size, hybrid.length);
   assert.deepEqual(hybrid.map(({ id }) => id).sort(), [duplicate.id, dynamic.id].sort());
+});
+
+
+test('foreign movie category includes every approved non-Iran producer country', () => {
+  const foreignMovies = categories.find((item) => item.slug === 'foreign-movies');
+  const foreignItems = ['US', 'KR', 'JP', 'IN', 'EG', 'ES'].map((countryId) => ({
+    id: `movie-${countryId}`,
+    kind: 'movie',
+    countryIds: [countryId],
+    approvalStatus: 'approved',
+    publicationStatus: 'published',
+  }));
+  foreignItems.push({
+    id: 'unknown-country-movie', kind: 'movie',
+    approvalStatus: 'approved', publicationStatus: 'published',
+  });
+  foreignItems.push({
+    id: 'iranian-movie', kind: 'movie', countryIds: ['IR'],
+    approvalStatus: 'approved', publicationStatus: 'published',
+  });
+  assert.deepEqual(
+    getCategoryItems(foreignItems, foreignMovies).map((item) => item.id),
+    ['movie-US', 'movie-KR', 'movie-JP', 'movie-IN', 'movie-EG', 'movie-ES'],
+  );
+});
+
+test('foreign series category excludes movies, Iranian titles and unpublished content', () => {
+  const foreignSeries = categories.find((item) => item.slug === 'foreign-series');
+  const candidates = [
+    { id: 'series-us', kind: 'series', countryIds: ['US'], approvalStatus: 'approved', publicationStatus: 'published' },
+    { id: 'series-ir', kind: 'series', countryIds: ['IR'], approvalStatus: 'approved', publicationStatus: 'published' },
+    { id: 'movie-kr', kind: 'movie', countryIds: ['KR'], approvalStatus: 'approved', publicationStatus: 'published' },
+    { id: 'series-es-draft', kind: 'series', countryIds: ['ES'], approvalStatus: 'approved', publicationStatus: 'draft' },
+  ];
+  assert.deepEqual(getCategoryItems(candidates, foreignSeries).map((item) => item.id), ['series-us']);
 });
