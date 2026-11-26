@@ -681,7 +681,10 @@ function createCatalogAdminApi({
       if (!['movie', 'series'].includes(req.body.kind) || typeof contentReader?.getSheetSchema !== 'function' ||
           typeof contentReader?.createItemSource !== 'function') throw new CatalogInputError();
       const schema = await contentReader.getSheetSchema(req.body.kind);
-      const identityHeader = req.body.kind === 'series' && schema.headers.includes('کد سریال')
+      const requestedSeriesCode = req.body.kind === 'series' ? req.body.fields?.['کد سریال'] : null;
+      const hasSeriesCode = (typeof requestedSeriesCode === 'string' && requestedSeriesCode.trim() !== '') ||
+        (typeof requestedSeriesCode === 'number' && Number.isFinite(requestedSeriesCode));
+      const identityHeader = req.body.kind === 'series' && hasSeriesCode
         ? 'کد سریال'
         : 'کد سیستم';
       validateSourceFields(req.body.fields, schema.headers, { create: true, identityHeader });
