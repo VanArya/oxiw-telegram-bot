@@ -19,7 +19,7 @@ const codeHeaderFor = (sheetName, record = null) => {
 function episodeCodeDetails(record) {
   const field = ['کد قسمت', 'کد سیستم', 'کد سریال']
     .find((candidate) => typeof record?.[candidate] === 'string' &&
-      /^\\d{5}\\.\\d{2}\\.\\d{2}$/.test(record[candidate].normalize('NFC').trim()));
+      /^\d{5}\.\d{2}\.\d{2}$/.test(record[candidate].normalize('NFC').trim()));
   return field ? { field, code: record[field].normalize('NFC').trim() } : null;
 }
 
@@ -414,7 +414,7 @@ function createGoogleSheetsCatalogProvider({ sheetsClient, spreadsheetId }) {
       const matches = snapshot.rows.map((row, index) => {
         const record = recordFor(snapshot, row);
         const episode = episodeCodeDetails(record);
-        const parsed = episode ? /^(\\d{5})\\.(\\d{2})\\.(\\d{2})$/.exec(episode.code) : null;
+        const parsed = episode ? /^(\d{5})\.(\d{2})\.(\d{2})$/.exec(episode.code) : null;
         return {
           row, index, record,
           episodeCode: episode?.code || '',
