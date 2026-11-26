@@ -45,7 +45,7 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   };
 
   if (!apply) {
-    process.stdout.write(JSON.stringify(report, null, 2) + '\\n');
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     return report;
   }
   if (plan.conflicts.length) throw new Error('Country taxonomy seed blocked by ID, label, or category conflicts.');
@@ -56,12 +56,12 @@ async function main(argv = process.argv.slice(2), env = process.env) {
   report.createdCategories = result.createdCategories;
   report.updatedCategories = result.updatedCategories;
   report.blocked = result.blocked;
-  process.stdout.write(JSON.stringify(report, null, 2) + '\\n');
+  process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   return report;
 }
 
 if (require.main === module) main().catch((error) => {
-  process.stderr.write((error?.message || 'Country taxonomy seed failed.') + '\\n');
+  process.stderr.write((error?.message || 'Country taxonomy seed failed.') + '\n');
   process.exitCode = 1;
 });
 
