@@ -1528,3 +1528,25 @@ test('direct category writes stay disabled when the server flag is false', async
     assert.equal(result.body.error.code, 'FEATURE_DISABLED');
   });
 });
+
+
+test('admin API keeps the fixed producer-country taxonomy read-only', async () => {
+  const app = createAdminApi(createStore());
+  await withServer(app, async (baseUrl) => {
+    const update = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ labelFa: 'کشور دیگر', enabled: false }),
+    }));
+    assert.equal(update.status, 409);
+    assert.equal(update.body.error.code, 'PRODUCER_COUNTRY_FIXED');
+
+    const remove = await json(await fetch(`${baseUrl}${ADMIN_PATH}/taxonomies/country/IR`, {
+      method: 'DELETE',
+    }));
+    assert.equal(remove.status, 409);
+    assert.equal(remove.body.error.code, 'PRODUCER_COUNTRY_FIXED');
+
+    assert.deepEqual(await createStore().listAllTaxonomyTerms('country'), [countryFixture]);
+  });
+});
