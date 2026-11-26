@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const express = require('express');
 const { getCategoryItems, listCategories } = require('./catalog-core');
+const { PRODUCER_COUNTRIES } = require('./catalog-producer-country');
 const { createCatalogSheetAdapter } = require('./catalog-sheet-adapter');
 const {
   CatalogDependencyError,
@@ -17,7 +18,7 @@ const BASE_PATH = '/api/v1/catalog';
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const ALLOWED_QUERY_KEYS = new Set([
-  'kind', 'countryId', 'genreId', 'category', 'q', 'year', 'page', 'pageSize',
+  'kind', 'countryId', 'origin', 'genreId', 'category', 'q', 'year', 'page', 'pageSize',
 ]);
 
 class ApiError extends Error {
@@ -73,6 +74,12 @@ function parseListQuery(searchParams, { countryTerms, genreTerms, categories, me
     [...ALLOWED_QUERY_KEYS].map((key) => [key, readSingleQuery(searchParams, key)]),
   );
 
+  if (values.origin !== undefined && !['iranian', 'foreign'].includes(values.origin)) {
+    throw new ApiError(400, 'INVALID_FILTER', 'مبدأ تولید باید ایرانی یا خارجی باشد.');
+  }
+  if (values.origin !== undefined && values.countryId !== undefined) {
+    throw new ApiError(400, 'INVALID_FILTER', 'فیلتر مبدأ تولید را با کشور مشخص ترکیب نکنید.');
+  }
   if (values.genreId !== undefined && !metadataEnabled) {
     throw new ApiError(400, 'FILTER_NOT_READY', 'فیلتر ژانر هنوز در منبع فراداده فعال نیست.');
   }
@@ -86,7 +93,7 @@ function parseListQuery(searchParams, { countryTerms, genreTerms, categories, me
     if (!categories.some((category) => category.slug === values.category && category.enabled === true)) {
       throw new ApiError(400, 'INVALID_FILTER', 'دسته‌بندی پشتیبانی نمی‌شود.');
     }
-    if (['kind', 'countryId', 'genreId', 'year'].some((key) => values[key] !== undefined)) {
+    if (['kind', 'countryId', 'origin', 'genreId', 'year'].some((key) => values[key] !== undefined)) {
       throw new ApiError(400, 'INVALID_FILTER', 'دسته‌بندی را نمی‌توان با فیلترهای دیگر ترکیب کرد.');
     }
     filtersApplied.category = values.category;
@@ -104,6 +111,19 @@ function parseListQuery(searchParams, { countryTerms, genreTerms, categories, me
     }
     filters.push({ field: 'countryIds', op: 'contains', value: values.countryId });
     filtersApplied.countryId = values.countryId;
+  }
+  if (values.origin !== undefined) {
+    const countryIds = values.origin === 'iranian'
+      ? ['IR']
+      : PRODUCER_COUNTRIES.filter((country) => country.id !== 'IR').map((country) => country.id);
+    const activeCountryIds = new Set(countryTerms.map((term) => term.id));
+    if (!countryIds.every((id) => activeCountryIds.has(id))) {
+      throw new ApiError(400, 'FILTER_NOT_READY', 'Taxonomy کشورها هنوز کامل نشده است.');
+    }
+    filters.push(values.origin === 'iranian'
+      ? { field: 'countryIds', op: 'contains', value: 'IR' }
+      : { any: countryIds.map((id) => ({ field: 'countryIds', op: 'contains', value: id })) });
+    filtersApplied.origin = values.origin;
   }
   if (values.genreId !== undefined) {
     if (!genreTerms.some((term) => term.id === values.genreId)) {
