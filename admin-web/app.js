@@ -1693,7 +1693,7 @@ function renderCountryTaxonomySeedPlan(report) {
     `${category.slug} — ${category.previousTitleFa} ← ${category.titleFa}`);
   append('تعارض‌هایی که Apply را متوقف می‌کنند', report.conflicts, (conflict) =>
     `${conflict.entity || 'item'} · ${conflict.id || conflict.slug || 'بدون شناسه'} · ${conflict.reason || 'نیازمند بررسی'}`);
-  elements.countrySeedPlanOutput.textContent = lines.join('\\n');
+  elements.countrySeedPlanOutput.textContent = lines.join('\n');
   elements.countrySeedPlanOutput.hidden = false;
 }
 
