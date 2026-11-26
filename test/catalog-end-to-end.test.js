@@ -409,9 +409,9 @@ test('integrates sheet identity, shared Firestore metadata, admin authorization,
     const seriesCategory = await json(await fetch(`${baseUrl}/api/v1/catalog/items?category=iranian-series`));
     assert.deepEqual(seriesCategory.body.data.map(({ id }) => id), [seriesId]);
     const categories = await json(await fetch(`${baseUrl}/api/v1/catalog/categories`));
-    assert.deepEqual(categories.body.data.map(({ slug }) => slug).sort(), ['iranian-movies', 'iranian-series']);
+    assert.deepEqual(categories.body.data.map(({ slug }) => slug).sort(), ['foreign-movies', 'foreign-series', 'iranian-movies', 'iranian-series']);
     const taxonomies = await json(await fetch(`${baseUrl}/api/v1/catalog/taxonomies`));
-    assert.deepEqual(taxonomies.body.data.country.map(({ id }) => id), ['IR']);
+    assert.deepEqual(taxonomies.body.data.country.map(({ id }) => id), ['IR', 'US', 'KR', 'JP', 'IN', 'EG', 'ES']);
     assert.deepEqual(taxonomies.body.data.genre.map(({ id }) => id), ['drama']);
   });
 
