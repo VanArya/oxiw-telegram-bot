@@ -160,6 +160,54 @@ test('sanitizes client errors and rejects malformed responses without exposing v
   await assert.rejects(malformedProvider.readSheet('سینمایی'), /Invalid catalog sheet response/);
 });
 
+test('updates a series parent using کد سیستم when کد سریال is blank', async () => {
+  const values = {
+    "'سریال'": [
+      ['کد سریال', 'کد سیستم', 'کد قسمت', 'کد سریال مادر', 'اسم فیلم'],
+      ['', '70711', '', '', 'سریال قدیمی'],
+      ['70711', '', '70711.01.01', '', 'قسمت اول'],
+    ],
+  };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(values),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const snapshot = await provider.readSheet('سریال');
+  const record = Object.fromEntries(snapshot.headers.map((header, index) => [header, snapshot.rows[0][index] ?? '']));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(record)).digest('base64url');
+  const updated = await provider.updateCatalogRow({
+    sheetName: 'سریال', systemCode: '70711', expectedVersion: version,
+    fields: { 'اسم فیلم': 'سریال ویرایش‌شده' },
+  });
+  assert.equal(updated.rowNumber, 2);
+  assert.equal(values["'سریال'"][1][4], 'سریال ویرایش‌شده');
+  assert.equal(values["'سریال'"][2][4], 'قسمت اول');
+});
+
+test('deletes a series parent and linked episodes when its identity is in کد سیستم', async () => {
+  const values = {
+    "'سریال'": [
+      ['کد سریال', 'کد سیستم', 'کد قسمت', 'کد سریال مادر', 'اسم فیلم'],
+      ['', '70711', '', '', 'سریال مادر'],
+      ['70711', '', '70711.01.01', '', 'قسمت اول'],
+      ['70711', '', '70711.01.02', '', 'قسمت دوم'],
+      ['', '80808', '', '', 'سریال دیگر'],
+    ],
+  };
+  const provider = createGoogleSheetsCatalogProvider({
+    sheetsClient: mockSheetsClient(values),
+    spreadsheetId: spreadsheetIdFixture,
+  });
+  const snapshot = await provider.readSheet('سریال');
+  const parentRecord = Object.fromEntries(snapshot.headers.map((header, index) => [header, snapshot.rows[0][index] ?? '']));
+  const version = require('node:crypto').createHash('sha256').update(JSON.stringify(parentRecord)).digest('base64url');
+  const deleted = await provider.deleteSeriesWithEpisodes({ seriesCode: '70711', expectedVersion: version });
+  assert.equal(deleted.deletedRows, 3);
+  assert.equal(deleted.deletedEpisodes, 2);
+  assert.equal(values["'سریال'"].length, 2);
+  assert.equal(values["'سریال'"][1][1], '80808');
+});
+
 test('updates only explicitly editable catalog cells after checking the source-row version', async () => {
   const values = {
     "'سینمایی'": [
