@@ -148,37 +148,43 @@ function planCountryTaxonomySeed(existingTerms = [], existingCategories = []) {
   for (const desired of COUNTRY_CATEGORIES) {
     const sameId = categoryIds.get(desired.id);
     const slugMatches = existingCategories.filter((category) => category?.slug === desired.slug);
-    const conflictingSlug = slugMatches.find((category) => category.id !== desired.id);
-    if (conflictingSlug || slugMatches.length > 1) {
+    if (slugMatches.length > 1) {
       conflicts.push({
         entity: 'category', id: desired.id, slug: desired.slug,
-        reason: 'SLUG_OWNED_BY_OTHER_ID',
+        reason: 'DUPLICATE_EXISTING_SLUG',
       });
       continue;
     }
 
-    if (!sameId) {
-      createCategories.push(desired);
-      continue;
-    }
-
-    if (sameId.slug !== desired.slug) {
+    const existingBySlug = slugMatches[0];
+    if (sameId && sameId.slug !== desired.slug) {
       conflicts.push({ entity: 'category', id: desired.id, reason: 'CATEGORY_ID_REUSED' });
       continue;
     }
-    if (sameId.mode !== undefined && sameId.mode !== 'dynamic') {
-      conflicts.push({ entity: 'category', id: desired.id, reason: 'NON_DYNAMIC_CATEGORY_REQUIRES_REVIEW' });
+    const currentCategory = sameId || existingBySlug;
+    if (!currentCategory) {
+      createCategories.push(desired);
+      continue;
+    }
+    if (currentCategory.mode !== undefined && currentCategory.mode !== 'dynamic') {
+      conflicts.push({
+        entity: 'category', id: currentCategory.id,
+        reason: 'NON_DYNAMIC_CATEGORY_REQUIRES_REVIEW',
+      });
       continue;
     }
 
-    const current = normalizeCategory(sameId);
-    if (sameValue(current, desired)) {
-      alreadyPresentCategories.push({ id: desired.id, slug: desired.slug });
+    const desiredForExisting = currentCategory.id === desired.id
+      ? desired
+      : Object.freeze({ ...desired, id: currentCategory.id });
+    const current = normalizeCategory(currentCategory);
+    if (sameValue(current, desiredForExisting)) {
+      alreadyPresentCategories.push({ id: currentCategory.id, slug: desired.slug });
     } else {
       updateCategories.push({
-        id: desired.id,
-        previous: sameId,
-        value: desired,
+        id: currentCategory.id,
+        previous: currentCategory,
+        value: desiredForExisting,
       });
     }
   }
