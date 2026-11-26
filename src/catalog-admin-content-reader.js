@@ -560,6 +560,262 @@ function createCatalogAdminContentReader({ sheetProvider, writableProvider, onIn
         sourceVersion: result.sourceVersion, headers: current.headers, record,
       });
     },
+    async listReconciliationReport() {
+      if (typeof writableProvider.listContentMetadataWithVersion !== 'function') {
+        const error = new Error('Complete metadata enumeration is not configured.');
+        error.name = 'CatalogAdminListStageError';
+        error.dependency = 'firestore';
+        error.stage = 'metadata_enumeration';
+        error.errorCode = 'METADATA_ENUMERATION_UNAVAILABLE';
+        throw error;
+      }
+
+      const [snapshots, metadataEntries, categories, countryTerms, genreTerms] = await Promise.all([
+        Promise.all(SHEETS.map((name) =>
+          atStage('sheet_read', () => sheetProvider.readSheet(name)))),
+        atStage('metadata_read', () => writableProvider.listContentMetadataWithVersion()),
+        atStage('metadata_categories_read', () => writableProvider.listCategories()),
+        atStage('metadata_country_taxonomy_read', () => writableProvider.listAllTaxonomyTerms('country')),
+        atStage('metadata_genre_taxonomy_read', () => writableProvider.listAllTaxonomyTerms('genre')),
+      ]);
+
+      if (!Array.isArray(metadataEntries) || !Array.isArray(categories) ||
+          !Array.isArray(countryTerms) || !Array.isArray(genreTerms)) {
+        const error = new TypeError('Catalog reconciliation provider response is invalid.');
+        error.name = 'CatalogAdminListStageError';
+        error.dependency = 'firestore';
+        error.stage = 'metadata_validation';
+        error.errorCode = 'CATALOG_STAGE_FAILED';
+        throw error;
+      }
+
+      const sampleLimit = 25;
+      const sourceById = new Map();
+      const metadataById = new Map();
+      const sheetStats = Object.fromEntries(SHEETS.map((name) => [name, {
+        totalRows: 0,
+        blankRowsIgnored: 0,
+        episodeRowsExcluded: 0,
+        mappedRows: 0,
+        invalidRows: 0,
+        duplicateIdentityRows: 0,
+      }]));
+      const samples = {
+        invalidSourceRows: [],
+        duplicateSourceIds: [],
+        missingMetadata: [],
+        orphanedMetadata: [],
+        taxonomyReferences: [],
+        inconsistentPublication: [],
+      };
+      const totals = {
+        invalidSourceRows: 0,
+        duplicateSourceIds: 0,
+        missingMetadata: 0,
+        orphanedMetadata: 0,
+        taxonomyReferences: 0,
+        inconsistentPublication: 0,
+      };
+      const addSample = (name, value) => {
+        if (samples[name].length < sampleLimit) samples[name].push(Object.freeze(value));
+      };
+
+      snapshots.forEach((sourceSnapshot, sheetIndex) => {
+        const sheetName = SHEETS[sheetIndex];
+        const stats = sheetStats[sheetName];
+        const snapshot = validateSnapshot(sheetName, sourceSnapshot);
+        stats.totalRows = snapshot.rows.length;
+
+        snapshot.rows.forEach((row, rowIndex) => {
+          const record = rowToRecord(snapshot.headers, row);
+          const rowNumber = rowIndex + 2;
+          if (isCompletelyBlankSourceRow(record)) {
+            stats.blankRowsIgnored += 1;
+            return;
+          }
+          if (sheetName === 'سریال' && isSeriesEpisodeRecord(record)) {
+            stats.episodeRowsExcluded += 1;
+            return;
+          }
+
+          let mapped;
+          try {
+            mapped = mapCatalogSheetRow(sheetName, record);
+          } catch (cause) {
+            stats.invalidRows += 1;
+            totals.invalidSourceRows += 1;
+            const message = typeof cause?.message === 'string' ? cause.message : '';
+            const requiredFieldMatch = /^Missing or invalid required field: (.+)$/.exec(message);
+            const yearFieldMatch = /^Invalid year field: (.+)$/.exec(message);
+            const validationIssue = requiredFieldMatch
+              ? 'required_field_invalid'
+              : yearFieldMatch
+                ? 'year_field_invalid'
+                : message.includes('start year cannot be after end year')
+                  ? 'series_year_range_invalid'
+                  : 'row_mapping_invalid';
+            addSample('invalidSourceRows', {
+              sheetName,
+              rowNumber,
+              validationIssue,
+              ...(requiredFieldMatch ? { fieldName: requiredFieldMatch[1] } : {}),
+              ...(yearFieldMatch ? { fieldName: yearFieldMatch[1] } : {}),
+              codeCandidates: safeDiagnosticCodeCandidates(record),
+              titlePresent: hasSourceValue(record['اسم فیلم']),
+            });
+            return;
+          }
+
+          stats.mappedRows += 1;
+          const contentId = mapped.content.id;
+          if (sourceById.has(contentId)) {
+            stats.duplicateIdentityRows += 1;
+            totals.duplicateSourceIds += 1;
+            addSample('duplicateSourceIds', { contentId, sheetName, rowNumber });
+            return;
+          }
+          sourceById.set(contentId, Object.freeze({
+            contentId,
+            kind: mapped.content.kind,
+            sheetName,
+            rowNumber,
+            hasProducerCountryColumn: Object.hasOwn(record, 'سازنده'),
+          }));
+        });
+      });
+
+      for (const entry of metadataEntries) {
+        const contentId = entry?.value?.contentId;
+        if (!isCanonicalContentId(contentId) ||
+            !Number.isSafeInteger(entry?.version) || entry.version < 1) {
+          const error = new TypeError('Catalog metadata enumeration returned an invalid record.');
+          error.name = 'CatalogAdminListStageError';
+          error.dependency = 'firestore';
+          error.stage = 'metadata_validation';
+          error.errorCode = 'CATALOG_STAGE_FAILED';
+          throw error;
+        }
+        const metadata = validateCatalogContentMetadata(contentId, entry.value);
+        if (metadataById.has(contentId)) {
+          const error = new TypeError('Catalog metadata identity is duplicated.');
+          error.name = 'CatalogAdminListStageError';
+          error.dependency = 'firestore';
+          error.stage = 'metadata_identity_validation';
+          error.errorCode = 'CATALOG_STAGE_FAILED';
+          throw error;
+        }
+        metadataById.set(contentId, metadata);
+      }
+
+      const categoryById = new Map(categories.map((category) => [category.id, category]));
+      const countryById = new Map(countryTerms.map((term) => [term.id, term]));
+      const genreById = new Map(genreTerms.map((term) => [term.id, term]));
+      const approvalStatuses = { pending: 0, approved: 0, rejected: 0, unknown: 0 };
+      const publicationStatuses = { draft: 0, published: 0, archived: 0, unknown: 0 };
+      let matchedMetadata = 0;
+
+      const checkReferences = (contentId, type, ids, lookup) => {
+        for (const termId of ids || []) {
+          const term = lookup.get(termId);
+          const reason = !term ? 'missing' : term.enabled === false ? 'disabled' : null;
+          if (!reason) continue;
+          totals.taxonomyReferences += 1;
+          addSample('taxonomyReferences', { contentId, taxonomyType: type, termId, reason });
+        }
+      };
+
+      for (const [contentId, metadata] of metadataById) {
+        const source = sourceById.get(contentId);
+        if (source) {
+          matchedMetadata += 1;
+        } else {
+          totals.orphanedMetadata += 1;
+          addSample('orphanedMetadata', { contentId });
+        }
+
+        approvalStatuses[metadata.approvalStatus] += 1;
+        publicationStatuses[metadata.publicationStatus] += 1;
+        if (metadata.publicationStatus === 'published' && metadata.approvalStatus !== 'approved') {
+          totals.inconsistentPublication += 1;
+          addSample('inconsistentPublication', {
+            contentId,
+            approvalStatus: metadata.approvalStatus,
+            publicationStatus: metadata.publicationStatus,
+          });
+        }
+
+        if (!source?.hasProducerCountryColumn) {
+          checkReferences(contentId, 'country', metadata.countryIds, countryById);
+        }
+        checkReferences(contentId, 'genre', metadata.genreIds, genreById);
+        checkReferences(contentId, 'category', metadata.categoryIds, categoryById);
+      }
+
+      for (const [contentId, source] of sourceById) {
+        if (metadataById.has(contentId)) continue;
+        totals.missingMetadata += 1;
+        addSample('missingMetadata', {
+          contentId,
+          kind: source.kind,
+          sheetName: source.sheetName,
+          rowNumber: source.rowNumber,
+        });
+      }
+
+      const mappedSourceRows = Object.values(sheetStats)
+        .reduce((total, stats) => total + stats.mappedRows, 0);
+      const blankRowsIgnored = Object.values(sheetStats)
+        .reduce((total, stats) => total + stats.blankRowsIgnored, 0);
+      const episodeRowsExcluded = Object.values(sheetStats)
+        .reduce((total, stats) => total + stats.episodeRowsExcluded, 0);
+      const invalidSourceRows = Object.values(sheetStats)
+        .reduce((total, stats) => total + stats.invalidRows, 0);
+      const duplicateSourceIds = Object.values(sheetStats)
+        .reduce((total, stats) => total + stats.duplicateIdentityRows, 0);
+
+      return Object.freeze({
+        mode: 'read-only',
+        generatedAt: new Date().toISOString(),
+        summary: Object.freeze({
+          sourceRows: Object.values(sheetStats).reduce((total, stats) => total + stats.totalRows, 0),
+          mappedSourceRows,
+          uniqueSourceRecords: sourceById.size,
+          blankRowsIgnored,
+          episodeRowsExcluded,
+          invalidSourceRows,
+          duplicateSourceIds,
+          metadataRecords: metadataById.size,
+          matchedMetadata,
+          missingMetadata: totals.missingMetadata,
+          orphanedMetadata: totals.orphanedMetadata,
+          taxonomyReferenceIssues: totals.taxonomyReferences,
+          inconsistentPublication: totals.inconsistentPublication,
+          totalFindings: invalidSourceRows + duplicateSourceIds + totals.missingMetadata +
+            totals.orphanedMetadata + totals.taxonomyReferences + totals.inconsistentPublication,
+        }),
+        sheets: Object.freeze(Object.fromEntries(SHEETS.map((name) => [
+          name, Object.freeze({ ...sheetStats[name] }),
+        ]))),
+        metadata: Object.freeze({
+          totalRecords: metadataById.size,
+          approvalStatuses: Object.freeze(approvalStatuses),
+          publicationStatuses: Object.freeze(publicationStatuses),
+          validation: 'passed',
+        }),
+        taxonomy: Object.freeze({
+          categories: categories.length,
+          countries: countryTerms.length,
+          genres: genreTerms.length,
+          referenceIssues: totals.taxonomyReferences,
+        }),
+        issues: Object.freeze(Object.fromEntries(Object.entries(samples).map(([name, values]) => [
+          name, Object.freeze(values),
+        ]))),
+        samplesTruncated: Object.freeze(Object.fromEntries(Object.entries(totals).map(([name, total]) => [
+          name, total > samples[name].length,
+        ]))),
+      });
+    },
     async listSourceDiagnostics() {
       const snapshots = await Promise.all(SHEETS.map((name) =>
         atStage('sheet_read', () => sheetProvider.readSheet(name))));
