@@ -57,18 +57,17 @@ test('seed plan safely normalizes an existing country label and reconciles syste
   assert.equal(plan.createCategories.length, 0);
 });
 
-test('seed plan blocks a country label assigned to another ID and a category slug collision', () => {
+test('seed plan blocks a country label assigned to another ID and duplicate category slugs', () => {
   const terms = [{ id: 'USA', labelFa: 'آمریکا', enabled: true }];
-  const categories = [{
-    id: 'custom-foreign-movies',
-    slug: 'foreign-movies',
-    localizedTitle: { fa: 'فیلم خارجی' },
-    enabled: true,
-    filters: { field: 'kind', op: 'eq', value: 'movie' },
-  }];
+  const categories = [
+    { id: 'custom-foreign-movies', slug: 'foreign-movies', localizedTitle: { fa: 'فیلم خارجی' }, enabled: true,
+      filters: { field: 'kind', op: 'eq', value: 'movie' } },
+    { id: 'another-foreign-movies', slug: 'foreign-movies', localizedTitle: { fa: 'فیلم خارجی ۲' }, enabled: true,
+      filters: { field: 'kind', op: 'eq', value: 'movie' } },
+  ];
   const plan = planCountryTaxonomySeed(terms, categories);
   assert.ok(plan.conflicts.some((conflict) => conflict.entity === 'country' && conflict.reason === 'LABEL_OWNED_BY_OTHER_ID'));
-  assert.ok(plan.conflicts.some((conflict) => conflict.entity === 'category' && conflict.reason === 'SLUG_OWNED_BY_OTHER_ID'));
+  assert.ok(plan.conflicts.some((conflict) => conflict.entity === 'category' && conflict.reason === 'DUPLICATE_EXISTING_SLUG'));
 });
 
 test('non-dynamic categories are not overwritten by the producer-country seed', () => {
@@ -163,4 +162,16 @@ test('apply rejects a stale country plan rather than overwriting concurrent edit
     { code: 'SEED_PLAN_STALE' },
   );
   assert.equal(provider.writes.length, 0);
+});
+
+
+test('seed reconciles a unique existing category by slug without changing its document ID', () => {
+  const categories = COUNTRY_CATEGORIES.map((category) => structuredClone(category));
+  categories[2] = {
+    ...categories[2], id: 'legacy-foreign-movies',
+    filters: { field: 'kind', op: 'eq', value: 'movie' },
+  };
+  const plan = planCountryTaxonomySeed(COUNTRY_TERMS, categories);
+  assert.deepEqual(plan.updateCategories.map(({ id }) => id), ['legacy-foreign-movies']);
+  assert.equal(plan.updateCategories[0].value.id, 'legacy-foreign-movies');
 });
