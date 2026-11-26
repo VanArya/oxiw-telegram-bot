@@ -506,6 +506,13 @@ function createCatalogAdminApi({
     }
   }));
 
+  app.get(`${BASE_PATH}/diagnostics/source-rows`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
+    if (!contentReader || typeof contentReader.listSourceDiagnostics !== 'function') {
+      return sendError(res, 503, 'SOURCE_DIAGNOSTICS_UNAVAILABLE', 'گزارش ردیف‌های نامعتبر پیکربندی نشده است.');
+    }
+    return res.json(await contentReader.listSourceDiagnostics());
+  }));
+
   app.get(`${BASE_PATH}/items`, requirePermission(PERMISSIONS.READ), asyncRoute(async (req, res) => {
     if (!contentReader || typeof contentReader.list !== 'function') {
       return sendError(res, 503, 'ADMIN_CONTENT_READ_NOT_CONFIGURED', 'فهرست مدیریتی محتوا پیکربندی نشده است.');
