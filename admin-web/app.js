@@ -984,7 +984,7 @@ async function loadSourceDiagnostics(output, button) {
       lines.push(`• ${row.sheetName} · ردیف ${row.rowNumber} · ${row.fieldName || row.validationIssue} · عنوان: ${row.titlePresent ? 'دارد' : 'خالی'} · ${candidates} · فیلدهای دیگر: ${present}`);
     });
     if (meta.truncated) lines.push('گزارش به ۵۰۰ ردیف محدود شده است.');
-    output.textContent = lines.join('\\n');
+    output.textContent = lines.join('\n');
     output.hidden = false;
     button.textContent = 'به‌روزرسانی گزارش';
   } catch (error) {
