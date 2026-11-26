@@ -1,8 +1,8 @@
 # برنامهٔ rollout کاتالوگ مشترک OXIW
 
-وضعیت: **طرح اجرایی پیشنهادی؛ هیچ مرحلهٔ عملیاتی در این نوبت اجرا نشده است.**
+وضعیت در 2026-11-26: **API کاتالوگ روی Render مستقر است؛ rollout کامل مصرف‌کنندگان، read-only data reconciliation و تأیید seed هنوز باز هستند.** PR شمارهٔ 45 ادغام شده، GitHub Actions روی Node.js 24 با 335 تست و صفر شکست سبز بوده و Render commit `e31b132080c0983028b7c73657a7462c9a7cc9bd` را با موفقیت deploy و start کرده است. این شواهد فقط CI و startup را اثبات می‌کنند؛ به‌معنی پذیرش مراحل 4 تا 7 یا برابری محتوای عمومی نیستند.
 
-این برنامه بر ADR-0001 و قرارداد `CATALOG_API_V1.md` تکیه دارد. ساختار Google Sheets فعلی تغییر نمی‌کند. سرویس فعال تا عبور از gateهای پذیرش منبع ارائهٔ محتوا باقی می‌ماند. نبود پیکربندی در فایل‌های محلی، نبود سرویس آنلاین را ثابت نمی‌کند.
+این برنامه بر ADR-0001 و قرارداد `CATALOG_API_V1.md` تکیه دارد. سرویس Catalog Core روی Render وجود دارد، اما تا قبل از read-only reconciliation و تأیید parity، مسیر قدیمی ارائهٔ محتوا نباید با API جدید جایگزین شود. ساختار Google Sheets فعلی تغییر نمی‌کند. deploy سرویس را با cutover کلاینت‌ها یا صحت داده‌های production یکی نگیرید.
 
 ## اصول مشترک و gateهای غیرقابل‌حذف
 
@@ -52,7 +52,9 @@
 
 ## مرحلهٔ ۴ — اتصال آزمایشی Sheets و Firestore با حداقل دسترسی
 
-**پیش‌نیازها:** مرحله‌های ۱ تا ۳ پذیرفته؛ spreadsheet فعال و دسترسی مالکانهٔ آن read-only تأییدشده؛ Firestore staging و IAM مجزا و تأییدشده؛ دادهٔ metadata آزمایشی با تصمیم صریح دربارهٔ محتوا.
+**وضعیت فعلی:** runtime عملیاتی Google Sheets و Firestore روی Render مستقر است؛ این با staging مجزا و پذیرش دادهٔ زنده یکی نیست. مرحلهٔ ۴ برای reconciliation کنترل‌شدهٔ data و تأیید IAM/read access همچنان gate پذیرش دارد.
+
+**پیش‌نیازها:** spreadsheet فعال و هویت/مجوز حداقلی آن تأییدشده؛ Firestore مقصد و IAM بازبینی‌شده؛ دادهٔ metadata آزمایشی با تصمیم صریح دربارهٔ محتوا.
 
 **کارها:** فقط backend staging، Sheets provider را با scope/read permission حداقلی به برگه‌های تأییدشده وصل کند. metadata provider و audit sink به Firestore staging تزریق شود. هیچ ساختار/سلول Sheet تغییر نکند. قبل از انتشار، duplicate/empty systemCode و missing metadata را گزارش کن و برای هیچ محتوایی approval یا publication نساز.
 

@@ -85,13 +85,13 @@ Factory هیچ `spreadsheets.values.get` یا عملیات دیگری را هن�
 
 ## تفاوت local و production
 
-آزمون محلی از fixture و in-memory providers و verifier جعلی استفاده می‌کند؛ این فقط composition و قرارداد HTTP را می‌آزماید. هیچ credential، IAM، provider عملیاتی، readiness probe واقعی، دامنه، CORS production، quota، monitoring یا backup در این مرحله پیکربندی نشده است. `createCatalogHttpService` به‌تنهایی مجوز استفاده از fake provider در production نمی‌دهد.
+آزمون محلی از fixture، in-memory providers و verifier جعلی استفاده می‌کند؛ این فقط composition و قرارداد HTTP را می‌آزماید. جدا از آن، سرویس `oxiw-catalog-core` روی Render در 2026-11-26 با runtime عملیاتی و commit `e31b132080c0983028b7c73657a7462c9a7cc9bd` با موفقیت deploy و start شده است. این deploy نشان می‌دهد composition عملیاتی و listener بالا آمده‌اند، اما readiness فعلی فقط وجود objectهای provider را می‌سنجد و probe واقعی read/write به Sheets/Firestore نیست. دسترسی دادهٔ زنده، parity، CORS، quota، monitoring، backup/restore و کنترل IAM هنوز باید جداگانه بررسی شوند. `createCatalogHttpService` به‌تنهایی مجوز استفاده از fake provider در production نمی‌دهد.
 
 ## قرارداد آزمایشی نقش مدیر
 
 `verifyAdminPrincipal(request)` فقط هویت تأییدشدهٔ `{ authenticated: true, subjectId }` را برمی‌گرداند. سپس `CatalogAdminRoleProvider.resolveRoles(subjectId)` نقش‌ها را می‌آورد؛ نقش‌های داخل توکن/verifier یا دادهٔ درخواست پذیرفته نمی‌شوند. principal نامعتبر پیش از فراخوانی resolver رد می‌شود. resolver باید آرایه‌ای از roleهای allowlist‌شده برگرداند؛ `[]` برای principal معتبر یعنی assignment ندارد و policy آن را `403` می‌کند. خطای منبع یا آرایهٔ نامعتبر/دارای role ناشناخته با `503 ROLE_RESOLUTION_UNAVAILABLE` fail-closed است. برای گزارش داخلی امن می‌توان `reportRoleResolutionFailure` را تزریق کرد؛ فقط دستهٔ خطا را می‌گیرد و خطای خام، شناسه یا roleها را دریافت نمی‌کند. role provider Firestore در composition عملیاتی تزریق می‌شود؛ `createInMemoryCatalogAdminRoleProvider` فقط fake صریح تست است و provisioning CLI بدون trusted actor فعال نیست.
 
-برای بهره‌برداری production هنوز باید credentials، IAM، readiness مبتنی بر وضعیت واقعی، backup/monitoring و فرایند migration/bootstrap جداگانه بازبینی و تأیید شوند. CLI در نبود تنظیم معتبر متوقف می‌شود و هیچ fake/in-memory provider برای اجرای ظاهراً عملیاتی انتخاب نمی‌کند.
+سرویس production وجود دارد و از ADC و Firebase Admin در runtime استفاده می‌کند؛ این به‌معنی تأیید مستقل سطح IAM، دسترسی مؤثر به تمام Sheet/collectionها، readiness واقعی، backup/monitoring یا migration/bootstrap نیست. CLI در نبود تنظیم معتبر متوقف می‌شود و هیچ fake/in-memory provider برای اجرای ظاهراً عملیاتی انتخاب نمی‌کند.
 
 ## موارد باقی‌مانده
 
@@ -101,13 +101,13 @@ Factory هیچ `spreadsheets.values.get` یا عملیات دیگری را هن�
 - انتخاب پروژه و region، هزینه، logging/monitoring، backup/restore و rollback.
 - تأیید parity با نسخهٔ فعال Apps Script و سرویس فعلی پیش از اتصال کلاینت‌ها.
 
-هیچ deployment یا اتصال زنده در این مرحله انجام نشده است.
+وضعیت deploy: Render سرویس را با موفقیت مستقر کرده است؛ وضعیت data reconciliation و consumer cutover هنوز باز است. seed کشورها/دسته‌ها اجراشده فرض نمی‌شود و قبل از هر apply باید dry-run و تعارض‌ها بازبینی شوند.
 
 ## وضعیت SDK و بررسی اتصال Firestore — 2026-10-26
 
-- SDK رسمی `@google-cloud/firestore@9.4.0` از metadata registry دریافت و با npm به‌عنوان تنها dependency مستقیم جدید اضافه شد. شرط نسخهٔ SDK، Node `>=22` است؛ Node محلی `24.22.1` سازگار است. manifest پروژه همچنان `engines.node >=18` را اعلام می‌کند؛ بنابراین محیط‌های Node 18 تا 21 با این SDK سازگار نیستند و نسخهٔ runtime میزبان Catalog باید پیش از staging جداگانه تأیید شود. Lockfile وابستگی‌های transitives لازم را اضافه کرد؛ بسته‌های قفل‌شدهٔ قبلی تغییر نسخه یا حذف نشدند.
+- SDK رسمی `@google-cloud/firestore@9.4.0` از metadata registry دریافت و با npm به‌عنوان تنها dependency مستقیم جدید اضافه شد. شرط نسخهٔ SDK، Node `>=22` است؛ Node محلی `24.22.1` سازگار است. manifest فعلی پروژه Node.js `>=24 <25` را اعلام می‌کند و `.node-version` نیز نسخهٔ 24 را pin کرده است؛ Render در deploy مورخ 2026-11-26 از Node.js 24.22.1 استفاده کرده است. Lockfile وابستگی‌های transitives لازم را اضافه کرد؛ بسته‌های قفل‌شدهٔ قبلی تغییر نسخه یا حذف نشدند.
 - APIهای موردنیاز از declarationهای همان SDK قابل تطبیق‌اند: `Firestore.collection()`، `Firestore.runTransaction()`، `DocumentReference.get()` و عملیات `Transaction.get/create/set`. `Firestore.runTransaction()` context تراکنش را به callback می‌دهد و sink فعلی context را به‌صورت آرگومان می‌پذیرد. این بررسی فقط سازگاری سطح API و کد است و Providerها را با پایگاه واقعی اجرا نمی‌کند.
-- مقصد واقعی Firestore از تنظیم محلی موجود قابل تعیین نیست: runtime factory برای Sheets فقط `CATALOG_SPREADSHEET_ID` دارد و Firestore client را تزریق‌شده می‌خواهد؛ project/database Firestore در قرارداد runtime تعیین نشده‌اند. در بررسی محیط، متغیرهای انتخاب پروژه/database و ADC environment تنظیم نبودند، فایل ADC پیش‌فرض ویندوز وجود نداشت و `gcloud` در دسترس نبود. این نتیجه صرفاً وضعیت همین محیط محلی است و دربارهٔ وجود پروژهٔ آنلاین چیزی ثابت نمی‌کند.
+- تنظیم عملیاتی Firestore از `CATALOG_GCP_PROJECT_ID` و `CATALOG_FIRESTORE_DATABASE_ID` خوانده می‌شود و database در صورت نبود مقدار به `(default)` برمی‌گردد. محیط محلی بررسی‌شده در 2026-10-26 فاقد project/database و ADC بود؛ آن نتیجه صرفاً وضعیت همان ماشین محلی در آن تاریخ است و دربارهٔ تنظیمات Render یا وجود پروژهٔ آنلاین چیزی ثابت نمی‌کند.
 - چون project ID و database موردنظر از تنظیم معتبر و بی‌ابهام قابل تأیید نبودند، client واقعی ساخته نشد، `listCollections()` اجرا نشد و نام هیچ مجموعه‌ای در پایگاه آنلاین بررسی نشد. سند یا محتوای واقعی خوانده یا تغییر داده نشد.
 - وضعیت‌ها را جدا نگه دارید: **۱) SDK نصب است؛ ۲) ADC و مقصد Firestore تأیید نشده و بررسی خواندنی واقعی انجام نشده؛ ۳) Providerها، verifier، role source و readiness عملیاتی همچنان نیازمند آماده‌سازی و آزمون مستقل‌اند.** برای مرحلهٔ اتصال، مالک باید project و database دقیق را در تنظیم معتبر runtime مشخص کند و ADC موجود را در همان محیط احراز کند؛ credential یا مقدار آن را در کد/گزارش نگذارید.
 

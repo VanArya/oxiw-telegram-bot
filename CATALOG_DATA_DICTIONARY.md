@@ -87,7 +87,7 @@
 
 ### رابط فراداده و شناسهٔ پایدار
 
-این قرارداد در نمونهٔ محلی پیاده‌سازی شده است؛ provider فقط حافظه‌ای و fixtureمحور است و به storage یا سرویس آنلاین وصل نیست:
+قرارداد metadata در Core مستقل از storage است. برای تست، provider حافظه‌ای و fixtureمحور استفاده می‌شود؛ runtime عملیاتی Catalog Core روی Render نیز providerهای Google Sheets و Firestore و Firebase Admin را compose می‌کند. اجرای سرویس تأیید شده، اما خواندن دادهٔ زنده و parity فهرست عمومی هنوز باید جداگانه راستی‌آزمایی شود:
 
 ```text
 CatalogMetadataProvider
@@ -153,17 +153,17 @@ Adapter هرگز ستون `وضعیت انتشار` را از Sheet نمی‌خ�
 
 مقادیر نمونهٔ تست‌ها ساختگی‌اند. فرمت واقعی مقادیر و مقیاس سال/امتیاز/پیشنهادی، قالب cast و فصل/قسمت، و قواعد خالی‌بودن فیلدها نیازمند نمونه‌برداری کنترل‌شده و تأیید مالک است.
 
-## Google Sheets provider — طرح و فعال‌سازی staging
+## Google Sheets provider — پیاده‌سازی عملیاتی و سطح دسترسی
 
-`src/google-sheets-catalog-provider.js` فقط dependencyهای `sheetsClient` و `spreadsheetId` را می‌گیرد و interface موجود `readSheet(sheetName) -> { headers, rows }` را پیاده می‌کند. تنها عملیات API در این ماژول `spreadsheets.values.get` است. نام sheetها در allowlist به «سینمایی» و «سریال» محدود است؛ ردیف اول پاسخ header و بقیه rows محسوب می‌شوند. پاسخ بدون values به snapshot خالی تبدیل می‌شود. Provider نام برگه یا ستون تازه نمی‌سازد. این لایه فقط فیلدهای فعلی Sheet را می‌خواند و با تصمیم جدید ساختار Sheet تغییر نمی‌کند.
+`src/google-sheets-catalog-provider.js` با `sheetsClient` و `spreadsheetId` ساخته می‌شود. مسیر `readSheet` دادهٔ دو برگهٔ allowlist‌شدهٔ «سینمایی» و «سریال» را می‌خواند؛ provider علاوه بر آن، متدهای محدود مدیریتی برای ویرایش، افزودن و حذف ردیف‌ها/قسمت‌ها دارد. بنابراین این ماژول صرفاً read-only نیست و دسترسی آن باید فقط در backend عملیاتی و پشت احراز هویت و مجوزهای پنل استفاده شود. ساختار و سرستون‌های تأییدشدهٔ Sheet تغییر نمی‌کنند.
 
 ### منبع مستقل فراداده و قرارداد storage
 
-تعریف دسته‌ها، ژانرها، تأیید محتوا و انتشار عمومی در منبع فرادادهٔ جدا نگهداری می‌شوند؛ کشور سازنده در شیت منبع اصلی است و taxonomy کشور فقط فهرست شناسه/برچسب برای API و فیلتر را فراهم می‌کند. interface `CatalogMetadataProvider`، `createInMemoryCatalogMetadataProvider` و adapter محلی `createFirestoreCatalogMetadataProvider` اکنون در کد هستند؛ هیچ Firestore یا اتصال واقعی ایجاد یا فعال نشده است. Google Sheets Provider فقط محتوای فعلی را می‌آورد و adapter metadata را با شناسهٔ ترکیبی به مدل وصل می‌کند. fixtureهای `IR`/`US` و ژانرها ساختگی‌اند و فهرست production یا دادهٔ واقعی نیستند.
+تعریف دسته‌ها، ژانرها، تأیید محتوا و انتشار عمومی در Firestore metadata نگهداری می‌شوند؛ کشور سازنده در schema فعلی از ستون «سازنده» در Sheet می‌آید و taxonomy کشور فهرست شناسه/برچسب لازم برای API و فیلتر را فراهم می‌کند. `createFirestoreCatalogMetadataProvider` و `createFirestoreWritableCatalogMetadataProvider` در runtime عملیاتی به Firestore تزریق می‌شوند؛ `createInMemoryCatalogMetadataProvider` فقط برای fixture/test باقی می‌ماند. سرویس Render در 2026-11-26 start شده، اما داده‌های واقعی این مجموعه‌ها هنوز در این بررسی read-only شمارش و تطبیق نشده‌اند. fixtureهای `IR`/`US` و ژانرها ساختگی‌اند و نباید با دادهٔ production اشتباه شوند.
 
-### طرح پیشنهادی اسناد Firestore — هنوز غیرفعال
+### قرارداد مجموعه‌های Firestore و وضعیت داده
 
-این شکل ذخیره‌سازی پیشنهاد آینده است، نه schema واقعی یا مهاجرت داده. Google Sheets فعلی منبع فیلدهای فعلی محتوا باقی می‌ماند و ساختار آن تغییر نمی‌کند.
+این مسیرها مطابق نام‌های پیش‌فرض در providerهای Firestore کد شده‌اند و runtime عملیاتی از آن‌ها استفاده می‌کند. جدول، قرارداد مسیرها را توصیف می‌کند؛ وجود، تعداد، کیفیت یا محتوای اسناد production در این مرحله با query خواندنی تأیید نشده است. Google Sheets همچنان منبع فیلدهای پایهٔ محتوا باقی می‌ماند و ساختار آن تغییر نمی‌کند.
 
 | مجموعه / مسیر پیشنهادی | کلید سند | فیلدهای پیشنهادی |
 |---|---|---|
@@ -173,13 +173,13 @@ Adapter هرگز ستون `وضعیت انتشار` را از Sheet نمی‌خ�
 
 زمان‌های `createdAt` و `updatedAt` فقط در صورت نیاز عملیاتی، به‌عنوان timestamp سرور نگهداری می‌شوند؛ interface خواندنی فعلی به آن‌ها وابسته نیست و آن‌ها را وارد DTO عمومی نمی‌کند. کشورها، ژانرها، دسته‌ها و وضعیت‌ها باید با مقدارهای معتبر مطابق قرارداد مدل شوند. سند فراداده باید `contentId` خود را با ID سند تطبیق دهد. فیلدهای ناشناخته—including شناسهٔ فایل تلگرام یا توکن دانلود—به قرارداد MetadataProvider برگردانده نمی‌شوند. هیچ مقدار واقعی برای این مجموعه‌ها در این سند فرض نشده است.
 
-`src/firestore-catalog-metadata-provider.js` فقط یک adapter محلی وابسته به کلاینت تزریق‌شده است. قرارداد متدها بدون تغییر می‌ماند: `getContentMetadata(contentId)`, `listCategories()`, `listTaxonomyTerms(type)`. provider حافظه‌ای برای fixture و تست باقی می‌ماند؛ در staging می‌توان provider را فقط از composition root تزریق کرد و برای rollback همان composition را به provider آزمایشی قبلی برگرداند. Core و Google Sheets adapter تغییر storage را نمی‌شناسند.
+`src/firestore-catalog-metadata-provider.js` و provider نوشتنی نسخه‌دار با کلاینت تزریق‌شده کار می‌کنند. قرارداد خواندن شامل `getContentMetadata(contentId)`, `listCategories()` و `listTaxonomyTerms(type)` است؛ runtime عملیاتی providerهای Firestore را از composition root تزریق می‌کند. provider حافظه‌ای برای fixture و تست باقی می‌ماند و Core و Google Sheets adapter به نوع storage وابسته نیستند.
 
-پیش از هر قابلیت نوشتن، مالک باید احراز هویت و نقش مدیر، محل امن اجرای backend، سیاست دسترسی Firestore، اعتبارسنجی تغییر وضعیت‌ها، audit trail و بازیابی را تعیین کند. کلاینت Android و سایت نباید credential سرور یا مجوز نوشتن مستقیم دریافت کنند. این adapter فقط خواندنی است و endpoint ایجاد/ویرایش/حذف ارائه نمی‌کند.
+مسیرهای نوشتن metadata از API مدیریتی، Firebase ID token verifier، نقش‌های resolveشده از Firestore، ETag/expectedVersion، transaction و audit sink استفاده می‌کنند. کلاینت Android و سایت نباید credential سرور یا مجوز نوشتن مستقیم دریافت کنند. دسترسی IAM، backup/restore، retention و role assignmentهای واقعی همچنان باید بازبینی و با شواهد عملیاتی ثبت شوند.
 
-## لایهٔ مدیریتی و WritableCatalogMetadataProvider — نمونهٔ محلی
+## لایهٔ مدیریتی و WritableCatalogMetadataProvider — runtime عملیاتی
 
-`src/catalog-admin-api.js` API مدیریتی جداگانه می‌سازد و `src/catalog-writable-metadata-provider.js` قرارداد نوشتنی را از `CatalogMetadataProvider` خواندنی تفکیک می‌کند. `src/in-memory-writable-catalog-metadata-provider.js` پیاده‌سازی آزمایشی هر دو interface است. فقط در همان اجرای process داده‌ها را نگه می‌دارد؛ هیچ Firestore، Sheet یا ذخیره‌سازی پایدار به آن وصل نیست. همان instance را می‌توان هم به API مدیریتی و هم به Catalog API عمومی تزریق کرد تا تغییرهای ساختگی مجاز در همان اجرای آزمایشی قابل مشاهده باشند.
+`src/catalog-admin-api.js` API مدیریتی را جدا از endpointهای عمومی می‌سازد. `src/in-memory-writable-catalog-metadata-provider.js` فقط پیاده‌سازی آزمایشی هر دو interface است و داده را در Map نگه می‌دارد؛ runtime عملیاتی از `src/firestore-writable-catalog-metadata-provider.js` استفاده می‌کند تا تغییرهای مجاز را با transaction نسخه‌دار و audit ذخیره کند. API عمومی و مدیریتی provider مشترک metadata را از همان composition runtime می‌گیرند.
 
 در API مدیریتی خواندن metadata محتوا، دسته‌ها و taxonomyها و نیز upsert آن‌ها وجود دارد. وضعیت تأیید با PATCH مستقل از وضعیت انتشار تغییر می‌کند. `PUT` metadata جایگزینی کامل است و هر دو status را می‌خواهد. عملیات انتشار به `published` فقط وقتی پذیرفته می‌شود که مقدار فعلی approval برابر `approved` باشد. تغییر approval به حالت غیرمجاز، publication ذخیره‌شده را بازنویسی نمی‌کند؛ شرط دوگانهٔ Core محتوای آن را از API عمومی خارج می‌کند. وضعیت‌های نامعتبر، body دارای فیلد اضافی، شناسهٔ غیرcanonical، taxonomy غیرفعال/ناموجود، slug دستهٔ تکراری و غیرفعال‌کردن taxonomy در حال استفاده رد می‌شوند.
 
@@ -198,19 +198,19 @@ Adapter هرگز ستون `وضعیت انتشار` را از Sheet نمی‌خ�
 
 تمام GETهای مدیریتی به مجوز read، PUT metadata به `catalog.metadata.write`، PATCH approval به `catalog.content.approve`، PATCH publication به `catalog.content.publish`، PUT category به `catalog.categories.manage` و PUT taxonomy به `catalog.taxonomies.manage` نیاز دارند. تغییر وضعیت approval یا publication از مسیر PUT metadata هم مجوز جداگانهٔ همان وضعیت را لازم دارد؛ editor به‌تنهایی فقط می‌تواند رکورد را با وضعیت اولیهٔ `pending`/`draft` بسازد یا وضعیت‌های فعلی را حفظ کند. role `administrator` راه دورزدن verifier نیست و بدون principal تأییدشده رد می‌شود. شناسهٔ audit/write actor فقط از `principal.subjectId` می‌آید.
 
-هیچ token verifier یا ارائه‌دهندهٔ هویت عملیاتی در این مرحله وجود ندارد. آزمون‌های fake فقط نگاشت policy و fail-closed بودن اتصال را بررسی می‌کنند و امنیت استقرار را اثبات نمی‌کنند. برای staging/production هنوز باید منبع principal معتبر، verifier امضای token یا middleware میزبان، چرخهٔ عمر نقش‌ها، backend مورداعتماد، مجوز storage، audit/versioning عملیاتی و rollback تعیین شوند. هیچ endpoint حذف دائمی یا پاک‌کردن history وجود ندارد.
+در runtime عملیاتی، `createFirebaseAdminIdTokenVerifier` توکن Firebase ID را با Firebase Admin Auth اعتبارسنجی می‌کند و `createFirestoreCatalogAdminRoleProvider` نقش‌ها را از Firestore resolve می‌کند؛ نقش/actor از body یا query پذیرفته نمی‌شود. تست‌ها از fake verifier و fake role provider استفاده می‌کنند و امنیت پیکربندی production را اثبات نمی‌کنند. دسترسی IAM، role assignment واقعی، فرآیند revoke، backup/rollback و پایش رخدادها باید با شواهد مستقل بررسی شوند. هیچ endpoint پاک‌کردن audit history ارائه نمی‌شود.
 
-## Provider نوشتنی نسخه‌دار Firestore — فقط fake client
+## Provider نوشتنی نسخه‌دار Firestore — runtime و تست
 
 `src/firestore-writable-catalog-metadata-provider.js` همان متدهای writable فعلی را با گزینهٔ اجباری `{ expectedVersion }` گسترش می‌دهد و سه متد خواندن نسخه‌دار دارد: `getContentMetadataWithVersion(contentId)`, `getCategoryWithVersion(categoryId)` و `getTaxonomyTermWithVersion(type, termId)` که `{ value, version }` یا `null` می‌دهند. هر متد نوشتن نیز `{ value, version }` برمی‌گرداند. نسخهٔ صفر فقط ایجاد می‌کند؛ update باید نسخهٔ دقیق خوانده‌شده را بفرستد. مقایسه و نوشتن در Firestore transaction انجام می‌شود و mismatch تعارض است. `_version` داخلی است و از projectionهای مدل خارج می‌شود.
 
-API مدیریتی نسخه را از طریق ETag قوی با قالب `"catalog-v1.<identity-base64url>.v<version>"` برمی‌گرداند. برای ایجاد `If-None-Match: *` و برای ویرایش `If-Match` دقیق لازم است؛ فقدان پیش‌شرط 428، قالب نادرست 400، نسخهٔ نامنطبق 412 و ایجاد روی سند موجود 409 می‌دهد. Provider حافظه‌ای و Firestore هر دو expectedVersion را دوباره بررسی می‌کنند. API درخواست stale را با نسخهٔ جدید retry نمی‌کند. این قرارداد در تست‌ها با fake client پوشش دارد، اما Firestore واقعی و staging متصل نشده‌اند.
+API مدیریتی نسخه را از طریق ETag قوی با قالب `"catalog-v1.<identity-base64url>.v<version>"` برمی‌گرداند. برای ایجاد `If-None-Match: *` و برای ویرایش `If-Match` دقیق لازم است؛ فقدان پیش‌شرط 428، قالب نادرست 400، نسخهٔ نامنطبق 412 و ایجاد روی سند موجود 409 می‌دهد. Provider حافظه‌ای و Firestore هر دو expectedVersion را دوباره بررسی می‌کنند. API درخواست stale را با نسخهٔ جدید retry نمی‌کند. این قرارداد در تست‌ها با fake client پوشش دارد و در runtime عملیاتی نیز به Firestore تزریق می‌شود. سرویس مستقر، به‌تنهایی اثبات نمی‌کند که همهٔ transactionها و دسترسی‌های دادهٔ واقعی end-to-end آزمایش شده‌اند.
 
 ## رخدادهای مدیریتی و محدودیت‌های پایداری
 
 قرارداد جداگانهٔ `CatalogAuditEventSink` متد `appendInTransaction(transaction, event)` دارد. Provider برای ایجاد metadata، تغییر metadata، approval، publication، category و taxonomy رخداد allowlist‌شده می‌سازد؛ sink Firestore آن را در مجموعهٔ پیشنهادی `catalogAuditEvents` و در همان transaction ایجاد می‌کند. رکورد فقط نوع عملیات، نوع و شناسهٔ موجودیت، زمان، نتیجهٔ `committed`، نسخهٔ قبلی/جدید، نام فیلدهای تغییرکرده و در صورت وجود شناسهٔ opaque مدیر را نگه می‌دارد؛ عملیات وضعیت مقصد مانند `approval.rejected` را مشخص می‌کند، اما مقدارهای metadata و snapshotها وارد تاریخچه نمی‌شوند. Transaction ناموفق داده و رخداد موفق را با هم ثبت نمی‌کند. رخداد تلاش‌های ناموفق/ردشده در این نمونه ذخیره نمی‌شود.
 
-ساختار پیشنهادی Firestore از مجموعه‌های `catalogContentMetadata` (سند keyed by content ID)، `catalogCategories` (سند keyed by category ID)، `catalogTaxonomies/{country|genre}/terms` و `catalogAuditEvents` استفاده می‌کند. این‌ها فقط نام و شکل پیشنهادی‌اند؛ Provider صرفاً با mock آزمایش شده است. credential، پروژه، IAM و storage واقعی ایجاد نشده‌اند. ساعت رخداد از clock تزریق‌شده می‌آید و برای production باید timestamp مورداعتماد، retention، export/backup، احراز هویت مدیر، نقش‌ها و rollback تعیین شوند.
+providerهای عملیاتی از مجموعه‌های `catalogContentMetadata`، `catalogCategories`، `catalogTaxonomies` و `catalogAuditEvents` استفاده می‌کنند و برای مدیریت نقش‌ها نیز مجموعه‌های `catalogAdminRoleAssignments`، `catalogAdminControl` و `catalogAdminRoleAuditEvents` تعریف شده‌اند. تست‌ها از mock استفاده می‌کنند؛ وضعیت اسناد و تنظیمات IAM production باید read-only بررسی شود. ساعت رخداد از clock تزریق‌شده می‌آید و برای بهره‌برداری پایدار retention، export/backup و rollback باید مستند باشند.
 
 گزینه‌های storage:
 
@@ -236,7 +236,7 @@ API مدیریتی نسخه را از طریق ETag قوی با قالب `"catal
 4. با mock و سپس staging، تطبیق ID، هر دو وضعیت مستقل، کشور، DTO allowlist و برابری محتوای عمومی بررسی شود. برای spreadsheet فعلی فقط read و برای metadata تغییرات staging از API مدیریتی مجاز و احراز هویت‌شده انجام شود.
 5. تا تأیید parity، سرویس فعلی همچنان مسیر ارائهٔ محتوا می‌ماند. برای rollback در staging، composition قبلی/provider قبلی فعال شود؛ Sheet، metadata production، Apps Script، webhook یا تنظیمات میزبان لازم نیست تغییر کند.
 
-تست‌های Provider با mock client انجام می‌شوند و هیچ حساب، credential، Spreadsheet یا شبکه‌ای را فراخوانی نمی‌کنند. هیچ storage فراداده یا اتصال staging در این مرحله ساخته یا فعال نشده است.
+تست‌های automated Provider با mock client انجام می‌شوند و هیچ حساب یا شبکه‌ای را فراخوانی نمی‌کنند. این موضوع فقط دربارهٔ محیط تست است: runtime عملیاتی Catalog Core روی Render مستقر شده و clientهای واقعی Google/Firestore را می‌سازد؛ با این حال، در بررسی 2026-11-26 درخواست خواندن دادهٔ زنده، تطبیق مجموعهٔ شناسه‌های عمومی و parity با سرویس فعلی هنوز انجام/تأیید نشده است. محیط staging مستقل نیز جداگانه provision نشده است.
 
 
 ## اصلاح ساختار بر اساس تأیید مالک در 2026-11-25

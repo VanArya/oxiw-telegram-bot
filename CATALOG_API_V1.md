@@ -1,6 +1,6 @@
-# Catalog API v1 — قرارداد پیشنهادی
+# Catalog API v1 — قرارداد پیاده‌سازی‌شده
 
-وضعیت: نمونهٔ محلی خواندنی پیاده‌سازی شده؛ منبع داده fixture است و API منتشر نشده است.
+وضعیت در 2026-11-26: سرویس Catalog Core روی Render با شاخه feature/catalog-admin-panel و commit e31b132080c0983028b7c73657a7462c9a7cc9bd مستقر است و process آن با موفقیت بالا می‌آید. GitHub Actions روی Node.js 24 تعداد 335 تست را با صفر شکست گذرانده است. Runtime عملیاتی، providerهای Google Sheets و Firestore و Firebase Admin verifier/role provider را compose می‌کند. این شواهد، استقرار و startup را تأیید می‌کنند؛ اما به‌تنهایی دسترسی موفق به تمام داده‌های زنده، برابری فهرست عمومی با سرویس قبلی یا اجرای seed production را ثابت نمی‌کنند. اجرای seed کشورها و دسته‌ها روی Firestore production در این بررسی تأیید نشده است.
 دامنه: خواندن کاتالوگ و دسته‌بندی‌های عمومی
 
 ## قواعد قرارداد
@@ -11,7 +11,7 @@
 - دو شیت «سینمایی» و «سریال» هر دو محتوای ایرانی و خارجی را نگه می‌دارند. کشور از ستون «سازنده» با نگاشت ایران=IR، آمریکا=US، کره جنوبی=KR، ژاپن=JP، هند=IN، مصر=EG و اسپانیا=ES تعیین می‌شود؛ چهار شیت جداگانه وجود ندارد.
 - مالک تأیید کرده کد پایدار فیلم («کد سیستم») و کد والد سریال («کد سریال») بعد از ثبت مجدداً به محتوای دیگری تخصیص داده نمی‌شوند. کد خالی/نامعتبر یا شناسهٔ تکراری در همان نوع باعث خطای fail-closed امن می‌شود؛ کد برابر میان movie و series مجاز است چون namespace جداست.
 - فهرست‌های عمومی فقط محتوای منتشرشده را برمی‌گردانند.
-- کشور سازنده در مدل از ستون «سازنده» خوانده و به شناسهٔ ISO دوحرفی نگاشت می‌شود. مقدار خالی یا ناشناخته کشور را نامشخص می‌گذارد و در دستهٔ کشورمحور قرار نمی‌گیرد. اتصال کامل فهرست taxonomy و فیلتر کشور به هر هفت شناسه، گام بعدی هم‌راستاسازی است.
+- کشور سازنده از ستون «سازنده» به شناسهٔ ISO نگاشت می‌شود. taxonomy کشور در کد با ترتیب ثابت IR, US, KR, JP, IN, EG, ES تعریف شده و endpoint فهرست taxonomy و پنل مدیریت همین قرارداد را مصرف می‌کنند. مقدار خالی یا ناشناخته کشور نامشخص می‌ماند و در دسته‌های ایرانی/خارجی قرار نمی‌گیرد.
 - `origin=iranian` و `origin=foreign` می‌توانند با `kind`، `genreId` و `year` ترکیب شوند؛ با `countryId` یا `category` قابل ترکیب نیستند. فیلتر خارجی فقط وقتی فعال است که هر شش کشور غیرایرانی در taxonomy فعال باشند؛ در غیر این صورت `FILTER_NOT_READY` برمی‌گردد.
 - فیلترها فقط روی فیلدهای مجاز اجرا می‌شوند؛ ورودی به‌عنوان کد یا expression ارزیابی نمی‌شود.
 - DSL دسته‌بندی حداکثر ۸ سطح عمق و حداکثر ۳۲ شرط برای هر `all` یا `any` می‌پذیرد.
@@ -57,7 +57,7 @@
 
 ### GET /api/v1/catalog/taxonomies
 
-taxonomyهای فعال را برمی‌گرداند. در ساختار فعلی، کشور محتوا از ستون «سازنده» در Sheet می‌آید؛ این endpoint هنوز فهرست کشورها را از taxonomy provider می‌خواند و seed/هماهنگ‌سازی آن با هر هفت شناسه در مرحلهٔ بعد انجام می‌شود. ژانر همچنان از metadata provider تأمین می‌شود. تمام این داده‌ها نمونه‌ای هستند، نه فهرست production.
+taxonomyهای فعال را برمی‌گرداند. کشور محتوا در schema فعلی از ستون «سازنده» در Sheet می‌آید؛ فهرست کشورها از taxonomy provider تأمین می‌شود و قرارداد هفت شناسه IR, US, KR, JP, IN, EG, ES با ترتیب ثابت دارد. ژانر از metadata provider تأمین می‌شود. این endpoint در API مستقر موجود است؛ مقدار اسناد واقعی taxonomy باید با درخواست خواندنی بررسی شود و از صرف deploy نمی‌توان اجرای seed را نتیجه گرفت.
 
 ### قالب پاسخ و خطا
 
@@ -134,11 +134,11 @@ taxonomyهای فعال را برمی‌گرداند. در ساختار فعلی
 - در log نباید token، Telegram payload کامل، credential یا دادهٔ شخصی ثبت شود.
 - Web App فعلی Apps Script در manifest دسترسی anonymous دارد؛ این وضعیت به‌تنهایی برای endpointهای تغییردهنده مجوز کافی نیست.
 
-## پیاده‌سازی آزمایشی محلی
+## پیاده‌سازی و استقرار
 
-`createCatalogApi({ provider, categories, metadataProvider })` یک Express app محلی می‌سازد و دو provider را به adapter موجود تزریق می‌کند. قرارداد محتوا همان `readSheet(sheetName) -> Promise<{ headers, rows }>` است؛ metadata با `getContentMetadata(contentId)`, `listCategories()` و `listTaxonomyTerms(type)` خوانده می‌شود. provider حافظه‌ای برای تست‌ها و نمونه‌های ساختگی آماده است؛ Google Sheets provider جداگانه فقط‌خواندنی است. `src/firestore-catalog-metadata-provider.js` نیز adapter محلی آمادهٔ تزریق دارد، اما نه Firestore و نه هیچ اتصال واقعی در این مرحله ایجاد یا فعال نشده است. ردیف خام، Telegram File ID، token و خطای provider وارد پاسخ نمی‌شوند. فقط زوج دقیق `approvalStatus=approved` و `publicationStatus=published` منتشر می‌شود.
+`createCatalogApi({ provider, categories, metadataProvider })` یک Express app محلی می‌سازد و دو provider را به adapter موجود تزریق می‌کند. قرارداد محتوا همان `readSheet(sheetName) -> Promise<{ headers, rows }>` است؛ metadata با `getContentMetadata(contentId)`, `listCategories()` و `listTaxonomyTerms(type)` خوانده می‌شود. provider حافظه‌ای برای تست‌ها و نمونه‌های ساختگی آماده است؛ runtime عملیاتی از Google Sheets provider و Firestore metadata/writable provider استفاده می‌کند. سرویس این runtime روی Render مستقر است. تست‌های CI از fakeها استفاده می‌کنند و موفقیت startup به‌تنهایی parity داده یا دسترسی خواندنی واقعی را ثابت نمی‌کند. ردیف خام، Telegram File ID، token و خطای provider وارد پاسخ نمی‌شوند. فقط زوج دقیق `approvalStatus=approved` و `publicationStatus=published` منتشر می‌شود.
 
-endpointهای محلی: `GET /api/v1/catalog/items`, `GET /api/v1/catalog/items/{id}`, `GET /api/v1/catalog/categories` و `GET /api/v1/catalog/taxonomies`. مسیرهای نوشتن و دانلود تعریف نشده‌اند. `q` با `FILTER_NOT_READY` رد می‌شود. `genreId` فقط وقتی metadata provider تزریق شده و شناسه در taxonomy فعال باشد پذیرفته می‌شود.
+endpointهای عمومی مستقرشده شامل `GET /api/v1/catalog/items`, `GET /api/v1/catalog/items/{id}`, `GET /api/v1/catalog/categories` و `GET /api/v1/catalog/taxonomies` هستند. این مسیرها نوشتن یا دانلود انجام نمی‌دهند؛ عملیات مدیریتی در مسیر جداگانه `/api/v1/admin/catalog` قرار دارد. `q` با `FILTER_NOT_READY` رد می‌شود. `genreId` فقط وقتی metadata provider تزریق شده و شناسه در taxonomy فعال باشد پذیرفته می‌شود.
 
 ### منبع فرادادهٔ آینده
 
@@ -159,13 +159,13 @@ CatalogMetadataProvider
 
 `createFirestoreCatalogMetadataProvider({ firestore })` همین interface را با کلاینت تزریق‌شده پیاده می‌کند و فقط `collection/doc/get` می‌خواند. تست‌ها از fake client استفاده می‌کنند؛ SDK، credential و شبکه لازم نیست. provider حافظه‌ای همچنان گزینهٔ پیش‌فرض fixtureهاست و Core هیچ وابستگی‌ای به نوع storage ندارد. در staging بعدی می‌توان فقط `metadataProvider` را در composition root به provider حافظه‌ای یا Firestore تغییر داد؛ برای بازگشت، همان تزریق staging دوباره به provider حافظه‌ای/آزمایشی برگردانده می‌شود. این کار نیازمند تغییر Core نیست و در این مرحله composition زنده‌ای ساخته نشده است.
 
-پیش از نوشتن پایدار یا استفادهٔ عملیاتی از مدیریت فراداده، باید منبع احراز هویت مدیر و نقش‌ها پیاده‌سازی و تأیید شود، مجوز نوشتن فقط در backend مورداعتماد اعمال شود، دسترسی مستقیم کلاینت‌های عمومی به اسناد محدود بماند، ورودی‌ها و transitionهای هر دو وضعیت اعتبارسنجی شوند و ثبت audit/change history و روش بازیابی عملیاتی مشخص شود. credential یا مجوز مدیریتی هرگز در سایت عمومی یا اپ Android قرار نمی‌گیرد. API نوشتنی فعلی فقط نمونهٔ محلی است؛ API تولیدی یا ذخیره‌سازی پایدار فعال وجود ندارد.
+پیش از نوشتن پایدار یا استفادهٔ عملیاتی از مدیریت فراداده، باید منبع احراز هویت مدیر و نقش‌ها پیاده‌سازی و تأیید شود، مجوز نوشتن فقط در backend مورداعتماد اعمال شود، دسترسی مستقیم کلاینت‌های عمومی به اسناد محدود بماند، ورودی‌ها و transitionهای هر دو وضعیت اعتبارسنجی شوند و ثبت audit/change history و روش بازیابی عملیاتی مشخص شود. credential یا مجوز مدیریتی هرگز در سایت عمومی یا اپ Android قرار نمی‌گیرد. API مدیریتی در runtime عملیاتی به Firebase Admin ID-token verifier و Firestore role provider متصل است. نقش‌ها و تغییرها باید با شواهد عملیاتی و بازبینی IAM بررسی شوند؛ این مستند صرفاً قرارداد routeها و کنترل دسترسی را توصیف می‌کند.
 
-## API مدیریتی — نمونهٔ محلی، نه آمادهٔ استقرار
+## API مدیریتی — runtime عملیاتی و fail-closed
 
 `createCatalogAdminApi({ writableProvider, verifyAdminPrincipal, roleProvider, authorizePermission })` یک Express app جدا از API عمومی می‌سازد. `verifyAdminPrincipal(request)` فقط هویت تأییدشده با شکل `{ authenticated: true, subjectId }` را برمی‌گرداند؛ نقش در این مرحله پذیرفته نمی‌شود. API principal را از body، query، cookie یا header عادی استخراج نمی‌کند. پس از تأیید شناسه، `CatalogAdminRoleProvider.resolveRoles(subjectId)` نقش‌ها را از منبع trusted می‌خواند و فقط نقش‌های allowlist‌شده به policy موجود می‌رسند. فهرست خالی/کاربر بدون assignment، هویت معتبر ولی فاقد مجوز است و به `403 FORBIDDEN` می‌رسد؛ خطای resolver یا دادهٔ نقش ناقص/ناشناخته/تکراری fail-closed با `503 ROLE_RESOLUTION_UNAVAILABLE` است. verifier مفقود یا نامعتبر همان قرارداد `401`/`503` را دارد و جزئیات خام خطا افشا نمی‌شود.
 
-`src/catalog-admin-role-provider.js` قرارداد `CatalogAdminRoleProvider.resolveRoles(subjectId) -> Promise<Role[]>` را تعریف می‌کند. principal نامعتبر هرگز به resolver داده نمی‌شود؛ resolver فقط subjectId نرمال‌شده می‌گیرد. `createInMemoryCatalogAdminRoleProvider(assignments)` یک fake صریح برای تست است، نه fallback runtime. منبع عملیاتی نقش، schema، provisioning مدیران و فرایند لغو نقش هنوز انتخاب/پیاده‌سازی نشده‌اند. `roleProvider` باید صریحاً به Admin API، HTTP service و Runtime Factory تزریق شود؛ نبود آن readiness و مسیر مدیریت را fail-closed می‌کند.
+`src/catalog-admin-role-provider.js` قرارداد `CatalogAdminRoleProvider.resolveRoles(subjectId) -> Promise<Role[]>` را تعریف می‌کند. principal نامعتبر هرگز به resolver داده نمی‌شود؛ resolver فقط subjectId نرمال‌شده می‌گیرد. `createInMemoryCatalogAdminRoleProvider(assignments)` یک fake صریح برای تست است، نه fallback runtime. runtime عملیاتی از `createFirestoreCatalogAdminRoleProvider(...)` برای خواندن نقش‌ها و ثبت رخدادهای تغییر دسترسی استفاده می‌کند؛ assignmentهای واقعی، دسترسی کاربران نهایی و فرآیند revoke باید جداگانه بررسی شوند. `roleProvider` باید صریحاً به Admin API، HTTP service و Runtime Factory تزریق شود؛ نبود آن readiness و مسیر مدیریت را fail-closed می‌کند.
 
 در صورت نیاز به تشخیص داخلی خطا، `reportRoleResolutionFailure(event)` اختیاری است و فقط `{ category: 'provider_error' | 'invalid_assignment' }` دریافت می‌کند؛ شناسهٔ principal، roleها و خطای خام به آن داده نمی‌شود. خطای callback نادیده گرفته می‌شود تا پاسخ fail-closed تغییر نکند. این hook منبع نقش یا احراز هویت عملیاتی ایجاد نمی‌کند.
 
@@ -182,7 +182,7 @@ CatalogMetadataProvider
 
 همهٔ GETهای مدیریتی به `catalog.admin.read` نیاز دارند. PUT metadata به `catalog.metadata.write` نیاز دارد؛ اگر مقدار `approvalStatus` یا `publicationStatus` نسبت به رکورد فعلی تغییر کند، مجوز مستقل `catalog.content.approve` یا `catalog.content.publish` هم لازم است. هنگام ایجاد، مقدارهای پایهٔ `pending` و `draft` برای editor مجازند؛ ایجاد با وضعیت دیگر به مجوز مربوط نیاز دارد. PATCH تأیید، PATCH انتشار، PUT دسته و PUT taxonomy به‌ترتیب به مجوزهای `catalog.content.approve`، `catalog.content.publish`، `catalog.categories.manage` و `catalog.taxonomies.manage` نیاز دارند. بنابراین `metadata.write` به‌تنهایی امکان تأیید یا انتشار نمی‌دهد. تأیید و انتشار همچنان وضعیت‌های جدا هستند و شرط عمومی‌شدن `approved AND published` تغییر نمی‌کند.
 
-بدنهٔ JSON فقط پس از احراز و مجوز route parse می‌شود. شناسهٔ عامل در گزینه‌های write از `principal.subjectId` معتبر به Provider داده می‌شود؛ ورودی کاربر برای `actorId` مبنا نیست. verifier، role provider حافظه‌ای و authorizer این مرحله fake/تزریق‌شده‌اند؛ هیچ JWT verifier، منبع نقش عملیاتی، ارائه‌دهندهٔ هویت یا credential عملیاتی پیاده‌سازی نشده است. این قرارداد جایگزین احراز هویت واقعی یا بررسی امنیت عملیاتی نیست.
+بدنهٔ JSON فقط پس از احراز و مجوز route parse می‌شود. شناسهٔ عامل در گزینه‌های write از `principal.subjectId` معتبر به Provider داده می‌شود؛ ورودی کاربر برای `actorId` مبنا نیست. در runtime عملیاتی، verifier از Firebase Admin Auth و role provider از Firestore است؛ تست‌ها از fake verifier و fake role provider استفاده می‌کنند. پیکربندی Firebase، role assignmentها و IAM production همچنان به بازبینی مستقل نیاز دارند. این قرارداد جایگزین احراز هویت واقعی یا بررسی امنیت عملیاتی نیست.
 
 ### آزمون یکپارچهٔ محلی
 
@@ -223,13 +223,13 @@ GET تک‌رکورد metadata، دسته و taxonomy، ETag قوی پاسخ م�
 
 هر سند دارای `_version` عددی داخلی است. خواندن نسخه‌دار به شکل `{ value, version }` و نوشتن به شکل `{ value, version }` انجام می‌شود؛ نسخه در metadata عمومی یا DTO برنمی‌گردد. تمام متدهای نوشتن گزینهٔ اجباری `{ expectedVersion }` می‌گیرند: مقدار `0` فقط ایجاد در نبود سند را می‌پذیرد و مقدار مثبت فقط وقتی update می‌کند که نسخهٔ ذخیره‌شده دقیقاً مطابق باشد. عدم تطابق، سند مفقود هنگام update یا وجود سند هنگام create با تعارض امن رد می‌شود. خواندن، مقایسه، نوشتن سند و ثبت رخداد در یک transaction انجام می‌شود تا به‌روزرسانی هم‌زمان بی‌صدا overwrite نشود.
 
-API مدیریتی محلی ETag را به expectedVersion تبدیل و به Provider منتقل می‌کند؛ provider حافظه‌ای نیز همین قرارداد را در process اعمال می‌کند. API و Provider Firestore در تست‌های mock هماهنگ‌اند، اما این به معنی آماده‌بودن authentication، Firestore یا staging عملیاتی نیست.
+API مدیریتی عملیاتی ETag را به expectedVersion تبدیل می‌کند. provider نوشتنی Firestore مقایسه و write را در transaction انجام می‌دهد و audit sink رخداد را در همان transaction ایجاد می‌کند. تست‌ها این قرارداد را با fake Firestore می‌سنجند؛ تراکنش production و بازیابی واقعی هنوز باید با آزمون کنترل‌شده راستی‌آزمایی شوند.
 
 ## رخدادهای audit
 
 قرارداد `CatalogAuditEventSink.appendInTransaction(transaction, event)` مستقل است و `createFirestoreCatalogAuditEventSink` فقط رخداد allowlist‌شده را در همان تراکنش ایجاد می‌کند. رخدادهای موفق شامل `eventId`, `operation`, `entityType`, `entityId`, `occurredAt`, `outcome=committed`, `previousVersion`, `version` و نام فیلدهای تغییرکرده است؛ operation برای approval و publication وضعیت مقصد را به‌شکل `approval.approved` یا `publication.archived` مشخص می‌کند، بدون ذخیرهٔ مقدارهای دیگر metadata. `actorId` اختیاری و فقط برای شناسهٔ opaque دریافتی از احراز هویت مورداعتماد است. مقدارهای قبلی/جدید، snapshot کامل، token، Telegram File ID و credential ذخیره نمی‌شوند. شکست تراکنش رخداد موفقی ایجاد نمی‌کند؛ ثبت تلاش‌های ناموفق و تغییرات مجوز باید در سیاست audit عملیاتی جداگانه طراحی شود. ساعت فعلی از تابع تزریق‌شده می‌آید؛ پیش از production باید منبع زمان مورداعتماد و سیاست retention مشخص شود.
 
-Provider و sink جدید فقط با fake Firestore آزمایش شده‌اند. هیچ credential، SDK، پروژه یا اتصال واقعی Firestore آماده نیست. برای استفادهٔ عملیاتی، احراز هویت مدیر و نقش‌ها، کنترل دسترسی backend/IAM، انتقال نسخه از مسیر API، audit امن، backup و rollback لازم‌اند.
+تست‌های خودکار Provider و sink از fake Firestore استفاده می‌کنند. runtime عملیاتی Render نیز Firebase Admin و Firestore را از Application Default Credentials می‌سازد و سرویس در 2026-11-26 با موفقیت start شده است؛ با این حال، در این بررسی خواندن دادهٔ واقعی، نوشتن transaction یا restore عملیاتی انجام نشده است. برای استفادهٔ عملیاتی، احراز هویت مدیر و نقش‌ها، کنترل دسترسی backend/IAM، انتقال نسخه از مسیر API، audit امن، backup و rollback لازم‌اند.
 
 ## سازگاری و نسخه‌بندی
 
